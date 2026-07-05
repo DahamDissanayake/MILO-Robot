@@ -1,0 +1,73 @@
+"""Sleep/wake controller.
+
+No paired brain reachable (or all busy) -> rest pose, sleepy face, streams off,
+keep scanning. A loud sound perks Milo up briefly (surprised face + immediate
+rescan). Brain connects -> stand, excited face, streams resume.
+"""
+
+from __future__ import annotations
+
+import asyncio
+from collections.abc import Callable
+
+from .drivers.display import AnimMode
+
+PERK_SECONDS = 3.0
+
+
+class SleepController:
+    def __init__(
+        self,
+        runner,
+        display,
+        loud_rms_threshold: float = 2000.0,
+        on_perk: Callable[[], None] | None = None,
+        servos=None,
+    ):
+        self._runner = runner
+        self._display = display
+        self._servos = servos
+        self._threshold = loud_rms_threshold
+        self._on_perk = on_perk
+        self.asleep = False
+        self._perk_task: asyncio.Task | None = None
+
+    async def ensure_asleep(self) -> None:
+        if self.asleep:
+            return
+        self.asleep = True
+        self._runner.abort()
+        self._display.stop_idle()
+        await self._runner.run("rest")
+        await self._display.set_face("sleepy", AnimMode.BOOMERANG)
+        if self._servos is not None:
+            self._servos.relax()  # limp servos save battery while asleep
+
+    async def ensure_awake(self) -> None:
+        if not self.asleep:
+            return
+        self.asleep = False
+        self._cancel_perk()
+        await self._runner.run("stand")
+        await self._display.set_face("excited", AnimMode.ONCE)
+        self._display.start_idle()
+
+    def handle_audio_level(self, rms: float) -> None:
+        """Feed mic RMS here; loud sounds while asleep trigger a perk-up."""
+        if not self.asleep or rms < self._threshold:
+            return
+        if self._perk_task is None or self._perk_task.done():
+            self._perk_task = asyncio.create_task(self._perk())
+
+    async def _perk(self) -> None:
+        await self._display.set_face("surprised", AnimMode.ONCE)
+        if self._on_perk is not None:
+            self._on_perk()  # e.g. trigger an immediate discovery rescan
+        await asyncio.sleep(PERK_SECONDS)
+        if self.asleep:
+            await self._display.set_face("sleepy", AnimMode.BOOMERANG)
+
+    def _cancel_perk(self) -> None:
+        if self._perk_task is not None:
+            self._perk_task.cancel()
+            self._perk_task = None
