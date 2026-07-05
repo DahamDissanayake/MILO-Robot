@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "milo-bridge"
+version = "0.1.0"
+description = "Project Milo Pi-side service: drivers, gait engine, knowledge graph, brain discovery"
+requires-python = ">=3.11"
+license = { text = "Apache-2.0" }
+dependencies = [
+    "milo-common",
+    "numpy>=1.26",
+    "pillow>=10",
+    "websockets>=12",
+    "zeroconf>=0.130",
+]
+
+[project.optional-dependencies]
+# Hardware stack — install on the Raspberry Pi only.
+# picamera2 comes from apt (python3-picamera2), not pip.
+pi = [
+    "adafruit-circuitpython-pca9685>=3.4",
+    "adafruit-blinka>=8",
+    "luma.oled>=3.13",
+    "smbus2>=0.4",
+    "sounddevice>=0.4",
+    "onnxruntime>=1.17",
+]
+dev = ["pytest>=8", "onnx>=1.16", "onnxruntime>=1.17"]
+
+[project.scripts]
+milo-bridge = "milo_bridge.main:run"
+
+[tool.setuptools.packages.find]
+include = ["milo_bridge*"]

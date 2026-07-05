@@ -1,0 +1,14 @@
+[Unit]
+Description=Milo bridge - robot drivers, gait engine, knowledge graph, brain link
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=daham
+ExecStart=/home/daham/.venvs/milo/bin/python -m milo_bridge.main
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
