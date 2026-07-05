@@ -114,7 +114,7 @@ def test_idle_loop_blinks(assets: Path):
         disp.next_blink_delay = lambda r: 0.01
         try:
             face.start_idle()
-            await asyncio.sleep(0.1)
+            await asyncio.sleep(0.4)  # several blink cycles at the shrunken delay
             face.stop_idle()
         finally:
             disp.next_blink_delay = orig
