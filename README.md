@@ -81,7 +81,8 @@ decision — lives in **[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)**.
 
 | Path | What it is |
 |---|---|
-| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | **Start here** — system design, wiring diagrams, tech stack |
+| [`docs/GETTING-STARTED.md`](docs/GETTING-STARTED.md) | **Building the robot? Start here** — phase-by-phase from zero (parts, 3D prints, assembly, wiring, software, training) |
+| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | System design — wiring diagrams, components, protocols, tech stack |
 | [`project-milo-plan.md`](project-milo-plan.md) | A–Z phased build plan (Phase 0 → G) with checklists |
 | [`common/`](common/) | `milo-common` — WebSocket protocol + pairing/auth shared by both sides |
 | [`bridge/`](bridge/) | `milo-bridge` — the Pi service: drivers, gait engine, knowledge graph, discovery |
@@ -124,9 +125,9 @@ pytest common bridge brain training
 ## Project status
 
 - ✅ Software: bridge, brain, protocol/auth, gait engine (CPG + ONNX runner), knowledge
-  graph, training pipeline — implemented and unit-tested off-hardware
-- 🔩 Hardware: build in progress — Phase 0/A checklists in
-  [`project-milo-plan.md`](project-milo-plan.md)
+  graph, training pipeline — implemented and unit-tested off-hardware (134 tests)
+- 🔩 Hardware: not yet built — the full from-zero build walkthrough is
+  [`docs/GETTING-STARTED.md`](docs/GETTING-STARTED.md)
 - 🎯 The bar (spec success criterion #5): teach Milo a fact through the laptop brain,
   power-cycle the robot, reconnect through the desktop brain — Milo must greet you by
   name and still know the fact.
