@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from textual import work
 from textual.app import ComposeResult
-from textual.containers import Horizontal, VerticalScroll
+from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.screen import Screen
 from textual.widgets import Button, Footer, Header, Label, Static
 
@@ -25,6 +25,33 @@ def parse_angle_button_id(button_id: str) -> tuple[str, int]:
 
 class ServoScreen(Screen):
     BINDINGS = [("escape", "app.pop_screen", "Back to menu")]
+
+    DEFAULT_CSS = """
+    ServoScreen .servo-block {
+        height: auto;
+        margin-bottom: 1;
+        border: round $panel;
+        padding: 0 1;
+    }
+
+    ServoScreen .servo-header {
+        height: auto;
+    }
+
+    ServoScreen .servo-name {
+        width: 1fr;
+        content-align: left middle;
+    }
+
+    ServoScreen .servo-buttons {
+        height: auto;
+    }
+
+    ServoScreen .angle-btn {
+        min-width: 8;
+        margin-right: 1;
+    }
+    """
 
     def __init__(self) -> None:
         super().__init__()
@@ -66,17 +93,21 @@ class ServoScreen(Screen):
     async def _build_panel(self, panel: VerticalScroll) -> None:
         for name in SERVO_CHANNELS:
             channel = SERVO_CHANNELS[name]
-            row_widgets: list[Static | Button | Label] = [
-                Static(f"{name} (channel {channel})", classes="servo-name")
-            ]
-            for angle in ANGLES:
-                row_widgets.append(
+            header = Horizontal(
+                Static(f"{name} (channel {channel})", classes="servo-name"),
+                Label("last angle: --", id=f"label-{name}"),
+                classes="servo-header",
+            )
+            buttons = Horizontal(
+                *[
                     Button(
                         f"{angle}°", id=angle_button_id(name, angle), classes="angle-btn"
                     )
-                )
-            row_widgets.append(Label("last angle: --", id=f"label-{name}"))
-            await panel.mount(Horizontal(*row_widgets, classes="servo-row"))
+                    for angle in ANGLES
+                ],
+                classes="servo-buttons",
+            )
+            await panel.mount(Vertical(header, buttons, classes="servo-block"))
         await panel.mount(Button("Relax All", id="relax-btn", variant="error"))
 
     def _set_angle_from_button(self, button_id: str) -> None:
