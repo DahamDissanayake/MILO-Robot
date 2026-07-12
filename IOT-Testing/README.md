@@ -91,9 +91,12 @@ show PASS/FAIL buttons after each test case — click FAIL to reveal a note
 field for what went wrong.
 
 - **Servos**: click "Connect" after reading the safety banner. Once
-  connected, each of the 8 servos gets its own row with 0°/45°/90°/135°/180°
+  connected, each of the 8 servos gets its own block with 0°/45°/90°/135°/180°
   buttons — press one to jog that servo to that angle and watch it move.
-  "Relax All" de-energizes every channel when you're done.
+  "Center All (90°) -- for assembly" centers every servo to 90° in one press —
+  the docs/BUILD-PLAN.md Phase 5 step: center every servo *before* attaching
+  any horn/leg, since that centered position defines the leg's mechanical
+  zero. "Relax All" de-energizes every channel when you're done.
 - **Display**: click "Connect", then press any emote button (idle, happy,
   angry, sad, excited, sleepy, wave, dance) to show that face immediately, or
   "Show Pairing PIN" to render the pairing-PIN screen.

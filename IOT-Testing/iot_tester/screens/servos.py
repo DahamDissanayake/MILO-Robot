@@ -12,6 +12,11 @@ from milo_bridge.drivers.servos import SERVO_CHANNELS, ServoDriver
 
 ANGLES = (0, 45, 90, 135, 180)
 
+# Per docs/BUILD-PLAN.md and docs/GETTING-STARTED.md: every servo must be
+# centered to 90 degrees BEFORE any horn/leg is attached -- that centered
+# position is what defines the leg's mechanical zero once assembled.
+ASSEMBLY_ANGLE = 90
+
 
 def angle_button_id(name: str, angle: int) -> str:
     return f"angle-{name}-{angle}"
@@ -76,6 +81,8 @@ class ServoScreen(Screen):
         elif button_id == "relax-btn":
             if self._driver is not None:
                 self._driver.relax()
+        elif button_id == "center-btn":
+            self.center_all()
         elif button_id.startswith("angle-"):
             self._set_angle_from_button(button_id)
 
@@ -108,6 +115,9 @@ class ServoScreen(Screen):
                 classes="servo-buttons",
             )
             await panel.mount(Vertical(header, buttons, classes="servo-block"))
+        await panel.mount(
+            Button(f"Center All ({ASSEMBLY_ANGLE}°) -- for assembly", id="center-btn", variant="success")
+        )
         await panel.mount(Button("Relax All", id="relax-btn", variant="error"))
 
     def _set_angle_from_button(self, button_id: str) -> None:
@@ -116,3 +126,11 @@ class ServoScreen(Screen):
         name, angle = parse_angle_button_id(button_id)
         self._driver.set_angle(name, angle)
         self.query_one(f"#label-{name}", Label).update(f"last angle: {angle}°")
+
+    @work()
+    async def center_all(self) -> None:
+        if self._driver is None:
+            return
+        await self._driver.set_pose({name: ASSEMBLY_ANGLE for name in SERVO_CHANNELS})
+        for name in SERVO_CHANNELS:
+            self.query_one(f"#label-{name}", Label).update(f"last angle: {ASSEMBLY_ANGLE}°")
