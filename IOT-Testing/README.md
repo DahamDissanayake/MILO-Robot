@@ -126,6 +126,7 @@ scp <pi-username>@milo.local:MILO-Robot/IOT-Testing/results/camera-test-*.jpg .
 | No sound from mics or speaker | Confirm `dtoverlay=googlevoicehat-soundcard` is in `/boot/firmware/config.txt` and you rebooted; `arecord -l` should list a capture device. |
 | `ModuleNotFoundError: No module named 'picamera2'` | Recreate the venv with `--system-site-packages` (Step 5) — `picamera2` is apt-only. |
 | Camera screen fails immediately | `rpicam-hello --list-cameras` should show the IMX219; check the CSI ribbon is fully seated (15→22-pin adapter). |
+| Re-entering the Camera or Microphones screen in the same session fails to open the device (e.g. "device busy") | The previous session's camera/mic handle isn't explicitly released on exit — quit the app (`q` or navigate to Quit) and relaunch `milo-iot-tester` rather than re-entering the screen. |
 
 ## Safety reminders
 
