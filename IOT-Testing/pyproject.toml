@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "milo-iot-tester"
+version = "0.1.0"
+description = "Project Milo IOT-Testing: TUI hardware tester for every sensor/actuator"
+requires-python = ">=3.11"
+license = { text = "Apache-2.0" }
+dependencies = [
+    "milo-bridge",
+    "textual>=0.60",
+    "numpy>=1.26",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "pytest-asyncio>=0.23"]
+
+[project.scripts]
+milo-iot-tester = "iot_tester.app:main"
+
+[tool.setuptools.packages.find]
+include = ["iot_tester*"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
