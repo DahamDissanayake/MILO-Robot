@@ -28,3 +28,6 @@ paired.json
 Thumbs.db
 .idea/
 .vscode/
+
+# Agent scratch state (subagent-driven-development progress ledger)
+.superpowers/
