@@ -88,11 +88,12 @@ class WiringScreen(Screen):
 
     def compose(self) -> ComposeResult:
         yield Header()
-        with VerticalScroll():
-            yield Static(POWER_RULE, classes="wiring-block warning")
-            yield Static(PIN_HEADER_DIAGRAM, classes="wiring-block")
-            yield Static(GPIO_TABLE, classes="wiring-block")
-            yield Static(I2C_BUS, classes="wiring-block")
-            yield Static(I2S_BUS, classes="wiring-block")
-            yield Static(SERVO_MAP, classes="wiring-block")
+        yield VerticalScroll(
+            Static(POWER_RULE, classes="wiring-block warning"),
+            Static(PIN_HEADER_DIAGRAM, classes="wiring-block"),
+            Static(GPIO_TABLE, classes="wiring-block"),
+            Static(I2C_BUS, classes="wiring-block"),
+            Static(I2S_BUS, classes="wiring-block"),
+            Static(SERVO_MAP, classes="wiring-block"),
+        )
         yield Footer()

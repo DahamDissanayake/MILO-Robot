@@ -46,7 +46,5 @@ def test_gpio_table_lists_i2s_pins() -> None:
 
 def test_wiring_screen_composes_without_error() -> None:
     screen = WiringScreen()
-    assert screen is not None
-    assert hasattr(screen, "compose")
-    compose_result = screen.compose()
-    assert compose_result is not None
+    widgets = list(screen.compose())
+    assert len(widgets) > 0
