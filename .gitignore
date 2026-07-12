@@ -28,3 +28,10 @@ paired.json
 Thumbs.db
 .idea/
 .vscode/
+
+# Agent scratch state (subagent-driven-development progress ledger)
+.superpowers/
+
+# IOT-Testing session artifacts (directory tracked via .gitkeep, contents are not)
+IOT-Testing/results/*
+!IOT-Testing/results/.gitkeep
