@@ -1,39 +1,34 @@
-"""Servos screen: TC1 full-range sweep / TC2 return-to-zero, per servo."""
+"""Servos screen: manual jog panel for all 8 MG90S servos (0-180 degrees)."""
 
 from __future__ import annotations
 
-import asyncio
-
 from textual import work
 from textual.app import ComposeResult
-from textual.containers import VerticalScroll
+from textual.containers import Horizontal, VerticalScroll
 from textual.screen import Screen
-from textual.widgets import Button, Footer, Header, Static
+from textual.widgets import Button, Footer, Header, Label, Static
 
 from milo_bridge.drivers.servos import SERVO_CHANNELS, ServoDriver
 
-from iot_tester.results_log import ResultRecorder
-from iot_tester.widgets import ask_pass_fail
-
-SWEEP_UP_ANGLES = (0, 45, 90, 135, 180)
-SWEEP_DOWN_ANGLES = (180, 90, 0)
-STEP_DELAY_S = 0.5
+ANGLES = (0, 45, 90, 135, 180)
 
 
-async def run_sweep(
-    driver: ServoDriver, servo: str, angles: tuple[int, ...], step_delay_s: float = STEP_DELAY_S
-) -> None:
-    for angle in angles:
-        driver.set_angle(servo, angle)
-        await asyncio.sleep(step_delay_s)
+def angle_button_id(name: str, angle: int) -> str:
+    return f"angle-{name}-{angle}"
+
+
+def parse_angle_button_id(button_id: str) -> tuple[str, int]:
+    """'angle-R1-45' -> ('R1', 45)"""
+    _, name, angle_str = button_id.split("-", 2)
+    return name, int(angle_str)
 
 
 class ServoScreen(Screen):
     BINDINGS = [("escape", "app.pop_screen", "Back to menu")]
 
-    def __init__(self, recorder: ResultRecorder) -> None:
+    def __init__(self) -> None:
         super().__init__()
-        self.recorder = recorder
+        self._driver: ServoDriver | None = None
 
     def compose(self) -> ComposeResult:
         yield Header()
@@ -42,38 +37,51 @@ class ServoScreen(Screen):
             "Keep the robot on a stand, clear of obstructions.",
             classes="warning",
         )
-        yield Button("Start Servo Tests", id="start-btn", variant="primary")
-        yield VerticalScroll(id="test-area")
+        yield Button("Connect", id="connect-btn", variant="primary")
+        yield VerticalScroll(id="panel-area")
         yield Footer()
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
-        if event.button.id == "start-btn":
+        button_id = event.button.id or ""
+        if button_id == "connect-btn":
             event.button.disabled = True
-            self.run_tests()
+            self.connect()
+        elif button_id == "relax-btn":
+            if self._driver is not None:
+                self._driver.relax()
+        elif button_id.startswith("angle-"):
+            self._set_angle_from_button(button_id)
 
     @work()
-    async def run_tests(self) -> None:
-        container = self.query_one("#test-area", VerticalScroll)
+    async def connect(self) -> None:
+        panel = self.query_one("#panel-area", VerticalScroll)
         try:
-            driver = ServoDriver.from_hardware()
+            self._driver = ServoDriver.from_hardware()
         except Exception as exc:
-            await container.mount(Static(f"Could not open the PCA9685: {exc}"))
+            await panel.mount(Static(f"Could not open the PCA9685: {exc}"))
+            self.query_one("#connect-btn", Button).disabled = False
             return
+        await self._build_panel(panel)
 
+    async def _build_panel(self, panel: VerticalScroll) -> None:
         for name in SERVO_CHANNELS:
-            await run_sweep(driver, name, SWEEP_UP_ANGLES)
-            passed, note = await ask_pass_fail(
-                container, f"{name}: did it sweep smoothly through its full range?"
-            )
-            self.recorder.record(f"Servo {name}", "TC1 Full range sweep", passed, note)
-            self.recorder.flush()
+            channel = SERVO_CHANNELS[name]
+            row_widgets: list[Static | Button | Label] = [
+                Static(f"{name} (channel {channel})", classes="servo-name")
+            ]
+            for angle in ANGLES:
+                row_widgets.append(
+                    Button(
+                        f"{angle}°", id=angle_button_id(name, angle), classes="angle-btn"
+                    )
+                )
+            row_widgets.append(Label("last angle: --", id=f"label-{name}"))
+            await panel.mount(Horizontal(*row_widgets, classes="servo-row"))
+        await panel.mount(Button("Relax All", id="relax-btn", variant="error"))
 
-            await run_sweep(driver, name, SWEEP_DOWN_ANGLES)
-            passed, note = await ask_pass_fail(
-                container, f"{name}: did it return cleanly to 0 degrees?"
-            )
-            self.recorder.record(f"Servo {name}", "TC2 Return to zero", passed, note)
-            self.recorder.flush()
-
-        driver.relax()
-        await container.mount(Static("Servo tests complete. Press Escape to return to menu."))
+    def _set_angle_from_button(self, button_id: str) -> None:
+        if self._driver is None:
+            return
+        name, angle = parse_angle_button_id(button_id)
+        self._driver.set_angle(name, angle)
+        self.query_one(f"#label-{name}", Label).update(f"last angle: {angle}°")

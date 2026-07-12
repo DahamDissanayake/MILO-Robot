@@ -85,14 +85,18 @@ milo-iot-tester
 Arrow keys + Enter (or click) to select: **Wiring Reference**, **I2C Bus
 Scan**, **Servos**, **Display**, **IMU**, **Camera**, **Microphones**,
 **Speaker**, **Results**, **Quit**. `Escape` returns to the menu from any
-screen. Interactive screens (Servos, Display, IMU, Microphones, Speaker) show
-PASS/FAIL buttons after each test case — click FAIL to reveal a note field for
-what went wrong.
+screen. Servos and Display are manual control panels — no verdicts, just
+buttons you press to move things and watch. IMU, Microphones, and Speaker
+show PASS/FAIL buttons after each test case — click FAIL to reveal a note
+field for what went wrong.
 
-- **Servos**: click "Start Servo Tests" after reading the safety banner. Each
-  of the 8 servos runs a full 0→180° sweep (TC1) then returns to 0° (TC2).
-- **Display**: cycles every face asset automatically; confirm each renders,
-  plus the pairing-PIN screen.
+- **Servos**: click "Connect" after reading the safety banner. Once
+  connected, each of the 8 servos gets its own row with 0°/45°/90°/135°/180°
+  buttons — press one to jog that servo to that angle and watch it move.
+  "Relax All" de-energizes every channel when you're done.
+- **Display**: click "Connect", then press any emote button (idle, happy,
+  angry, sad, excited, sleepy, wave, dance) to show that face immediately, or
+  "Show Pairing PIN" to render the pairing-PIN screen.
 - **IMU**: calibrates the gyro automatically (keep the robot still), then
   shows a live roll/pitch/gyro readout — tilt the robot and confirm it
   tracks before answering PASS/FAIL.
