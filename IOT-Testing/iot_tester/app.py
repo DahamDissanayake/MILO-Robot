@@ -55,9 +55,9 @@ class MainMenu(Screen):
         elif key == "i2c":
             app.push_screen(I2cScanScreen(app.recorder))
         elif key == "servos":
-            app.push_screen(ServoScreen(app.recorder))
+            app.push_screen(ServoScreen())
         elif key == "display":
-            app.push_screen(DisplayScreen(app.recorder))
+            app.push_screen(DisplayScreen())
         elif key == "imu":
             app.push_screen(ImuScreen(app.recorder))
         elif key == "camera":

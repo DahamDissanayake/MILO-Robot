@@ -24,8 +24,8 @@ async def test_every_screen_pushes_and_pops_without_crashing() -> None:
         screens = [
             WiringScreen(),
             I2cScanScreen(app.recorder),
-            ServoScreen(app.recorder),
-            DisplayScreen(app.recorder),
+            ServoScreen(),
+            DisplayScreen(),
             ImuScreen(app.recorder),
             CameraScreen(app.recorder),
             MicScreen(app.recorder),
