@@ -20,6 +20,20 @@ EMOTES = ("idle", "happy", "angry", "sad", "excited", "sleepy", "wave", "dance")
 class DisplayScreen(Screen):
     BINDINGS = [("escape", "app.pop_screen", "Back to menu")]
 
+    DEFAULT_CSS = """
+    DisplayScreen .emote-row {
+        layout: grid;
+        grid-size: 4;
+        grid-gutter: 1;
+        height: auto;
+    }
+
+    DisplayScreen .emote-btn, DisplayScreen #pin-btn {
+        width: 1fr;
+        min-width: 8;
+    }
+    """
+
     def __init__(self) -> None:
         super().__init__()
         self._display: FaceDisplay | None = None
