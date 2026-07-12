@@ -8,6 +8,7 @@ from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.screen import Screen
 from textual.widgets import Button, Footer, Header, Label, Static
 
+from milo_bridge.config import DEFAULT_DIR, BridgeConfig
 from milo_bridge.drivers.servos import SERVO_CHANNELS, ServoDriver
 
 ANGLES = (0, 45, 90, 135, 180)
@@ -89,8 +90,12 @@ class ServoScreen(Screen):
     @work()
     async def connect(self) -> None:
         panel = self.query_one("#panel-area", VerticalScroll)
+        config_path = DEFAULT_DIR / "config.json"
+        config = BridgeConfig.load(config_path) if config_path.exists() else BridgeConfig()
         try:
-            self._driver = ServoDriver.from_hardware()
+            self._driver = ServoDriver.from_hardware(
+                trims=config.servo_trims, stagger_ms=config.servo_stagger_ms
+            )
         except Exception as exc:
             await panel.mount(Static(f"Could not open the PCA9685: {exc}"))
             self.query_one("#connect-btn", Button).disabled = False

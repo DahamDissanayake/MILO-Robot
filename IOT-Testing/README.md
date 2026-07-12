@@ -90,13 +90,29 @@ buttons you press to move things and watch. IMU, Microphones, and Speaker
 show PASS/FAIL buttons after each test case — click FAIL to reveal a note
 field for what went wrong.
 
-- **Servos**: click "Connect" after reading the safety banner. Once
-  connected, each of the 8 servos gets its own block with 0°/45°/90°/135°/180°
-  buttons — press one to jog that servo to that angle and watch it move.
-  "Center All (90°) -- for assembly" centers every servo to 90° in one press —
-  the docs/BUILD-PLAN.md Phase 5 step: center every servo *before* attaching
-  any horn/leg, since that centered position defines the leg's mechanical
-  zero. "Relax All" de-energizes every channel when you're done.
+- **Servos**: click "Connect" after reading the safety banner. Connect reads
+  calibrated trims/stagger from `~/.milo/config.json` if it exists (same
+  file the real robot uses), so a servo you've already trimmed there
+  behaves the same way here. Once connected, each of the 8 servos gets its
+  own block with 0°/45°/90°/135°/180° buttons — press one to jog that servo
+  to that angle and watch it move. If a servo buzzes/shakes at 0° or 180°,
+  that's it hitting its true mechanical end-stop, not a bug — nudge that
+  channel's `servo_trims` value in `~/.milo/config.json` a few degrees so
+  its usable range clears the stop, matching the "subtrim" calibration step
+  in `docs/SOFTWARE-SETUP.md`. "Center All (90°) -- for assembly" centers
+  every servo to 90° in one (staggered — see below) press — the
+  docs/BUILD-PLAN.md Phase 5 step: center every servo *before* attaching any
+  horn/leg, since that centered position defines the leg's mechanical zero.
+  "Relax All" de-energizes every channel when you're done.
+
+  Angle buttons and Center All write staggered (20ms apart by default,
+  same `servo_stagger_ms` as the real robot) rather than instantaneously —
+  this is deliberate, not a slowdown to fix: starting all 8 MG90S servos in
+  the same instant is the exact brownout scenario the project inherited as
+  a hard-won lesson from the Sesame firmware. Even fully simultaneous writes
+  wouldn't look instantaneous anyway — a servo physically takes ~150ms to
+  rotate 90°, which is longer than the entire 140ms stagger window across
+  all 8 channels.
 - **Display**: click "Connect", then press any emote button (idle, happy,
   angry, sad, excited, sleepy, wave, dance) to show that face immediately, or
   "Show Pairing PIN" to render the pairing-PIN screen.
