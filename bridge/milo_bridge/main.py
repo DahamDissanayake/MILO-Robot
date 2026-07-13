@@ -62,6 +62,19 @@ async def main() -> None:
     graph = GraphStore(cfg.graph_db_path)
     graph_api = GraphApi(graph)
 
+    from .webapp.deps import WebDeps
+    from .webapp.server import start_web
+
+    web_deps = WebDeps(
+        config=cfg, runner=runner, display=display, servos=servos,
+        camera=camera, audio=audio, imu=imu, gait=gait,
+        graph_api=graph_api, graph_store=graph,
+        broker=None, media_hub=None, log_buffer=None,
+        get_link_state=lambda: "disconnected",
+    )
+    if cfg.web_enabled:
+        asyncio.create_task(start_web(web_deps))
+
     sleep_controller = SleepController(
         runner, display, loud_rms_threshold=cfg.loud_rms_threshold, servos=servos
     )

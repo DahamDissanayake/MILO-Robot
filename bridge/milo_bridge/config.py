@@ -33,6 +33,10 @@ class BridgeConfig:
     loud_rms_threshold: float = 2000.0  # int16 RMS that perks Milo up while asleep
     reconnect_seconds: float = 10.0
 
+    # Web dashboard
+    web_enabled: bool = True
+    web_port: int = 80
+
     @property
     def paired_path(self) -> Path:
         return Path(self.data_dir) / "paired.json"

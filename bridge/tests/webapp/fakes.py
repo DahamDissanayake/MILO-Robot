@@ -1,0 +1,107 @@
+"""Fake drivers for webapp tests — mirror only the methods the webapp uses."""
+from __future__ import annotations
+
+import asyncio
+from pathlib import Path
+
+from milo_bridge.config import BridgeConfig
+from milo_bridge.graph.api import GraphApi
+from milo_bridge.graph.store import GraphStore
+from milo_bridge.webapp.deps import WebDeps
+
+
+class FakeGait:
+    backend = "cpg"
+
+    def __init__(self):
+        self.vel = (0.0, 0.0, 0.0)
+
+    def set_velocity_command(self, vx, vy, yaw_rate):
+        self.vel = (vx, vy, yaw_rate)
+
+
+class FakeServos:
+    def __init__(self):
+        self.angles = {}
+
+    def set_angle(self, servo, angle):
+        self.angles[servo] = angle
+
+    async def set_pose(self, angles, stagger=True):
+        self.angles.update(angles)
+
+
+class FakeRunner:
+    def __init__(self):
+        self.ran = []
+        self.aborted = False
+
+    async def run(self, name, cycles=2):
+        self.ran.append(name)
+        return True
+
+    def abort(self):
+        self.aborted = True
+
+
+class FakeDisplay:
+    def __init__(self):
+        self.faces = []
+
+    async def set_face(self, name, mode=None):
+        self.faces.append(name)
+
+    def start_idle(self):
+        pass
+
+
+class FakeAudio:
+    def __init__(self, frames=(b"\x00\x02" * 160,)):
+        self._frames = list(frames)
+        self.played = []
+
+    async def capture_frames(self):
+        for f in self._frames:
+            yield f
+            await asyncio.sleep(0)
+
+    def play_pcm(self, pcm):
+        self.played.append(pcm)
+
+
+class FakeCamera:
+    def __init__(self, frames=(b"jpeg-a", b"jpeg-b")):
+        self._frames = list(frames)
+
+    async def frames(self):
+        for f in self._frames:
+            yield f
+            await asyncio.sleep(0)
+
+
+class FakeImu:
+    def read(self):
+        return {"pitch": 1.0, "roll": -2.0, "gyro_z": 0.5}
+
+
+def make_deps(**overrides) -> WebDeps:
+    store = GraphStore(":memory:")
+    deps = WebDeps(
+        config=BridgeConfig(robot_id="milo-test", robot_name="milo"),
+        runner=FakeRunner(),
+        display=FakeDisplay(),
+        servos=FakeServos(),
+        camera=FakeCamera(),
+        audio=FakeAudio(),
+        imu=FakeImu(),
+        gait=FakeGait(),
+        graph_api=GraphApi(store),
+        graph_store=store,
+        broker=None,
+        media_hub=None,
+        log_buffer=None,
+        get_link_state=lambda: "disconnected",
+    )
+    for k, v in overrides.items():
+        setattr(deps, k, v)
+    return deps
