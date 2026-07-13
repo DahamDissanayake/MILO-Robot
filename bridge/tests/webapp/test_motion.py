@@ -153,3 +153,10 @@ async def test_handlers_never_raise_on_driver_error():
     result = await svc.stop()
     # Stop must always return {"ok": True}
     assert result == {"ok": True}
+
+
+async def test_servo_batch_never_raises_on_bad_angle_value():
+    deps = _controlled_deps()
+    svc = MotionService(deps)
+    res = await svc.servo_batch("c1", {"R1": "not-a-number"})
+    assert "error" in res

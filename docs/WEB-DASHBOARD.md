@@ -10,9 +10,12 @@ memory graph, and the bridge's own log, all in one page.
 The dashboard is a single-page app served by `milo-bridge` itself (the same
 process that runs the gait engine and drivers) over a WebSocket-plus-REST API
 on `bridge/milo_bridge/webapp/`. It needs no build step — it's hand-written
-ES modules loaded straight from `static/`, and no accounts or brain pairing
-are required to look at it: **observation is always free**. Taking the
-robot's actuators away from the brain (driving it, posing it, talking through
+ES modules loaded straight from `static/`. Every route is gated behind a
+login page (see §7's smoke checklist), so you do need to sign in once per
+browser before you can see anything at all — but once you're in, **observation
+is still always free**: no card that only watches (camera, ears, sensors,
+status, logs, memory graph) requires anything beyond being logged in. Taking
+the robot's actuators away from the brain (driving it, posing it, talking through
 it) requires explicitly clicking **Take Control**, and one physical **STOP**
 button is always live, for anyone, in any tab, whether or not they hold
 control. The page is a responsive drag-and-resize card grid — arrange it

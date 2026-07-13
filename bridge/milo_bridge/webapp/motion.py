@@ -104,8 +104,8 @@ class MotionService:
         bad = [name for name in angles if name not in SERVO_CHANNELS]
         if bad:
             return {"error": f"unknown servo(s) {bad!r}"}
-        clamped = {name: _clamp(deg, DEG_MIN, DEG_MAX) for name, deg in angles.items()}
         try:
+            clamped = {name: _clamp(deg, DEG_MIN, DEG_MAX) for name, deg in angles.items()}
             await self._deps.servos.set_pose(clamped, stagger=True)
         except Exception as exc:
             return {"error": f"{type(exc).__name__}: {exc}"}
