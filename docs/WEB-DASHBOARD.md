@@ -24,16 +24,20 @@ control.
 
 The page is a fixed "cockpit" console, not a rearrangeable grid: a status
 bar runs across the top (brand, connection state, current control owner,
-and the page-level action buttons), a two-column cockpit below it puts
-Camera → Move → Communication in the center column and Sensors in a side
-column, and a full-width Memory Graph section sits below the cockpit.
-Less-frequently-used panels — Poses & Emotes, Servo Test, and Bridge Log —
-live in a Tools drawer opened from the status bar's **Tools** button. This
-layout is identical for every device — there's no per-browser saved
-arrangement to diverge between a laptop and a phone — and a real mobile
-breakpoint (at 900px and below) reflows the cockpit to a single column and
-collapses the status bar's secondary stats behind a **⋯** toggle. It works
-in light or dark mode and follows your OS theme by default.
+and the page-level action buttons), and a three-column cockpit below it
+keeps Camera a normal, capped size in the true center — flanked by Move on
+the left and Sensors + Communication stacked on the right — rather than
+letting the feed dominate the page. A full-width Bridge Log sits right
+below the cockpit (always visible, not tucked away), and a full-width
+Memory Graph section follows that. Less-frequently-used panels — Poses &
+Emotes and Servo Test — live in a Tools drawer opened from the status
+bar's **Tools** button. This layout is identical for every device — there's
+no per-browser saved arrangement to diverge between a laptop and a phone —
+and a real mobile breakpoint (at 900px and below) reflows the cockpit to a
+single column (Camera, then Move, then the Communication/Sensors side
+group) and collapses the status bar's secondary stats behind a **⋯**
+toggle. It works in light or dark mode and follows your OS theme by
+default.
 
 _screenshot to be added after first run_
 
@@ -96,11 +100,12 @@ value (and `web_username` if you want a different username too), then
 
 ## 3. Feature tour
 
-The dashboard is built from a status bar plus seven panels: three in the
-fixed cockpit's center column, one in its side column, one full-width
-section below the cockpit, and three tucked into a Tools drawer. Every
-panel that can move hardware or make noise is marked **needs control**
-below; the rest are pure observation and work in every tab, all the time.
+The dashboard is built from a status bar plus seven panels: one in the
+fixed cockpit's left column, one in its center column, two stacked in its
+right column, two full-width sections below the cockpit (Bridge Log, then
+Memory Graph), and two tucked into a Tools drawer. Every panel that can
+move hardware or make noise is marked **needs control** below; the rest
+are pure observation and work in every tab, all the time.
 
 - **Status bar** — merges the old header and Status card into one strip
   across the top: brand, a connection dot, who currently owns control
@@ -111,38 +116,47 @@ below; the rest are pure observation and work in every tab, all the time.
   every connected tab already receives; below the ~900px mobile breakpoint
   it's hidden behind a **⋯** toggle button so the bar stays one line.
 - **Camera** (observe-only, cockpit center) — a live MJPEG feed at
-  `/stream/camera`, one hub subscription per browser tab, so opening the
-  dashboard on three devices doesn't triple the load on the camera driver
-  — they all share the single upstream reader. A **Snapshot** button grabs
-  the current frame into a downloadable JPEG client-side, no server round
-  trip needed.
-- **Move** (needs control, cockpit center) — an on-screen joystick, or
-  WASD / arrow keys with Q/E to turn, driving the gait engine's velocity
-  command. A speed slider scales every axis together. Commands are sent at
-  a steady 100 ms cadence while a direction is held and immediately zeroed
-  on release, and there is always a local **STOP** button on the panel in
-  addition to the global one in the status bar.
-- **Communication** (cockpit center) — replaces the old separate Ears and
-  Voice cards. A headphones toggle turns live listening on or off and
-  needs no control at all — anyone can listen in — and drives a vertical
-  VU meter that fills green and switches to red above roughly half scale.
-  Push-to-talk (**Hold to Talk**) and the type-and-**Say** text bar (both
-  need control) are gated independently of listening: both stay visibly
-  locked until this tab holds control, and if control is lost mid-hold (a
-  heartbeat timeout, another tab taking control, or the connection
-  dropping) an in-flight push-to-talk session is torn down immediately
-  rather than just being blocked from starting again. TTS goes through
-  `espeak-ng` on the Pi — it must be installed with
+  `/stream/camera`, capped to a normal, readable size (not a dominant
+  full-width screen) and centered in its column, one hub subscription per
+  browser tab, so opening the dashboard on three devices doesn't triple
+  the load on the camera driver — they all share the single upstream
+  reader. A **Snapshot** button grabs the current frame into a
+  downloadable JPEG client-side, no server round trip needed.
+- **Move** (needs control, cockpit left column) — an on-screen joystick
+  stacked above its speed slider / STOP, or WASD / arrow keys with Q/E to
+  turn, driving the gait engine's velocity command. A speed slider scales
+  every axis together. Commands are sent at a steady 100 ms cadence while
+  a direction is held and immediately zeroed on release, and there is
+  always a local **STOP** button on the panel in addition to the global
+  one in the status bar.
+- **Communication** (cockpit right column) — replaces the old separate
+  Ears and Voice cards. A headphones toggle turns live listening on or off
+  and needs no control at all — anyone can listen in — and drives a
+  vertical VU meter that fills green and switches to red above roughly
+  half scale. Push-to-talk (**Hold to Talk**) and the type-and-**Say** text
+  bar (both need control) are gated independently of listening: both stay
+  visibly locked until this tab holds control, and if control is lost
+  mid-hold (a heartbeat timeout, another tab taking control, or the
+  connection dropping) an in-flight push-to-talk session is torn down
+  immediately rather than just being blocked from starting again. TTS goes
+  through `espeak-ng` on the Pi — it must be installed with
   `sudo apt install espeak-ng`, or `/api/speak` reports `tts-unavailable`
   and the panel shows the error inline.
-- **Sensors** (observe-only, cockpit side column) — six live tiles: Pitch
-  / Roll, Gyro, SoC Temp, CPU, and RAM, plus a row of hardware-presence
-  dots (camera / audio / IMU / display) fetched once from `/api/status`,
-  so you can tell at a glance what the robot thinks is actually attached.
-  A **Details** toggle reveals two rolling-history sparkline canvases —
-  Attitude (pitch/roll) and System (CPU / RAM / Temp) — built from the
-  same telemetry stream.
-- **Memory Graph** (observe-only, full-width below the cockpit) — a
+- **Sensors** (observe-only, cockpit right column, below Communication) —
+  six live tiles: Pitch / Roll, Gyro, SoC Temp, CPU, and RAM, plus a row of
+  hardware-presence dots (camera / audio / IMU / display) fetched once
+  from `/api/status`, so you can tell at a glance what the robot thinks is
+  actually attached. A **Details** toggle reveals two rolling-history
+  sparkline canvases — Attitude (pitch/roll) and System (CPU / RAM / Temp)
+  — built from the same telemetry stream.
+- **Bridge Log** (observe-only, full-width below the cockpit) — a live
+  tail of the bridge's own log output, always visible rather than tucked
+  in the Tools drawer. It loads the last 100 lines from `/api/logs` on
+  mount, then appends new lines in real time as the bridge's
+  `RingBufferLogHandler` broadcasts them over the WebSocket — useful for
+  watching what the robot is actually doing without SSHing in. The panel
+  scrolls its own bounded height rather than growing the page.
+- **Memory Graph** (observe-only, full-width below Bridge Log) — a
   force-directed canvas view of Milo's on-robot knowledge graph. It shows
   the entire graph as soon as it mounts, not only after you search, and
   polls every 5 seconds to pick up graph changes from other sources
@@ -168,11 +182,6 @@ below; the rest are pure observation and work in every tab, all the time.
     (R1–R4, L1–L4), each sending a live `deg` update as you drag, plus a
     **Center All (90°)** button for quickly returning every joint to
     neutral during assembly or calibration work.
-  - **Bridge Log** (observe-only) — a live tail of the bridge's own log
-    output. It loads the last 100 lines from `/api/logs` on mount, then
-    appends new lines in real time as the bridge's `RingBufferLogHandler`
-    broadcasts them over the WebSocket — useful for watching what the
-    robot is actually doing without SSHing in.
 
 The layout itself is fixed — nothing can be dragged, resized, or hidden —
 and the Tools drawer is what replaces the old per-card hide/show and its
@@ -265,18 +274,21 @@ export default {
 ```
 
 Register it in `bridge/milo_bridge/webapp/static/js/registry.js` by adding
-it to whichever zone array it belongs in — `cockpitCenter` (the main
-column), `cockpitSide` (the narrower side column), `graph` (the full-width
-section below the cockpit), or `tools` (the drawer):
+it to whichever zone array it belongs in — `cockpitMove` (the left
+column), `cockpitCamera` (the center column), `cockpitSide` (the right
+column, stacked), `bridgeLog` or `graph` (the two full-width sections
+below the cockpit), or `tools` (the drawer):
 
 ```js
 import hello from "./panels/hello.js";
 // ...
 export const registry = {
-  cockpitCenter: [camera, move, comm, hello],
-  cockpitSide: [sensors],
+  cockpitMove: [move],
+  cockpitCamera: [camera],
+  cockpitSide: [comm, sensors, hello],
+  bridgeLog: [log],
   graph: [graph],
-  tools: [poses, servos, log],
+  tools: [poses, servos],
 };
 ```
 
@@ -374,8 +386,13 @@ curl -X POST http://localhost:8080/api/graph \
 - [ ] With the *first* tab controlling, click **STOP** from the *second*,
       non-controlling tab — it must still work; STOP is never gated by
       control.
-- [ ] The Camera panel streams frames continuously and the Bridge Log
-      panel (in the Tools drawer) shows new lines arriving live.
+- [ ] Desktop: the Camera panel is a normal, capped size in the true
+      center column (not a dominant full-width screen), Move is in its own
+      left column, and Communication + Sensors are stacked in the right
+      column. The Camera panel streams frames continuously.
+- [ ] The Bridge Log panel — its own full-width section below the cockpit,
+      not inside the Tools drawer — shows new lines arriving live and
+      scrolls within its own bounded height rather than growing the page.
 - [ ] In the Communication panel, toggle **Listen** without holding
       control — it works, and the vertical VU meter reacts. Confirm
       push-to-talk and Say stay visibly locked until Take Control is held.
@@ -384,14 +401,15 @@ curl -X POST http://localhost:8080/api/graph \
       without needing to search first; confirm searching highlights
       matches rather than hiding non-matches.
 - [ ] Click **Tools** in the status bar — the drawer opens with Poses &
-      Emotes, Servo Test, and Bridge Log. Confirm it closes both ways:
-      clicking the backdrop, and clicking the drawer's own **✕ Close**
-      button.
+      Emotes and Servo Test (no Bridge Log here anymore). Confirm it
+      closes both ways: clicking the backdrop, and clicking the drawer's
+      own **✕ Close** button.
 - [ ] At a narrow (≤900px) viewport: the status bar's secondary stats
       collapse behind a **⋯** toggle, the cockpit becomes a single column
-      in priority order (camera, move, communication, sensors), and the
-      Tools drawer becomes a full-width overlay — confirm the **✕ Close**
-      button closes it here too, since the full-screen drawer covers the
-      backdrop and the status bar's Tools button at this width.
+      in priority order (camera, move, then the Communication/Sensors
+      group), and the Tools drawer becomes a full-width overlay — confirm
+      the **✕ Close** button closes it here too, since the full-screen
+      drawer covers the backdrop and the status bar's Tools button at
+      this width.
 - [ ] Logged-out and login-error flows (`/login`) are unchanged from
       before this redesign — confirm they still work.

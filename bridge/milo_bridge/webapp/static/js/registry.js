@@ -9,8 +9,10 @@ import servos from "./panels/servos.js";
 import log from "./panels/log.js";
 
 export const registry = {
-  cockpitCenter: [camera, move, comm],
-  cockpitSide: [sensors],
+  cockpitMove: [move],
+  cockpitCamera: [camera],
+  cockpitSide: [comm, sensors],
+  bridgeLog: [log],
   graph: [graph],
-  tools: [poses, servos, log],
+  tools: [poses, servos],
 };
