@@ -1,4 +1,26 @@
 <!doctype html>
+<html lang="en">
+<head>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>MILO</title>
-<h1>MILO dashboard — UI lands in Task 9</h1>
+<link rel="stylesheet" href="/static/css/theme.css">
+<link rel="stylesheet" href="/static/css/grid.css">
+</head>
+<body>
+<header id="topbar">
+  <span class="brand">MILO</span>
+  <span id="conn-dot" class="dot" title="connection"></span>
+  <span id="owner-label" class="muted">owner: —</span>
+  <span class="spacer"></span>
+  <button id="btn-control" class="btn">Take Control</button>
+  <button id="btn-stop" class="btn danger">STOP</button>
+  <button id="btn-add" class="btn ghost">+ Card</button>
+  <button id="btn-reset" class="btn ghost" title="Reset layout">⟲</button>
+  <button id="btn-theme" class="btn ghost" title="Toggle theme">◐</button>
+</header>
+<main id="grid"></main>
+<div id="add-menu" class="menu hidden"></div>
+<script type="module" src="/static/js/main.js"></script>
+</body>
+</html>

@@ -1,0 +1,46 @@
+:root {
+  --bg: #fafafa; --surface: #ffffff; --ink: #111111; --muted: #777777;
+  --line: #dddddd; --ok: #1a7f37; --danger: #c0392b;
+  --font: system-ui, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+:root[data-theme="dark"] {
+  --bg: #0d0d0d; --surface: #161616; --ink: #f2f2f2; --muted: #8a8a8a;
+  --line: #2c2c2c; --ok: #2ecc71; --danger: #e74c3c;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; }
+body { background: var(--bg); color: var(--ink); font: 14px/1.45 var(--font); }
+#topbar {
+  position: sticky; top: 0; z-index: 50; display: flex; align-items: center;
+  gap: 10px; padding: 8px 14px; background: var(--surface);
+  border-bottom: 1px solid var(--line);
+}
+.brand { font-weight: 700; letter-spacing: 0.18em; }
+.spacer { flex: 1; }
+.muted { color: var(--muted); }
+.dot { width: 9px; height: 9px; border-radius: 50%; background: var(--danger); display: inline-block; }
+.dot.live { background: var(--ok); }
+.btn {
+  font: inherit; color: var(--ink); background: var(--surface);
+  border: 1px solid var(--ink); border-radius: 4px; padding: 5px 12px; cursor: pointer;
+}
+.btn:hover { background: var(--ink); color: var(--surface); }
+.btn.danger { border-color: var(--danger); color: var(--danger); }
+.btn.danger:hover { background: var(--danger); color: #fff; }
+.btn.ghost { border-color: var(--line); }
+.btn.active { background: var(--ink); color: var(--surface); }
+input, select, textarea {
+  font: inherit; color: var(--ink); background: var(--bg);
+  border: 1px solid var(--line); border-radius: 4px; padding: 4px 8px;
+}
+input[type="range"] { padding: 0; }
+.menu {
+  position: fixed; top: 48px; right: 14px; background: var(--surface);
+  border: 1px solid var(--line); border-radius: 6px; padding: 6px; z-index: 60;
+  display: flex; flex-direction: column; gap: 4px; min-width: 160px;
+}
+.menu.hidden { display: none; }
+.menu button { text-align: left; border: none; background: none; color: var(--ink);
+  padding: 6px 10px; cursor: pointer; font: inherit; border-radius: 4px; }
+.menu button:hover { background: var(--bg); }
+canvas { display: block; }
