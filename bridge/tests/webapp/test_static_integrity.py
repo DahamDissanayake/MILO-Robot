@@ -18,6 +18,12 @@ def test_registry_imports_exist():
         assert (STATIC / "js" / ref).exists(), f"registry.js imports missing {ref}"
 
 
+def test_login_page_references_exist():
+    html = (STATIC / "login.html").read_text(encoding="utf-8")
+    for ref in re.findall(r'(?:href|src)="/static/([^"]+)"', html):
+        assert (STATIC / ref).exists(), f"login.html references missing {ref}"
+
+
 def test_shell_files_exist():
     for f in ["index.html", "css/theme.css", "css/grid.css", "js/main.js",
               "js/registry.js", "js/bus.js", "js/grid.js",

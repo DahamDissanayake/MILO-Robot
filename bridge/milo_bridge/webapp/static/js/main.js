@@ -28,5 +28,9 @@ bus.on("control", (m) => {
 });
 btnControl.onclick = () => bus.send({ t: "control", take: !bus.controlled });
 document.getElementById("btn-stop").onclick = () => bus.send({ t: "stop" });
+document.getElementById("btn-logout").onclick = async () => {
+  await fetch("/api/logout", { method: "POST" });
+  location.href = "/login";
+};
 
 initGrid(document.getElementById("grid"), cards, bus);
