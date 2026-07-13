@@ -46,3 +46,14 @@ async def test_index_served():
         assert "MILO" in await resp.text()
     finally:
         await client.close()
+
+
+async def test_api_404_returns_json_error():
+    client = await _client(make_deps())
+    try:
+        resp = await client.get("/api/nonexistent")
+        assert resp.status == 404
+        data = await resp.json()
+        assert "error" in data
+    finally:
+        await client.close()

@@ -30,7 +30,7 @@ def pick_port(preferred: int, port_free=_port_free) -> int:
 
 
 async def start_web(deps) -> None:
-    """Run the dashboard forever. Exceptions are logged, never propagated."""
+    """Start the dashboard server; logs and swallows any startup failure."""
     try:
         app = create_app(deps)
         port = pick_port(deps.config.web_port)

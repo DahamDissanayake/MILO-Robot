@@ -38,3 +38,7 @@ include = ["milo_bridge*"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
+filterwarnings = [
+    # string app-keys are the webapp convention; silence aiohttp's advisory
+    "ignore::aiohttp.web.NotAppKeyWarning",
+]

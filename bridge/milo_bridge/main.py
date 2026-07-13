@@ -72,8 +72,7 @@ async def main() -> None:
         broker=None, media_hub=None, log_buffer=None,
         get_link_state=lambda: "disconnected",
     )
-    if cfg.web_enabled:
-        asyncio.create_task(start_web(web_deps))
+    web_task = asyncio.create_task(start_web(web_deps)) if cfg.web_enabled else None
 
     sleep_controller = SleepController(
         runner, display, loud_rms_threshold=cfg.loud_rms_threshold, servos=servos
@@ -102,6 +101,8 @@ async def main() -> None:
     finally:
         gait_task.cancel()
         backup_task.cancel()
+        if web_task is not None:
+            web_task.cancel()
         graph.close()
 
 
