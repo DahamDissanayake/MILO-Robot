@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from milo_bridge.drivers.audio import FRAME_SAMPLES, pick_fallback_device, resolve_device, rms
+from milo_bridge.drivers.audio import FRAME_SAMPLES, pick_fallback_device, probe_alsa_device, resolve_device, rms
 
 
 def test_rms_empty_is_zero():
@@ -49,3 +49,32 @@ def test_resolve_device_uses_portaudio_default_when_valid():
 
 def test_resolve_device_falls_back_when_no_default():
     assert resolve_device(None, default_index=-1, devices=DEVICES, min_input=2) == 1
+
+
+def test_probe_alsa_device_finds_first_accepted_card():
+    def check(name: str) -> None:
+        if name != "plughw:3,0":
+            raise RuntimeError("unsupported")
+
+    assert probe_alsa_device(check) == "plughw:3,0"
+
+
+def test_probe_alsa_device_raises_when_none_accepted():
+    def check(name: str) -> None:
+        raise RuntimeError("unsupported")
+
+    with pytest.raises(LookupError):
+        probe_alsa_device(check)
+
+
+def test_resolve_device_raises_without_probe_when_enumeration_empty():
+    with pytest.raises(LookupError):
+        resolve_device(None, default_index=-1, devices=[], min_input=2)
+
+
+def test_resolve_device_probes_alsa_when_enumeration_empty():
+    def probe(name: str) -> None:
+        if name != "plughw:1,0":
+            raise RuntimeError("unsupported")
+
+    assert resolve_device(None, default_index=-1, devices=[], probe=probe, min_input=2) == "plughw:1,0"

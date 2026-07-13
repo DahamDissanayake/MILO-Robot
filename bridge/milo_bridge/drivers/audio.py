@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import AsyncIterator, Iterable
+from collections.abc import AsyncIterator, Callable, Iterable
 
 import numpy as np
 
@@ -38,18 +38,48 @@ def pick_fallback_device(devices: Iterable[dict], *, min_input: int = 0, min_out
     raise LookupError("no ALSA device with the required channels")
 
 
+def probe_alsa_device(check: Callable[[str], None], max_cards: int = 8) -> str:
+    """First ``plughw:N,0`` (N in 0..max_cards) that ``check`` accepts.
+
+    PortAudio's ALSA hint enumeration (what ``sd.query_devices()`` uses) can
+    come back completely empty on Raspberry Pi OS Lite when no ALSA default
+    is configured -- even though the device opens fine by name, which is why
+    ``arecord -D plughw:0`` still works in that state. Probing names directly
+    sidesteps the broken enumeration instead of trusting its (empty) output.
+    """
+    for card in range(max_cards):
+        name = f"plughw:{card},0"
+        try:
+            check(name)
+        except Exception:
+            continue
+        return name
+    raise LookupError("no ALSA device with the required channels")
+
+
 def resolve_device(
-    explicit: str | int | None, default_index: int, devices: Iterable[dict], **channels: int
+    explicit: str | int | None,
+    default_index: int,
+    devices: Iterable[dict],
+    probe: Callable[[str], None] | None = None,
+    **channels: int,
 ) -> str | int | None:
     """Explicit device wins; else PortAudio's default; else the first capable
-    device. ``default_index`` is -1 when the Pi has no ALSA default configured
-    (see WIRING-GUIDE.md, which verifies mics via an explicit ``plughw:0``)."""
+    device from ``devices``; else (if ``probe`` is given) the first ALSA
+    device name that ``probe`` accepts. ``default_index`` is -1 when the Pi
+    has no ALSA default configured (see WIRING-GUIDE.md, which verifies mics
+    via an explicit ``plughw:0``)."""
     if explicit is not None:
         return explicit
     if default_index != -1:
         return None
-    device = pick_fallback_device(devices, **channels)
-    log.warning("no default ALSA device; falling back to device %d", device)
+    try:
+        device: str | int = pick_fallback_device(devices, **channels)
+    except LookupError:
+        if probe is None:
+            raise
+        device = probe_alsa_device(probe)
+    log.warning("no default ALSA device; falling back to device %r", device)
     return device
 
 
@@ -74,7 +104,12 @@ class AudioIO:
             except RuntimeError:
                 pass  # loop closed mid-shutdown
 
-        device = resolve_device(self._device, sd.default.device[0], sd.query_devices(), min_input=CHANNELS_IN)
+        def probe_input(name: str) -> None:
+            sd.check_input_settings(device=name, channels=CHANNELS_IN, samplerate=SAMPLE_RATE)
+
+        device = resolve_device(
+            self._device, sd.default.device[0], sd.query_devices(), probe=probe_input, min_input=CHANNELS_IN
+        )
         with sd.RawInputStream(
             samplerate=SAMPLE_RATE,
             channels=CHANNELS_IN,
@@ -91,7 +126,13 @@ class AudioIO:
         import sounddevice as sd  # type: ignore
 
         if self._playback is None:
-            device = resolve_device(self._device, sd.default.device[1], sd.query_devices(), min_output=1)
+
+            def probe_output(name: str) -> None:
+                sd.check_output_settings(device=name, channels=1, samplerate=SAMPLE_RATE)
+
+            device = resolve_device(
+                self._device, sd.default.device[1], sd.query_devices(), probe=probe_output, min_output=1
+            )
             self._playback = sd.RawOutputStream(
                 samplerate=SAMPLE_RATE, channels=1, dtype="int16", device=device
             )
