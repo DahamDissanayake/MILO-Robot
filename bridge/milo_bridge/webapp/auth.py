@@ -27,7 +27,7 @@ def verify_password(password: str, stored: str) -> bool:
         salt_hex, hash_hex = stored.split("$")
         salt = bytes.fromhex(salt_hex)
         expected = bytes.fromhex(hash_hex)
+        candidate = hashlib.scrypt(password.encode(), salt=salt, n=_N, r=_R, p=_P, dklen=len(expected))
     except (ValueError, AttributeError):
         return False
-    candidate = hashlib.scrypt(password.encode(), salt=salt, n=_N, r=_R, p=_P, dklen=len(expected))
     return hmac.compare_digest(candidate, expected)

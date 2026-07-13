@@ -30,3 +30,8 @@ def test_hash_format_is_salt_dollar_hash():
 def test_verify_rejects_malformed_stored_value():
     assert not verify_password("anything", "not-a-valid-stored-hash")
     assert not verify_password("anything", "")
+
+
+def test_verify_rejects_empty_hash_segment():
+    assert not verify_password("anything", "$")
+    assert not verify_password("anything", "aa$")
