@@ -20,11 +20,11 @@ This guide covers everything software: preparing the SD card, transferring this 
 4. Choose OS: **Raspberry Pi OS Lite (64-bit)** (Bookworm, under "Raspberry Pi OS (other)"). Lite means no desktop; 64-bit is required for onnxruntime.
 5. Choose storage: your microSD card.
 6. Click Next, then **Edit Settings** when asked to apply OS customisation. This step replaces needing a monitor and keyboard entirely:
-   - General tab: hostname `milo`, username `daham` + a password, WiFi SSID and password (**must be your 2.4 GHz network** — the Zero 2W has no 5 GHz), WiFi country `LK`, locale/timezone.
+   - General tab: hostname `milo`, username `dama` + a password, WiFi SSID and password (**must be your 2.4 GHz network** — the Zero 2W has no 5 GHz), WiFi country `LK`, locale/timezone.
    - Services tab: **enable SSH**, password authentication.
 7. Write and wait for verification, then eject the card.
 
-Note: the username matters. The systemd service file in this repo (`bridge/systemd/milo-bridge.service`) is written for user `daham` with paths under `/home/daham`. If you pick a different username you must edit those lines later.
+Note: the username matters. The systemd service file in this repo (`bridge/systemd/milo-bridge.service`) is written for user `dama` with paths under `/home/dama`. If you pick a different username you must edit those lines later.
 
 ### 1.2 First boot
 
@@ -33,7 +33,7 @@ Note: the username matters. The systemd service file in this repo (`bridge/syste
 3. From your PC (PowerShell or any terminal):
 
 ```powershell
-ssh daham@milo.local
+ssh dama@milo.local
 ```
 
 If `milo.local` does not resolve, find the Pi's IP in your router's client list (or `ping milo.local` after installing Bonjour, or use an app like Fing) and ssh to the IP instead.
@@ -76,7 +76,7 @@ sudo reboot
 
 The `googlevoicehat-soundcard` overlay gives simultaneous mic capture and speaker playback on one card. If it misbehaves during bring-up, the fallback is separate `i2s-mems-mic` style and `max98357a` overlays.
 
-**Exit criterion:** `ssh daham@milo.local` works; `ls /dev/i2c-1` exists; `arecord -l` lists a capture device after the reboot.
+**Exit criterion:** `ssh dama@milo.local` works; `ls /dev/i2c-1` exists; `arecord -l` lists a capture device after the reboot.
 
 ---
 
@@ -113,13 +113,13 @@ git clone https://<TOKEN>@github.com/DahamDissanayake/MILO-Robot.git
 From PowerShell on your PC. `scp` ships with Windows 10/11:
 
 ```powershell
-scp -r D:\Github\MILO-Robot daham@milo.local:/home/daham/MILO-Robot
+scp -r D:\Github\MILO-Robot dama@milo.local:/home/dama/MILO-Robot
 ```
 
 Notes on this method:
 
 - Delete junk before copying to keep it fast: `.venv`, `__pycache__`, `.pytest_cache`, `*.egg-info` folders are not needed on the Pi.
-- Alternatively use **WinSCP** (GUI): connect with SFTP to `milo.local`, user `daham`, and drag the folder across.
+- Alternatively use **WinSCP** (GUI): connect with SFTP to `milo.local`, user `dama`, and drag the folder across.
 - To update later you must re-copy changed files; with Option A it is just `git pull`.
 
 ### Verify the transfer
@@ -206,7 +206,7 @@ Adjust `"servo_trims": [0,0,0,0,0,0,0,0]` — degrees, in channel order (R1, R2,
 sudo cp ~/MILO-Robot/bridge/systemd/milo-bridge.service /etc/systemd/system/
 ```
 
-If your username is not `daham`, edit the copied file first: the `User=` line and the two `/home/daham` paths in `ExecStart`.
+If your username is not `dama`, edit the copied file first: the `User=` line and the two `/home/dama` paths in `ExecStart`.
 
 ```bash
 sudo systemctl daemon-reload
@@ -289,7 +289,7 @@ Training runs on the GPU machine, never on the Pi. The Pi only receives one smal
 pip install -e ".\training[full]"
 python -m milo_training.train_ppo --timesteps 20_000_000 --envs 16
 python -m milo_training.export_onnx training/runs/ppo-milo/final.zip policy.onnx
-scp policy.onnx daham@milo.local:/home/daham/.milo/policy.onnx
+scp policy.onnx dama@milo.local:/home/dama/.milo/policy.onnx
 ```
 
 Then on the Pi:
@@ -321,7 +321,7 @@ Because the packages are installed with `-e` (editable), pure code changes take 
 
 ```powershell
 # from the PC — re-copy only what changed, e.g.
-scp -r D:\Github\MILO-Robot\bridge\milo_bridge daham@milo.local:/home/daham/MILO-Robot/bridge/
+scp -r D:\Github\MILO-Robot\bridge\milo_bridge dama@milo.local:/home/dama/MILO-Robot/bridge/
 ```
 
 then restart the service on the Pi.
@@ -340,8 +340,8 @@ python -m milo_brain
 
 | Thing | Location |
 |---|---|
-| Repo on the Pi | `/home/daham/MILO-Robot` |
-| Python venv on the Pi | `/home/daham/.venvs/milo` |
+| Repo on the Pi | `/home/dama/MILO-Robot` |
+| Python venv on the Pi | `/home/dama/.venvs/milo` |
 | Robot config (trims, fps, thresholds) | `~/.milo/config.json` |
 | Knowledge graph (Milo's memory) | `~/.milo/graph.db` |
 | Gait policy | `~/.milo/policy.onnx` |

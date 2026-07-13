@@ -37,7 +37,7 @@
 - [ ] **0.3 First boot smoke test** — power the bare Pi from a bench 5V supply or USB:
 
 ```bash
-ssh daham@milo.local
+ssh dama@milo.local
 sudo apt update && sudo apt full-upgrade -y
 sudo raspi-config nonint do_i2c 0        # enable I2C
 sudo apt install -y python3-pip python3-venv i2c-tools git

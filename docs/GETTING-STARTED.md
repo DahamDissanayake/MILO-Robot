@@ -121,11 +121,11 @@ The body is 100% the Sesame design — download STLs from [`sesame-robot/hardwar
 
 **Goal:** headless Pi on your WiFi. Do this *before* any wiring so software problems never get confused with hardware problems.
 
-1. ☐ Flash the microSD with **Raspberry Pi OS Lite (64-bit, Bookworm)** using Raspberry Pi Imager. In the imager's settings (gear icon): hostname `milo`, enable SSH, your **2.4 GHz** WiFi SSID/password (the Zero 2W has no 5 GHz), locale/user (`daham`).
+1. ☐ Flash the microSD with **Raspberry Pi OS Lite (64-bit, Bookworm)** using Raspberry Pi Imager. In the imager's settings (gear icon): hostname `milo`, enable SSH, your **2.4 GHz** WiFi SSID/password (the Zero 2W has no 5 GHz), locale/user (`dama`).
 2. ☐ Boot from any 5 V USB supply, wait ~90 s, then from your PC:
 
 ```bash
-ssh daham@milo.local
+ssh dama@milo.local
 sudo apt update && sudo apt full-upgrade -y
 sudo raspi-config nonint do_i2c 0          # enable I2C
 sudo apt install -y python3-pip python3-venv i2c-tools git python3-picamera2
@@ -142,7 +142,7 @@ then `sudo reboot`. (This overlay gives simultaneous mic capture + speaker playb
 
 4. ☐ Solder the 40-pin header to the Pi. Take your time — 40 clean joints, no bridges. Inspect with magnification.
 
-**Exit criterion:** `ssh daham@milo.local` works reliably; header soldered and inspected.
+**Exit criterion:** `ssh dama@milo.local` works reliably; header soldered and inspected.
 
 ---
 
@@ -231,7 +231,7 @@ Checklist:
 **Goal:** every subsystem enumerates and responds, on battery power.
 
 ```bash
-ssh daham@milo.local
+ssh dama@milo.local
 
 # 1 ─ I2C: expect 0x3c (OLED), 0x40 (PCA9685), 0x68 (MPU6050)
 i2cdetect -y 1
@@ -289,7 +289,7 @@ python -m milo_bridge.cli pose wave      # 👋
 
 # then install as a service (starts on boot, restarts on crash)
 sudo cp bridge/systemd/milo-bridge.service /etc/systemd/system/
-# edit the two /home/daham paths inside if your username differs
+# edit the two /home/dama paths inside if your username differs
 sudo systemctl daemon-reload && sudo systemctl enable --now milo-bridge
 journalctl -u milo-bridge -f             # watch it come up
 ```
@@ -344,8 +344,8 @@ Note: **Milo can already walk** — the CPG trot in `bridge/milo_bridge/gait/cpg
 ```bash
 python -m milo_training.train_ppo --timesteps 20_000_000 --envs 16
 python -m milo_training.export_onnx training/runs/ppo-milo/final.zip policy.onnx
-scp policy.onnx daham@milo.local:~/.milo/policy.onnx
-ssh daham@milo.local sudo systemctl restart milo-bridge   # log shows "gait backend: policy"
+scp policy.onnx dama@milo.local:~/.milo/policy.onnx
+ssh dama@milo.local sudo systemctl restart milo-bridge   # log shows "gait backend: policy"
 ```
 
 4. ☐ Test on carpet and smooth floor. When it stumbles: adjust the randomization ranges / measured lag in `env.py`, retrain, redeploy. Film every attempt for the dev-log — the fail compilation is half the fun.

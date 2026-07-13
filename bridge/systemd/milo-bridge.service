@@ -5,8 +5,8 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-User=daham
-ExecStart=/home/daham/.venvs/milo/bin/python -m milo_bridge.main
+User=dama
+ExecStart=/home/dama/.venvs/milo/bin/python -m milo_bridge.main
 Restart=always
 RestartSec=3
 AmbientCapabilities=CAP_NET_BIND_SERVICE

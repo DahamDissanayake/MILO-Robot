@@ -74,11 +74,11 @@ The body is 100% the Sesame design. Print settings: PLA/PLA+, 8–10% infill, 2 
 
 ### 3.1 Flash and boot
 
-- [ ] Flash the microSD with Raspberry Pi OS Lite (64-bit, Bookworm) using Raspberry Pi Imager. In imager settings: hostname `milo`, enable SSH, 2.4 GHz WiFi SSID/password (the Zero 2W has no 5 GHz), user `daham`.
+- [ ] Flash the microSD with Raspberry Pi OS Lite (64-bit, Bookworm) using Raspberry Pi Imager. In imager settings: hostname `milo`, enable SSH, 2.4 GHz WiFi SSID/password (the Zero 2W has no 5 GHz), user `dama`.
 - [ ] Boot from a bench 5 V USB supply, wait ~90 s, then verify:
 
 ```bash
-ssh daham@milo.local
+ssh dama@milo.local
 sudo apt update && sudo apt full-upgrade -y
 sudo raspi-config nonint do_i2c 0
 sudo apt install -y python3-pip python3-venv i2c-tools git python3-picamera2
@@ -99,7 +99,7 @@ Fallback if this overlay misbehaves later: separate `i2s-mems-mic` style capture
 
 - [ ] Solder the 40-pin header to the Pi. 40 clean joints, no bridges. Inspect with magnification. This is the first soldering task of the project; take it slowly.
 
-**Exit criterion:** `ssh daham@milo.local` works reliably; header soldered and inspected.
+**Exit criterion:** `ssh dama@milo.local` works reliably; header soldered and inspected.
 
 ---
 
@@ -225,7 +225,7 @@ I2C addresses that must appear on the bus: PCA9685 `0x40`, SSD1306 `0x3C`, MPU60
 **Goal:** every subsystem enumerates and responds, on battery power, with the body still open for rework.
 
 ```bash
-ssh daham@milo.local
+ssh dama@milo.local
 
 # 1 - I2C: expect 0x3c (OLED), 0x40 (PCA9685), 0x68 (MPU6050)
 i2cdetect -y 1
@@ -331,8 +331,8 @@ Verification matrix:
 pip install -e "./training[full]"
 python -m milo_training.train_ppo --timesteps 20_000_000 --envs 16
 python -m milo_training.export_onnx training/runs/ppo-milo/final.zip policy.onnx
-scp policy.onnx daham@milo.local:~/.milo/policy.onnx
-ssh daham@milo.local sudo systemctl restart milo-bridge
+scp policy.onnx dama@milo.local:~/.milo/policy.onnx
+ssh dama@milo.local sudo systemctl restart milo-bridge
 ```
 
 - [ ] Test on carpet and smooth floor. On failure: adjust domain-randomization ranges / measured lag, retrain, redeploy. Film every attempt for the dev-log.
