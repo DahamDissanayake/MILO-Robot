@@ -91,7 +91,7 @@ class FakeImu:
     returns a real `ImuState` (a dataclass, not a plain dict)."""
 
     def update(self) -> ImuState:
-        return ImuState(pitch=1.0, roll=-2.0, gyro=(0.1, 0.2, 0.5), accel=(0.01, -0.02, 0.98))
+        return ImuState(pitch=1.0, roll=-2.0, yaw=15.0, gyro=(0.1, 0.2, 0.5), accel=(0.01, -0.02, 0.98))
 
 
 def make_deps(**overrides) -> WebDeps:

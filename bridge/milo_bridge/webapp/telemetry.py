@@ -52,17 +52,20 @@ def _mem_percent() -> float | None:
 _START = time.monotonic()
 
 
+def imu_snapshot(deps) -> dict | None:
+    if deps.imu is None:
+        return None
+    try:
+        state = deps.imu.update()
+        return {
+            "pitch": state.pitch, "roll": state.roll, "yaw": state.yaw,
+            "gyro": list(state.gyro), "accel": list(state.accel),
+        }
+    except Exception:
+        return None
+
+
 def collect_telemetry(deps) -> dict:
-    imu = None
-    if deps.imu is not None:
-        try:
-            state = deps.imu.update()
-            imu = {
-                "pitch": state.pitch, "roll": state.roll,
-                "gyro": list(state.gyro), "accel": list(state.accel),
-            }
-        except Exception:
-            imu = None
     return {
         "t": "telemetry",
         "cpu_percent": _cpu_percent(),
@@ -72,5 +75,5 @@ def collect_telemetry(deps) -> dict:
         "link": deps.get_link_state(),
         "owner": deps.broker.owner if deps.broker else "none",
         "gait_backend": getattr(deps.gait, "backend", None),
-        "imu": imu,
+        "imu": imu_snapshot(deps),
     }
