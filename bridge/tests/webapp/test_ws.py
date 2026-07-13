@@ -1,0 +1,122 @@
+import asyncio
+import json
+
+import aiohttp
+from aiohttp.test_utils import TestClient, TestServer
+
+from milo_bridge.webapp import create_app
+from milo_bridge.webapp.control import ControlBroker
+from .fakes import make_deps
+
+
+async def _ws(deps):
+    app = create_app(deps)
+    client = TestClient(TestServer(app))
+    await client.start_server()
+    ws = await client.ws_connect("/ws")
+    return client, ws
+
+
+async def _recv_json_until(ws, t, tries=10, timeout=2.0):
+    for _ in range(tries):
+        msg = await asyncio.wait_for(ws.receive(), timeout)
+        if msg.type == aiohttp.WSMsgType.TEXT:
+            data = json.loads(msg.data)
+            if data.get("t") == t:
+                return data
+    raise AssertionError(f"no {t!r} message")
+
+
+async def test_take_and_release_control():
+    deps = make_deps(broker=ControlBroker())
+    client, ws = await _ws(deps)
+    try:
+        await ws.send_json({"t": "control", "take": True})
+        data = await _recv_json_until(ws, "control")
+        assert data["owner"] == "web" and data["you"] is True
+        await ws.send_json({"t": "control", "take": False})
+        data = await _recv_json_until(ws, "control")
+        assert data["owner"] == "none" and data["you"] is False
+    finally:
+        await client.close()
+
+
+async def test_gait_denied_without_control():
+    deps = make_deps(broker=ControlBroker())
+    client, ws = await _ws(deps)
+    try:
+        await ws.send_json({"t": "gait", "vx": 1, "vy": 0, "yaw": 0})
+        data = await _recv_json_until(ws, "err")
+        assert data["error"] == "not-controlling"
+        assert deps.gait.vel == (0.0, 0.0, 0.0)
+    finally:
+        await client.close()
+
+
+async def test_gait_accepted_with_control():
+    deps = make_deps(broker=ControlBroker())
+    client, ws = await _ws(deps)
+    try:
+        await ws.send_json({"t": "control", "take": True})
+        await _recv_json_until(ws, "control")
+        await ws.send_json({"t": "gait", "vx": 0.5, "vy": 0, "yaw": 0})
+        await _recv_json_until(ws, "ack")
+        assert deps.gait.vel[0] == 0.5
+    finally:
+        await client.close()
+
+
+async def test_stop_without_control():
+    deps = make_deps(broker=ControlBroker())
+    deps.gait.vel = (1.0, 0.0, 0.0)
+    client, ws = await _ws(deps)
+    try:
+        await ws.send_json({"t": "stop"})
+        await _recv_json_until(ws, "ack")
+        assert deps.gait.vel == (0.0, 0.0, 0.0)
+    finally:
+        await client.close()
+
+
+async def test_disconnect_releases_control():
+    deps = make_deps(broker=ControlBroker())
+    client, ws = await _ws(deps)
+    await ws.send_json({"t": "control", "take": True})
+    await _recv_json_until(ws, "control")
+    await ws.close()
+    await client.close()
+    assert deps.broker.owner == "none"
+
+
+async def test_intercom_binary_plays_when_controlling():
+    from milo_bridge.webapp.media_hub import MediaHub
+    deps = make_deps(broker=ControlBroker(), media_hub=MediaHub())
+    client, ws = await _ws(deps)
+    try:
+        await ws.send_json({"t": "control", "take": True})
+        await _recv_json_until(ws, "control")
+        await ws.send_bytes(b"\x02" + b"pcm-data")
+        for _ in range(20):
+            if deps.audio.played:
+                break
+            await asyncio.sleep(0.05)
+        assert deps.audio.played == [b"pcm-data"]
+    finally:
+        await client.close()
+
+
+async def test_telemetry_pushed():
+    deps = make_deps(broker=ControlBroker())
+    client, ws = await _ws(deps)
+    try:
+        # Per-receive timeout bumped from 2.0s to 2.5s: the telemetry loop's
+        # clock starts at server on_startup (before this ws connects and
+        # receives "hello"), so a 2.0s deadline measured from "hello" races
+        # the 2.0s telemetry tick and loses by a few ms almost every time
+        # (confirmed deterministically, not flaky-by-chance). 2.5s gives
+        # slack without shortening the implementation's TELEMETRY_S.
+        data = await _recv_json_until(ws, "telemetry", tries=30, timeout=2.5)
+        assert data["gait_backend"] == "cpg"
+        assert data["owner"] == "none"
+    finally:
+        await client.close()

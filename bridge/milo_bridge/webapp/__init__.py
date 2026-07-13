@@ -37,6 +37,8 @@ def create_app(deps: WebDeps) -> web.Application:
     app["deps"] = deps
     app["ws_clients"] = set()
     register_routes(app)
+    from .ws import register_ws
+    register_ws(app)
     app.router.add_get("/", _index)
     app.router.add_static("/static", STATIC_DIR)
     return app
