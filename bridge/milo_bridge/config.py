@@ -36,6 +36,8 @@ class BridgeConfig:
     # Web dashboard
     web_enabled: bool = True
     web_port: int = 80
+    web_username: str = "dama"
+    web_password_hash: str = ""   # scrypt "<salt_hex>$<hash_hex>"; seeded on first load()
 
     @property
     def paired_path(self) -> Path:
@@ -54,6 +56,10 @@ class BridgeConfig:
             cfg = cls()
         if not cfg.robot_id:
             cfg.robot_id = f"milo-{uuid.uuid4().hex[:12]}"
+            cfg.save(path)
+        if not cfg.web_password_hash:
+            from .webapp.auth import hash_password
+            cfg.web_password_hash = hash_password("MILO@gate")
             cfg.save(path)
         return cfg
 
