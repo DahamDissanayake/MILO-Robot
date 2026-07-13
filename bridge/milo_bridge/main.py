@@ -74,12 +74,15 @@ async def main() -> None:
     broker = ControlBroker()
     hub = MediaHub(camera=camera, audio=audio, on_audio_level=sleep_controller.handle_audio_level)
 
+    manager = None
+
     web_deps = WebDeps(
         config=cfg, runner=runner, display=display, servos=servos,
         camera=camera, audio=audio, imu=imu, gait=gait,
         graph_api=graph_api, graph_store=graph,
         broker=broker, media_hub=hub, log_buffer=None,
-        get_link_state=lambda: manager.link_state,
+        # manager is assigned below; guard the startup window before it exists
+        get_link_state=lambda: manager.link_state if manager is not None else "disconnected",
     )
     web_task = asyncio.create_task(start_web(web_deps)) if cfg.web_enabled else None
 
