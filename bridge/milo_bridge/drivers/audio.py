@@ -9,9 +9,12 @@ frames; playback mono s16le @ 16 kHz (TTS from the brain).
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncIterator
+import logging
+from collections.abc import AsyncIterator, Iterable
 
 import numpy as np
+
+log = logging.getLogger(__name__)
 
 SAMPLE_RATE = 16_000
 CHANNELS_IN = 2
@@ -25,6 +28,29 @@ def rms(pcm: bytes) -> float:
         return 0.0
     samples = np.frombuffer(pcm, dtype=np.int16).astype(np.float64)
     return float(np.sqrt(np.mean(samples * samples)))
+
+
+def pick_fallback_device(devices: Iterable[dict], *, min_input: int = 0, min_output: int = 0) -> int:
+    """First device with enough channels, in PortAudio's enumeration order."""
+    for index, info in enumerate(devices):
+        if info["max_input_channels"] >= min_input and info["max_output_channels"] >= min_output:
+            return index
+    raise LookupError("no ALSA device with the required channels")
+
+
+def resolve_device(
+    explicit: str | int | None, default_index: int, devices: Iterable[dict], **channels: int
+) -> str | int | None:
+    """Explicit device wins; else PortAudio's default; else the first capable
+    device. ``default_index`` is -1 when the Pi has no ALSA default configured
+    (see WIRING-GUIDE.md, which verifies mics via an explicit ``plughw:0``)."""
+    if explicit is not None:
+        return explicit
+    if default_index != -1:
+        return None
+    device = pick_fallback_device(devices, **channels)
+    log.warning("no default ALSA device; falling back to device %d", device)
+    return device
 
 
 class AudioIO:
@@ -48,12 +74,13 @@ class AudioIO:
             except RuntimeError:
                 pass  # loop closed mid-shutdown
 
+        device = resolve_device(self._device, sd.default.device[0], sd.query_devices(), min_input=CHANNELS_IN)
         with sd.RawInputStream(
             samplerate=SAMPLE_RATE,
             channels=CHANNELS_IN,
             dtype="int16",
             blocksize=FRAME_SAMPLES,
-            device=self._device,
+            device=device,
             callback=on_block,
         ):
             while True:
@@ -64,8 +91,9 @@ class AudioIO:
         import sounddevice as sd  # type: ignore
 
         if self._playback is None:
+            device = resolve_device(self._device, sd.default.device[1], sd.query_devices(), min_output=1)
             self._playback = sd.RawOutputStream(
-                samplerate=SAMPLE_RATE, channels=1, dtype="int16", device=self._device
+                samplerate=SAMPLE_RATE, channels=1, dtype="int16", device=device
             )
             self._playback.start()
         self._playback.write(pcm)
