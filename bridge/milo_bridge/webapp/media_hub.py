@@ -14,13 +14,19 @@ log = logging.getLogger(__name__)
 
 QUEUE_SIZE = 2
 
+# Audio frames are 20ms each; a queue this shallow drops a frame (an
+# audible click in the browser) on any momentary hiccup in the per-client
+# send loop. Deeper queue = more jitter tolerance at the cost of latency.
+AUDIO_QUEUE_SIZE = 10
+
 
 class Fanout:
     def __init__(self, gen_factory: Callable[[], AsyncIterator[bytes]], name: str,
-                 on_item: Callable[[bytes], None] | None = None):
+                 on_item: Callable[[bytes], None] | None = None, queue_size: int = QUEUE_SIZE):
         self._factory = gen_factory
         self._name = name
         self._on_item = on_item
+        self._queue_size = queue_size
         self._subs: set[asyncio.Queue] = set()
         self._task: asyncio.Task | None = None
 
@@ -29,7 +35,7 @@ class Fanout:
         return self._task is not None and not self._task.done()
 
     def subscribe(self) -> asyncio.Queue:
-        q: asyncio.Queue = asyncio.Queue(maxsize=QUEUE_SIZE)
+        q: asyncio.Queue = asyncio.Queue(maxsize=self._queue_size)
         self._subs.add(q)
         if not self.active:
             self._start_task()
@@ -96,6 +102,6 @@ class MediaHub:
                 if on_audio_level is not None:
                     from ..drivers.audio import rms
                     on_audio_level(rms(chunk))
-            self.audio = Fanout(audio.capture_frames, "audio", on_item=_level)
+            self.audio = Fanout(audio.capture_frames, "audio", on_item=_level, queue_size=AUDIO_QUEUE_SIZE)
         else:
             self.audio = None
