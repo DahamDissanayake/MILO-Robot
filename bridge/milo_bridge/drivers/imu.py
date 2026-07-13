@@ -28,6 +28,7 @@ class ImuState:
     roll: float          # degrees
     pitch: float         # degrees
     gyro: tuple[float, float, float]  # deg/s (x, y, z)
+    accel: tuple[float, float, float]  # g (x, y, z)
 
 
 def accel_to_roll_pitch(ax: float, ay: float, az: float) -> tuple[float, float]:
@@ -109,4 +110,4 @@ class Mpu6050:
         self._last_t = now
         accel, gyro = self.read_raw()
         roll, pitch = self._filter.update(accel, gyro, dt)
-        return ImuState(roll=roll, pitch=pitch, gyro=gyro)
+        return ImuState(roll=roll, pitch=pitch, gyro=gyro, accel=accel)
