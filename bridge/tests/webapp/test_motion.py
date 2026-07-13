@@ -75,8 +75,8 @@ async def test_stop_always_allowed():
 
 def test_list_faces_groups_frames():
     names = list_faces()
-    assert "dance" in names and "dance_1" not in names
-    assert "cute" in names
+    assert "idle_blink" in names and "idle_blink_1" not in names
+    assert "happy" in names
 
 
 async def test_servo_batch_requires_control():

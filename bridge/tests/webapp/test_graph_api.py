@@ -50,6 +50,6 @@ async def test_poses_and_faces_endpoints():
         poses = await (await client.get("/api/poses")).json()
         assert "walk_forward" in poses["poses"] or len(poses["poses"]) > 0
         faces = await (await client.get("/api/faces")).json()
-        assert "cute" in faces["faces"]
+        assert "happy" in faces["faces"]
     finally:
         await client.close()
