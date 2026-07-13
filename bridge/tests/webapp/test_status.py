@@ -35,7 +35,10 @@ async def test_status_reports_real_imu_state_as_json_serializable_dict():
     client = await _client(deps)
     try:
         data = await (await client.get("/api/status")).json()
-        assert data["imu"] == {"pitch": 1.0, "roll": -2.0, "gyro": [0.1, 0.2, 0.5]}
+        assert data["imu"] == {
+            "pitch": 1.0, "roll": -2.0,
+            "gyro": [0.1, 0.2, 0.5], "accel": [0.01, -0.02, 0.98],
+        }
     finally:
         await client.close()
 
