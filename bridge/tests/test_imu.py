@@ -90,3 +90,13 @@ def test_update_returns_state():
     assert state.gyro == (0.0, 0.0, 0.0)
     assert math.isclose(state.roll, 0.0)
     assert state.accel == (0.0, 0.0, 1.0)
+    assert math.isclose(state.yaw, 0.0)
+
+
+def test_yaw_accumulates_from_gyro_z():
+    times = iter([0.0, 0.5])
+    bus = FakeBus([block(gz=131)] * 5)  # 131 raw -> 1.0 deg/s (GYRO_LSB_PER_DPS)
+    imu = Mpu6050(bus, clock=lambda: next(times))
+    imu.update()          # first call: dt defaults to 0.01 -> yaw = 0.01
+    state = imu.update()  # second call: dt = 0.5 - 0.0 = 0.5 -> yaw = 0.01 + 0.5 = 0.51
+    assert math.isclose(state.yaw, 0.51)

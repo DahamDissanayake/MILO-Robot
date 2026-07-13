@@ -27,6 +27,7 @@ def _s16(hi: int, lo: int) -> int:
 class ImuState:
     roll: float          # degrees
     pitch: float         # degrees
+    yaw: float            # degrees, cumulative since calibration (relative — no magnetometer)
     gyro: tuple[float, float, float]  # deg/s (x, y, z)
     accel: tuple[float, float, float]  # g (x, y, z)
 
@@ -69,6 +70,7 @@ class Mpu6050:
         self._clock = clock
         self._filter = ComplementaryFilter()
         self._gyro_bias = (0.0, 0.0, 0.0)
+        self._yaw = 0.0
         self._last_t: float | None = None
         self._bus.write_byte_data(self._address, REG_PWR_MGMT_1, 0)  # wake from sleep
 
@@ -97,6 +99,7 @@ class Mpu6050:
     def calibrate_gyro(self, samples: int = 200) -> None:
         """Average gyro at rest to find bias. Robot must be still (~2 s at 100 Hz)."""
         self._gyro_bias = (0.0, 0.0, 0.0)
+        self._yaw = 0.0
         total = [0.0, 0.0, 0.0]
         for _ in range(samples):
             _, gyro = self.read_raw()
@@ -110,4 +113,5 @@ class Mpu6050:
         self._last_t = now
         accel, gyro = self.read_raw()
         roll, pitch = self._filter.update(accel, gyro, dt)
-        return ImuState(roll=roll, pitch=pitch, gyro=gyro, accel=accel)
+        self._yaw += gyro[2] * dt
+        return ImuState(roll=roll, pitch=pitch, yaw=self._yaw, gyro=gyro, accel=accel)
