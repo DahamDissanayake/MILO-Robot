@@ -138,6 +138,20 @@ async def test_telemetry_pushed():
         await client.close()
 
 
+async def test_imu_pushed():
+    deps = make_deps(broker=ControlBroker())
+    client, ws = await _ws(deps)
+    try:
+        data = await _recv_json_until(ws, "imu", tries=30, timeout=1.0)
+        assert data["pitch"] == 1.0
+        assert data["roll"] == -2.0
+        assert data["yaw"] == 15.0
+        assert data["gyro"] == [0.1, 0.2, 0.5]
+        assert data["accel"] == [0.01, -0.02, 0.98]
+    finally:
+        await client.close()
+
+
 async def test_servo_batch_dispatch():
     deps = make_deps(broker=ControlBroker())
     client, ws = await _ws(deps)

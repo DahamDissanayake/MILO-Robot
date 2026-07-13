@@ -10,11 +10,12 @@ import uuid
 from aiohttp import WSMsgType, web
 
 from .motion import MotionService
-from .telemetry import collect_telemetry
+from .telemetry import collect_telemetry, imu_snapshot
 
 log = logging.getLogger(__name__)
 
 TELEMETRY_S = 2.0
+IMU_S = 0.1
 EXPIRY_S = 1.0
 AUDIO_OUT = 0x01
 AUDIO_IN = 0x02
@@ -159,6 +160,16 @@ async def _telemetry_loop(app: web.Application) -> None:
             broadcast_json(app, collect_telemetry(app["deps"]))
 
 
+async def _imu_loop(app: web.Application) -> None:
+    while True:
+        await asyncio.sleep(IMU_S)
+        deps = app["deps"]
+        if deps.imu is not None and app["ws_clients"]:
+            snap = imu_snapshot(deps)
+            if snap is not None:
+                broadcast_json(app, {"t": "imu", **snap})
+
+
 async def _expiry_loop(app: web.Application) -> None:
     deps = app["deps"]
     while True:
@@ -171,6 +182,7 @@ async def _on_startup(app: web.Application) -> None:
     app["motion"].start()
     app["bg_tasks"] = [
         asyncio.ensure_future(_telemetry_loop(app)),
+        asyncio.ensure_future(_imu_loop(app)),
         asyncio.ensure_future(_expiry_loop(app)),
     ]
 
