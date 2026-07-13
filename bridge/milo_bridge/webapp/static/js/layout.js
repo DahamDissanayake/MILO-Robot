@@ -6,6 +6,7 @@ export function initLayout(registry, bus) {
   const graphZone = document.getElementById("memory-graph");
   const drawer = document.getElementById("tools-drawer");
   const backdrop = document.getElementById("drawer-backdrop");
+  const drawerClose = document.getElementById("drawer-close");
 
   function mountInto(container, panels) {
     for (const panel of panels) {
@@ -36,6 +37,7 @@ export function initLayout(registry, bus) {
     backdrop.classList.toggle("open", open);
   }
   backdrop.onclick = () => setOpen(false);
+  drawerClose.onclick = () => setOpen(false);
 
   return { toggleTools: () => setOpen(!open) };
 }

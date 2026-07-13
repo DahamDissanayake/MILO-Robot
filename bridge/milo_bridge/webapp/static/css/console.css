@@ -76,6 +76,7 @@
 }
 #tools-drawer.open { transform: translateX(0); }
 #tools-drawer .panel + .panel { margin-top: 18px; }
+#drawer-close { display: block; margin-bottom: 16px; }
 
 /* responsive */
 @media (max-width: 900px) {

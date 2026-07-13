@@ -39,5 +39,5 @@ input, select, textarea {
   font: inherit; color: var(--ink); background: var(--bg);
   border: 1px solid var(--line); border-radius: 4px; padding: 4px 8px;
 }
-input[type="range"] { padding: 0; }
+input[type="range"] { padding: 0; width: 100%; }
 canvas { display: block; }
