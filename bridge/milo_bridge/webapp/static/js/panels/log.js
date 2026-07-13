@@ -1,5 +1,5 @@
 export default {
-  id: "log", title: "Bridge Log", w: 8, h: 3,
+  id: "log", title: "Bridge Log",
   mount(el, { bus }) {
     el.innerHTML = `<pre id="loglines" style="margin:0;font-size:11px;white-space:pre-wrap"></pre>`;
     const pre = el.querySelector("#loglines");

@@ -1,13 +1,15 @@
-// Adding a card = create js/cards/<name>.js + add one line here.
-import status from "./cards/status.js";
-import log from "./cards/log.js";
-import camera from "./cards/camera.js";
-import ears from "./cards/ears.js";
-import voice from "./cards/voice.js";
-import move from "./cards/move.js";
-import poses from "./cards/poses.js";
-import servos from "./cards/servos.js";
-import sensors from "./cards/sensors.js";
-import graph from "./cards/graph.js";
+// Adding a panel = create js/panels/<name>.js + add it to the right zone below.
+import camera from "./panels/camera.js";
+import move from "./panels/move.js";
+import sensors from "./panels/sensors.js";
+import graph from "./panels/graph.js";
+import poses from "./panels/poses.js";
+import servos from "./panels/servos.js";
+import log from "./panels/log.js";
 
-export const cards = [status, camera, move, ears, voice, poses, servos, sensors, graph, log];
+export const registry = {
+  cockpitCenter: [camera, move],
+  cockpitSide: [sensors],
+  graph: [graph],
+  tools: [poses, servos, log],
+};

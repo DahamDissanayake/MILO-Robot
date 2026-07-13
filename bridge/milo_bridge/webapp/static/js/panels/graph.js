@@ -1,6 +1,5 @@
-// Force-directed canvas view of the knowledge graph with text search.
 export default {
-  id: "graph", title: "Memory Graph", w: 8, h: 5,
+  id: "graph", title: "Memory Graph",
   mount(el, { bus }) {
     el.innerHTML = `
       <div style="display:flex;gap:6px;margin-bottom:8px">
@@ -26,7 +25,6 @@ export default {
     }
 
     function tick() {
-      // physics: repulsion + springs + centering
       const W = cv.width, H = cv.height;
       for (const a of nodes) {
         a.vx += (W / 2 - a.x) * 0.001; a.vy += (H / 2 - a.y) * 0.001;

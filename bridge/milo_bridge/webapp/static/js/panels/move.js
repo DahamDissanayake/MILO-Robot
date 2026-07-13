@@ -1,7 +1,7 @@
 const SEND_MS = 100;
 
 export default {
-  id: "move", title: "Move", w: 4, h: 4, needsControl: true,
+  id: "move", title: "Move", needsControl: true,
   mount(el, { bus }) {
     el.innerHTML = `
       <div style="display:flex;gap:14px;height:100%">
@@ -29,7 +29,6 @@ export default {
       return { vx: vec.vx * k, vy: vec.vy * k, yaw: vec.yaw * 2 * k };
     };
 
-    // joystick
     pad.addEventListener("pointerdown", (e) => {
       pad.setPointerCapture(e.pointerId);
       const rect = pad.getBoundingClientRect();
@@ -51,7 +50,6 @@ export default {
       move(e);
     });
 
-    // keyboard
     const keys = { w: [1,0,0], s: [-1,0,0], a: [0,-1,0], d: [0,1,0], q: [0,0,-1], e: [0,0,1],
       ArrowUp: [1,0,0], ArrowDown: [-1,0,0], ArrowLeft: [0,0,-1], ArrowRight: [0,0,1] };
     const down = new Set();

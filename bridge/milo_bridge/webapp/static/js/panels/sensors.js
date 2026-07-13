@@ -1,5 +1,5 @@
 export default {
-  id: "sensors", title: "Sensors", w: 4, h: 3,
+  id: "sensors", title: "Sensors",
   mount(el, { bus }) {
     el.innerHTML = `
       <canvas id="imu-spark" width="360" height="70" style="width:100%"></canvas>

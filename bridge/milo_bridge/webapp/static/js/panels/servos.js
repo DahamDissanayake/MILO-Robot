@@ -1,7 +1,7 @@
 const SERVOS = ["R1", "R2", "R3", "R4", "L1", "L2", "L3", "L4"];
 
 export default {
-  id: "servos", title: "Servo Test", w: 4, h: 4, needsControl: true,
+  id: "servos", title: "Servo Test", needsControl: true,
   mount(el, { bus }) {
     el.innerHTML = SERVOS.map((s) => `
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
