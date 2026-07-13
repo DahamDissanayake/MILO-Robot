@@ -68,6 +68,34 @@
 .sensor-details canvas { width: 100%; height: 50px; margin-bottom: 10px; }
 .sensor-details .spark-label { font-size: 11px; color: var(--muted); margin-bottom: 2px; }
 
+/* IMU 3D plate — a thin rectangular prism representing the flat-mounted
+   IMU board. Pitch/Roll tiles set --pitch/--roll/--ax/--ay from live
+   telemetry; the Gyro tile integrates raw angular velocity into
+   --pitch/--roll/--yaw itself (see sensors.js). All default to 0 (flat,
+   centered) until the first update. */
+.imu-plate-wrap {
+  height: 64px; margin-top: 4px; display: flex; align-items: center; justify-content: center;
+  perspective: 220px;
+}
+.imu-plate {
+  position: relative; width: 60px; height: 36px; transform-style: preserve-3d;
+  transform:
+    translateX(calc(var(--ax, 0) * 60px))
+    translateY(calc(var(--ay, 0) * -60px))
+    rotateX(-55deg)
+    rotateX(calc(var(--pitch, 0) * 1deg))
+    rotateY(calc(var(--roll, 0) * -1deg))
+    rotateZ(calc(var(--yaw, 0) * 1deg));
+}
+#plate-attitude { transition: transform 0.12s linear; }
+.imu-face { position: absolute; top: 0; left: 0; border: 1px solid var(--line); box-sizing: border-box; }
+.imu-face.top   { width: 60px; height: 36px; background: var(--surface); border-radius: 3px; transform: rotateX(90deg) translateZ(4px); }
+.imu-face.front { width: 60px; height: 8px;  background: var(--ok);      transform: rotateY(0deg)   translateZ(18px); opacity: 0.85; }
+.imu-face.back  { width: 60px; height: 8px;  background: var(--line);    transform: rotateY(180deg) translateZ(18px); }
+.imu-face.left  { width: 36px; height: 8px;  background: var(--line);    transform: rotateY(-90deg) translateZ(30px); }
+.imu-face.right { width: 36px; height: 8px;  background: var(--line);    transform: rotateY(90deg)  translateZ(30px); }
+.imu-plate.hot .imu-face.top { border-color: var(--danger); box-shadow: 0 0 8px var(--danger); }
+
 /* bridge log — visible in the main flow, not tucked in the tools drawer */
 #bridge-log { margin: 0 16px 16px; }
 #bridge-log .panel-body { max-height: 220px; overflow-y: auto; }
