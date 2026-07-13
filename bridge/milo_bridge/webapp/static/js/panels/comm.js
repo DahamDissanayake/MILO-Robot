@@ -73,6 +73,7 @@ export default {
       const locked = !bus.controlled;
       [ptt, say, speak].forEach((elm) => elm.classList.toggle("locked-control", locked));
       ptt.disabled = say.disabled = speak.disabled = locked;
+      if (locked) stopTalk();
     }
     applyGate();
     const offControl = bus.on("control", applyGate);
