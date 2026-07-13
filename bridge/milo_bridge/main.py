@@ -53,6 +53,10 @@ async def main() -> None:
 
     # Optional hardware/components.
     imu = _optional(Mpu6050.from_hardware, "IMU")
+    if imu is not None:
+        log.info("calibrating IMU gyro bias — keep the robot still")
+        await asyncio.to_thread(imu.calibrate_gyro)
+        log.info("IMU gyro calibration complete")
     camera = _optional(lambda: CameraStreamer.from_hardware(fps=cfg.video_fps), "camera")
     audio = _optional(AudioIO, "audio")
 
