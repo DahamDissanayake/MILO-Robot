@@ -42,6 +42,26 @@ async def _auth_middleware(request: web.Request, handler):
     raise web.HTTPSeeOther(location="/login")
 
 
+_ALWAYS_REVALIDATE_PATHS = {"/", "/login"}
+
+
+@web.middleware
+async def _no_cache_static_middleware(request: web.Request, handler):
+    """Force the HTML shell and every /static/ asset to revalidate with the
+    server before reuse. aiohttp's static/FileResponse handlers already set
+    ETag/Last-Modified, so a revalidation is a cheap 304 — but with no
+    Cache-Control header at all, browsers apply their own heuristic
+    freshness lifetime and can keep serving a fully stale JS module
+    (importing a since-deleted panel file from a prior deploy) with no
+    server round trip and no visible error, silently blanking the page.
+    `no-cache` still lets the browser cache the body; it just can't skip
+    asking first."""
+    resp = await handler(request)
+    if request.path in _ALWAYS_REVALIDATE_PATHS or request.path.startswith("/static/"):
+        resp.headers["Cache-Control"] = "no-cache"
+    return resp
+
+
 @web.middleware
 async def _json_error_middleware(request: web.Request, handler):
     """Return JSON errors for /api/* requests instead of aiohttp's HTML pages."""
@@ -59,7 +79,7 @@ async def _json_error_middleware(request: web.Request, handler):
 def create_app(deps: WebDeps) -> web.Application:
     app = web.Application(
         client_max_size=2 * 1024 * 1024,
-        middlewares=[_auth_middleware, _json_error_middleware],
+        middlewares=[_auth_middleware, _no_cache_static_middleware, _json_error_middleware],
     )
     app["deps"] = deps
     app["ws_clients"] = set()
