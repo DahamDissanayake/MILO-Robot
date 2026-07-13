@@ -10,9 +10,12 @@ memory graph, and the bridge's own log, all in one page.
 The dashboard is a single-page app served by `milo-bridge` itself (the same
 process that runs the gait engine and drivers) over a WebSocket-plus-REST API
 on `bridge/milo_bridge/webapp/`. It needs no build step — it's hand-written
-ES modules loaded straight from `static/`, and no accounts or brain pairing
-are required to look at it: **observation is always free**. Taking the
-robot's actuators away from the brain (driving it, posing it, talking through
+ES modules loaded straight from `static/`. Every route is gated behind a
+login page (see §7's smoke checklist), so you do need to sign in once per
+browser before you can see anything at all — but once you're in, **observation
+is still always free**: no card that only watches (camera, ears, sensors,
+status, logs, memory graph) requires anything beyond being logged in. Taking
+the robot's actuators away from the brain (driving it, posing it, talking through
 it) requires explicitly clicking **Take Control**, and one physical **STOP**
 button is always live, for anyone, in any tab, whether or not they hold
 control. The page is a responsive drag-and-resize card grid — arrange it
@@ -303,3 +306,19 @@ the webapp, before considering it done:
       ```
       then search for `ada` in the Memory Graph card and confirm the seeded
       node appears with the right label.
+- [ ] Open `http://localhost:8080` logged out (clear cookies or use a
+      private window) → redirected to `/login`. Enter the wrong password
+      → inline error, still on `/login`. Enter `dama` / `MILO@gate`
+      (the seeded default) → lands on the dashboard. Close and reopen the
+      browser (not just the tab) → logged out again, since the session
+      cookie has no expiry and dies with the browser.
+- [ ] Click **Logout** in the header → back on `/login`; reloading `/`
+      directly stays on `/login` until you sign in again.
+- [ ] On the Servo Test card, drag one servo's slider to make its card
+      taller, or resize the card itself bigger from its corner handle:
+      watch the cards after it in the layout order smoothly slide into
+      their next free slot *while you're still dragging*, not just after
+      you release. No two cards should ever overlap, and there should be
+      no dead gap a card could have filled.
+- [ ] Click **Center All (90°)** on the Servo Test card: all 8 sliders
+      move to 90° together, not in a visible left-to-right sequence.

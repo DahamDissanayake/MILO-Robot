@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MILO — Sign in</title>
+<link rel="stylesheet" href="/static/css/theme.css">
+<style>
+  body { display: flex; align-items: center; justify-content: center; min-height: 100%; }
+  .login-box {
+    width: 280px; padding: 24px; border: 1px solid var(--line);
+    border-radius: 8px; background: var(--surface);
+  }
+  .login-box h1 {
+    font-size: 14px; letter-spacing: 0.18em; text-transform: uppercase;
+    margin: 0 0 18px;
+  }
+  .login-box label { display: block; font-size: 12px; color: var(--muted); margin: 12px 0 4px; }
+  .login-box input { width: 100%; }
+  .login-box button { width: 100%; margin-top: 18px; }
+  #login-error { color: var(--danger); font-size: 12px; min-height: 16px; margin-top: 10px; }
+</style>
+</head>
+<body>
+<div class="login-box">
+  <h1>MILO</h1>
+  <form id="login-form">
+    <label for="username">Username</label>
+    <input id="username" name="username" autocomplete="username" autofocus>
+    <label for="password">Password</label>
+    <input id="password" name="password" type="password" autocomplete="current-password">
+    <button class="btn" type="submit">Sign in</button>
+    <div id="login-error"></div>
+  </form>
+</div>
+<script type="module" src="/static/js/login.js"></script>
+</body>
+</html>

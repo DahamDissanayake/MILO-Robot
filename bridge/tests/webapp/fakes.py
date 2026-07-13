@@ -7,7 +7,11 @@ from pathlib import Path
 from milo_bridge.config import BridgeConfig
 from milo_bridge.graph.api import GraphApi
 from milo_bridge.graph.store import GraphStore
+from milo_bridge.webapp.auth import hash_password
 from milo_bridge.webapp.deps import WebDeps
+
+TEST_USERNAME = "tester"
+TEST_PASSWORD = "test-pw-12345"
 
 
 class FakeGait:
@@ -87,7 +91,10 @@ class FakeImu:
 def make_deps(**overrides) -> WebDeps:
     store = GraphStore(":memory:")
     deps = WebDeps(
-        config=BridgeConfig(robot_id="milo-test", robot_name="milo"),
+        config=BridgeConfig(
+            robot_id="milo-test", robot_name="milo",
+            web_username=TEST_USERNAME, web_password_hash=hash_password(TEST_PASSWORD),
+        ),
         runner=FakeRunner(),
         display=FakeDisplay(),
         servos=FakeServos(),

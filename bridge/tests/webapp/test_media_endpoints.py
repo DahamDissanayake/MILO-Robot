@@ -1,18 +1,12 @@
 import asyncio
 
-from aiohttp.test_utils import TestClient, TestServer
-
-from milo_bridge.webapp import create_app
 from milo_bridge.webapp.control import ControlBroker
 from milo_bridge.webapp.media_hub import MediaHub
+from .client_helpers import authed_client
 from .fakes import FakeCamera, make_deps
 
 
-async def _client(deps):
-    app = create_app(deps)
-    client = TestClient(TestServer(app))
-    await client.start_server()
-    return client
+_client = authed_client
 
 
 async def test_camera_stream_yields_mjpeg_parts():

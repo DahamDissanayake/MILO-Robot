@@ -79,6 +79,37 @@ def test_list_faces_groups_frames():
     assert "cute" in names
 
 
+async def test_servo_batch_requires_control():
+    deps = make_deps(broker=ControlBroker())
+    svc = MotionService(deps)
+    res = await svc.servo_batch("nobody", {"R1": 90})
+    assert res == {"error": "not-controlling"}
+    assert deps.servos.angles == {}
+
+
+async def test_servo_batch_writes_all_channels_in_one_call():
+    deps = _controlled_deps()
+    svc = MotionService(deps)
+    angles = {"R1": 90, "R2": 90, "L1": 45, "L4": 120}
+    assert await svc.servo_batch("c1", angles) == {"ok": True}
+    assert deps.servos.angles == angles
+
+
+async def test_servo_batch_clamps_every_angle():
+    deps = _controlled_deps()
+    svc = MotionService(deps)
+    await svc.servo_batch("c1", {"R1": 400, "R2": -20})
+    assert deps.servos.angles == {"R1": 180, "R2": 0}
+
+
+async def test_servo_batch_rejects_whole_batch_on_unknown_channel():
+    deps = _controlled_deps()
+    svc = MotionService(deps)
+    res = await svc.servo_batch("c1", {"R1": 90, "R9": 90})
+    assert "error" in res
+    assert deps.servos.angles == {}  # no partial write
+
+
 async def test_handlers_never_raise_on_driver_error():
     """Handlers catch driver errors and return error dicts instead of raising."""
 
@@ -122,3 +153,10 @@ async def test_handlers_never_raise_on_driver_error():
     result = await svc.stop()
     # Stop must always return {"ok": True}
     assert result == {"ok": True}
+
+
+async def test_servo_batch_never_raises_on_bad_angle_value():
+    deps = _controlled_deps()
+    svc = MotionService(deps)
+    res = await svc.servo_batch("c1", {"R1": "not-a-number"})
+    assert "error" in res

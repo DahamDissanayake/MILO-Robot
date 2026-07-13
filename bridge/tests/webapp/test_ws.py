@@ -2,18 +2,15 @@ import asyncio
 import json
 
 import aiohttp
-from aiohttp.test_utils import TestClient, TestServer
 
-from milo_bridge.webapp import create_app
 from milo_bridge.webapp.control import ControlBroker
 from milo_bridge.webapp.media_hub import MediaHub
+from .client_helpers import authed_client
 from .fakes import FakeAudio, make_deps
 
 
 async def _ws(deps):
-    app = create_app(deps)
-    client = TestClient(TestServer(app))
-    await client.start_server()
+    client = await authed_client(deps)
     ws = await client.ws_connect("/ws")
     return client, ws
 
@@ -137,5 +134,18 @@ async def test_telemetry_pushed():
         data = await _recv_json_until(ws, "telemetry", tries=30, timeout=2.5)
         assert data["gait_backend"] == "cpg"
         assert data["owner"] == "none"
+    finally:
+        await client.close()
+
+
+async def test_servo_batch_dispatch():
+    deps = make_deps(broker=ControlBroker())
+    client, ws = await _ws(deps)
+    try:
+        await ws.send_json({"t": "control", "take": True})
+        await _recv_json_until(ws, "control")
+        await ws.send_json({"t": "servo_batch", "angles": {"R1": 90, "L4": 90}})
+        await _recv_json_until(ws, "ack")
+        assert deps.servos.angles == {"R1": 90, "L4": 90}
     finally:
         await client.close()

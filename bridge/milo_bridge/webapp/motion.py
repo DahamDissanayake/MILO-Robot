@@ -98,6 +98,19 @@ class MotionService:
             return {"error": f"{type(exc).__name__}: {exc}"}
         return {"ok": True}
 
+    async def servo_batch(self, client_id: str, angles: dict[str, float]) -> dict:
+        if err := self._denied(client_id):
+            return err
+        bad = [name for name in angles if name not in SERVO_CHANNELS]
+        if bad:
+            return {"error": f"unknown servo(s) {bad!r}"}
+        try:
+            clamped = {name: _clamp(deg, DEG_MIN, DEG_MAX) for name, deg in angles.items()}
+            await self._deps.servos.set_pose(clamped, stagger=True)
+        except Exception as exc:
+            return {"error": f"{type(exc).__name__}: {exc}"}
+        return {"ok": True}
+
     async def stop(self) -> dict:
         """Emergency stop: anyone, anytime."""
         # STOP must attempt every action and never raise.
