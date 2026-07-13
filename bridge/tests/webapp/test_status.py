@@ -21,6 +21,25 @@ async def test_status_reports_identity_and_hardware():
         await client.close()
 
 
+async def test_status_reports_real_imu_state_as_json_serializable_dict():
+    """Regression test: telemetry.py used to call deps.imu.read(), a method
+    that doesn't exist on the real Mpu6050 driver (which only has
+    read_raw(), calibrate_gyro(), and update()) — every call silently threw
+    AttributeError inside a bare `except Exception`, so the IMU tiles in
+    the Sensors panel showed permanent n/a despite the hardware being
+    physically present and working. FakeImu mirrors the real driver's
+    actual interface (update() returning an ImuState dataclass), so this
+    only passes once collect_telemetry calls the right method and converts
+    the dataclass result to a plain JSON-serializable dict."""
+    deps = make_deps()
+    client = await _client(deps)
+    try:
+        data = await (await client.get("/api/status")).json()
+        assert data["imu"] == {"pitch": 1.0, "roll": -2.0, "gyro": [0.1, 0.2, 0.5]}
+    finally:
+        await client.close()
+
+
 async def test_status_flags_missing_hardware():
     deps = make_deps(camera=None, audio=None, imu=None, display=None)
     client = await _client(deps)

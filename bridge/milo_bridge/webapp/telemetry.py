@@ -56,7 +56,8 @@ def collect_telemetry(deps) -> dict:
     imu = None
     if deps.imu is not None:
         try:
-            imu = deps.imu.read()
+            state = deps.imu.update()
+            imu = {"pitch": state.pitch, "roll": state.roll, "gyro": list(state.gyro)}
         except Exception:
             imu = None
     return {

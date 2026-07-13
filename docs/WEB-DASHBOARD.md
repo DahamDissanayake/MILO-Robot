@@ -25,18 +25,19 @@ control.
 The page is a fixed "cockpit" console, not a rearrangeable grid: a status
 bar runs across the top (brand, connection state, current control owner,
 and the page-level action buttons), and a three-column cockpit below it
-keeps Camera a normal, capped size in the true center — flanked by Move on
-the left and Sensors + Communication stacked on the right — rather than
-letting the feed dominate the page. A full-width Bridge Log sits right
-below the cockpit (always visible, not tucked away), and a full-width
-Memory Graph section follows that. Less-frequently-used panels — Poses &
-Emotes and Servo Test — live in a Tools drawer opened from the status
-bar's **Tools** button. This layout is identical for every device — there's
-no per-browser saved arrangement to diverge between a laptop and a phone —
-and a real mobile breakpoint (at 900px and below) reflows the cockpit to a
-single column (Camera, then Move, then the Communication/Sensors side
-group) and collapses the status bar's secondary stats behind a **⋯**
-toggle. It works in light or dark mode and follows your OS theme by
+keeps Camera a normal, capped size in the true center (with Poses & Emotes
+right below it) — flanked by Move on the left and Sensors + Communication
+stacked on the right — rather than letting the feed dominate the page. A
+full-width Bridge Log sits right below the cockpit (always visible, not
+tucked away), and a full-width Memory Graph section follows that. Servo
+Test — used only during assembly/calibration — lives in a Tools drawer
+opened from the status bar's **Tools** button. This layout is identical
+for every device — there's no per-browser saved arrangement to diverge
+between a laptop and a phone — and a real mobile breakpoint (at 900px and
+below) reflows the cockpit to a single column (Camera, then Poses &
+Emotes, then Move, then the Communication/Sensors side group) and
+collapses the status bar's secondary stats behind a **⋯** toggle. It works
+in light or dark mode and follows your OS theme by
 default.
 
 _screenshot to be added after first run_
@@ -100,12 +101,12 @@ value (and `web_username` if you want a different username too), then
 
 ## 3. Feature tour
 
-The dashboard is built from a status bar plus seven panels: one in the
-fixed cockpit's left column, one in its center column, two stacked in its
-right column, two full-width sections below the cockpit (Bridge Log, then
-Memory Graph), and two tucked into a Tools drawer. Every panel that can
-move hardware or make noise is marked **needs control** below; the rest
-are pure observation and work in every tab, all the time.
+The dashboard is built from a status bar plus eight panels: one in the
+fixed cockpit's left column, two stacked in its center column, two stacked
+in its right column, two full-width sections below the cockpit (Bridge
+Log, then Memory Graph), and one tucked into a Tools drawer. Every panel
+that can move hardware or make noise is marked **needs control** below;
+the rest are pure observation and work in every tab, all the time.
 
 - **Status bar** — merges the old header and Status card into one strip
   across the top: brand, a connection dot, who currently owns control
@@ -115,13 +116,19 @@ are pure observation and work in every tab, all the time.
   alongside those on desktop, refreshed off the same telemetry broadcast
   every connected tab already receives; below the ~900px mobile breakpoint
   it's hidden behind a **⋯** toggle button so the bar stays one line.
-- **Camera** (observe-only, cockpit center) — a live MJPEG feed at
+- **Camera** (observe-only, cockpit center, top) — a live MJPEG feed at
   `/stream/camera`, capped to a normal, readable size (not a dominant
   full-width screen) and centered in its column, one hub subscription per
   browser tab, so opening the dashboard on three devices doesn't triple
   the load on the camera driver — they all share the single upstream
   reader. A **Snapshot** button grabs the current frame into a
   downloadable JPEG client-side, no server round trip needed.
+- **Poses & Emotes** (needs control, cockpit center, below Camera) —
+  buttons for every scripted pose in `milo_bridge.poses` and every face
+  bitmap under `assets/faces/`, fetched from `/api/poses` and `/api/faces`
+  so the panel never needs updating when poses or faces are added — it
+  just reflects what's on the robot. Lives in the main cockpit (not the
+  Tools drawer) since it's used often enough to want one click, not two.
 - **Move** (needs control, cockpit left column) — an on-screen joystick
   stacked above its speed slider / STOP, or WASD / arrow keys with Q/E to
   turn, driving the gait engine's velocity command. A speed slider scales
@@ -131,9 +138,11 @@ are pure observation and work in every tab, all the time.
   one in the status bar.
 - **Communication** (cockpit right column) — replaces the old separate
   Ears and Voice cards. A headphones toggle turns live listening on or off
-  and needs no control at all — anyone can listen in — and drives a
-  vertical VU meter that fills green and switches to red above roughly
-  half scale. Push-to-talk (**Hold to Talk**) and the type-and-**Say** text
+  and needs no control at all — anyone can listen in — and drives two
+  separate vertical VU meters, one per channel (**L** / **R**), each
+  filling green and switching to red above roughly half scale, so you can
+  see the left and right microphone levels independently rather than one
+  blended bar. Push-to-talk (**Hold to Talk**) and the type-and-**Say** text
   bar (both need control) are gated independently of listening: both stay
   visibly locked until this tab holds control, and if control is lost
   mid-hold (a heartbeat timeout, another tab taking control, or the
@@ -143,10 +152,12 @@ are pure observation and work in every tab, all the time.
   `sudo apt install espeak-ng`, or `/api/speak` reports `tts-unavailable`
   and the panel shows the error inline.
 - **Sensors** (observe-only, cockpit right column, below Communication) —
-  six live tiles: Pitch / Roll, Gyro, SoC Temp, CPU, and RAM, plus a row of
-  hardware-presence dots (camera / audio / IMU / display) fetched once
-  from `/api/status`, so you can tell at a glance what the robot thinks is
-  actually attached. A **Details** toggle reveals two rolling-history
+  six live tiles: Pitch / Roll, Gyro, SoC Temp, CPU, RAM, and a full-width
+  Hardware tile listing camera / audio / imu / display each by name with
+  an explicit **Connected** / **Not connected** label (colored green/red),
+  fetched once from `/api/status`, so you can tell at a glance what the
+  robot thinks is actually attached — not just a cryptic dot. A
+  **Details** toggle reveals two rolling-history
   sparkline canvases — Attitude (pitch/roll) and System (CPU / RAM / Temp)
   — built from the same telemetry stream.
 - **Bridge Log** (observe-only, full-width below the cockpit) — a live
@@ -167,17 +178,12 @@ are pure observation and work in every tab, all the time.
   **Clear** resets the highlight — and clicking any node shows its full
   type and properties below the canvas.
 - **Tools drawer** — opened with the status bar's **Tools** button, holds
-  the panels used less often. On desktop it slides in from the right and
-  can be closed either by clicking the backdrop or the drawer's own
-  **✕ Close** button; on mobile the drawer becomes a full-screen overlay
-  that covers both the backdrop and the status bar underneath it, so the
-  in-drawer **✕ Close** button is the only way to close it there. It
-  contains:
-  - **Poses & Emotes** (needs control) — buttons for every scripted pose
-    in `milo_bridge.poses` and every face bitmap under `assets/faces/`,
-    fetched from `/api/poses` and `/api/faces` so the panel never needs
-    updating when poses or faces are added — it just reflects what's on
-    the robot.
+  the one panel used rarely enough to be worth tucking away. On desktop it
+  slides in from the right and can be closed either by clicking the
+  backdrop or the drawer's own **✕ Close** button; on mobile the drawer
+  becomes a full-screen overlay that covers both the backdrop and the
+  status bar underneath it, so the in-drawer **✕ Close** button is the
+  only way to close it there. It contains:
   - **Servo Test** (needs control) — one slider per servo channel
     (R1–R4, L1–L4), each sending a live `deg` update as you drag, plus a
     **Center All (90°)** button for quickly returning every joint to
@@ -284,11 +290,11 @@ import hello from "./panels/hello.js";
 // ...
 export const registry = {
   cockpitMove: [move],
-  cockpitCamera: [camera],
+  cockpitCamera: [camera, poses],
   cockpitSide: [comm, sensors, hello],
   bridgeLog: [log],
   graph: [graph],
-  tools: [poses, servos],
+  tools: [servos],
 };
 ```
 
@@ -387,29 +393,36 @@ curl -X POST http://localhost:8080/api/graph \
       non-controlling tab — it must still work; STOP is never gated by
       control.
 - [ ] Desktop: the Camera panel is a normal, capped size in the true
-      center column (not a dominant full-width screen), Move is in its own
-      left column, and Communication + Sensors are stacked in the right
-      column. The Camera panel streams frames continuously.
+      center column (not a dominant full-width screen) with Poses & Emotes
+      right below it, Move is in its own left column, and Communication +
+      Sensors are stacked in the right column. The Camera panel streams
+      frames continuously.
 - [ ] The Bridge Log panel — its own full-width section below the cockpit,
       not inside the Tools drawer — shows new lines arriving live and
       scrolls within its own bounded height rather than growing the page.
 - [ ] In the Communication panel, toggle **Listen** without holding
-      control — it works, and the vertical VU meter reacts. Confirm
-      push-to-talk and Say stay visibly locked until Take Control is held.
+      control — it works, and both the **L** and **R** vertical VU meters
+      react independently (not one shared bar). Confirm push-to-talk and
+      Say stay visibly locked until Take Control is held.
+- [ ] In the Sensors panel, confirm the Hardware tile lists each of
+      camera / audio / imu / display by name with an explicit
+      **Connected** / **Not connected** label, and confirm the Pitch /
+      Roll and Gyro tiles show real numbers (not permanent **n/a**) when
+      the IMU is actually attached.
 - [ ] Seed a couple of graph nodes (see the `curl` example above) and
       confirm they appear in the Memory Graph section automatically,
       without needing to search first; confirm searching highlights
       matches rather than hiding non-matches.
-- [ ] Click **Tools** in the status bar — the drawer opens with Poses &
-      Emotes and Servo Test (no Bridge Log here anymore). Confirm it
-      closes both ways: clicking the backdrop, and clicking the drawer's
-      own **✕ Close** button.
+- [ ] Click **Tools** in the status bar — the drawer opens with just
+      Servo Test (Poses & Emotes now lives in the main cockpit, not here).
+      Confirm it closes both ways: clicking the backdrop, and clicking the
+      drawer's own **✕ Close** button.
 - [ ] At a narrow (≤900px) viewport: the status bar's secondary stats
       collapse behind a **⋯** toggle, the cockpit becomes a single column
-      in priority order (camera, move, then the Communication/Sensors
-      group), and the Tools drawer becomes a full-width overlay — confirm
-      the **✕ Close** button closes it here too, since the full-screen
-      drawer covers the backdrop and the status bar's Tools button at
-      this width.
+      in priority order (camera, poses & emotes, move, then the
+      Communication/Sensors group), and the Tools drawer becomes a
+      full-width overlay — confirm the **✕ Close** button closes it here
+      too, since the full-screen drawer covers the backdrop and the
+      status bar's Tools button at this width.
 - [ ] Logged-out and login-error flows (`/login`) are unchanged from
       before this redesign — confirm they still work.
