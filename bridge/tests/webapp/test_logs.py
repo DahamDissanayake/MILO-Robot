@@ -1,9 +1,7 @@
 import logging
 
-from aiohttp.test_utils import TestClient, TestServer
-
-from milo_bridge.webapp import create_app
 from milo_bridge.webapp.logbuf import RingBufferLogHandler
+from .client_helpers import authed_client
 from .fakes import make_deps
 
 
@@ -26,9 +24,7 @@ async def test_logs_endpoint():
     logging.getLogger("milo-web-test").setLevel(logging.INFO)
     logging.getLogger("milo-web-test").info("hello from test")
     deps = make_deps(log_buffer=h)
-    app = create_app(deps)
-    client = TestClient(TestServer(app))
-    await client.start_server()
+    client = await authed_client(deps)
     try:
         data = await (await client.get("/api/logs?n=5")).json()
         assert any("hello from test" in line for line in data["lines"])

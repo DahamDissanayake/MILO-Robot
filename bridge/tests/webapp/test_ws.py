@@ -2,18 +2,15 @@ import asyncio
 import json
 
 import aiohttp
-from aiohttp.test_utils import TestClient, TestServer
 
-from milo_bridge.webapp import create_app
 from milo_bridge.webapp.control import ControlBroker
 from milo_bridge.webapp.media_hub import MediaHub
+from .client_helpers import authed_client
 from .fakes import FakeAudio, make_deps
 
 
 async def _ws(deps):
-    app = create_app(deps)
-    client = TestClient(TestServer(app))
-    await client.start_server()
+    client = await authed_client(deps)
     ws = await client.ws_connect("/ws")
     return client, ws
 

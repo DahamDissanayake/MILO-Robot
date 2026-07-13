@@ -1,14 +1,8 @@
-from aiohttp.test_utils import TestClient, TestServer
-
-from milo_bridge.webapp import create_app
+from .client_helpers import authed_client
 from .fakes import make_deps
 
 
-async def _client(deps):
-    app = create_app(deps)
-    client = TestClient(TestServer(app))
-    await client.start_server()
-    return client
+_client = authed_client
 
 
 async def test_status_reports_identity_and_hardware():
