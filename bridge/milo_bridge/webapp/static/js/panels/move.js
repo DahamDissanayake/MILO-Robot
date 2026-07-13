@@ -4,13 +4,13 @@ export default {
   id: "move", title: "Move", needsControl: true,
   mount(el, { bus }) {
     el.innerHTML = `
-      <div style="display:flex;gap:14px;height:100%">
-        <div id="pad" style="flex:1;max-width:220px;aspect-ratio:1;border:1px solid var(--line);
+      <div style="display:flex;flex-direction:column;gap:14px;align-items:center">
+        <div id="pad" style="width:100%;max-width:220px;aspect-ratio:1;border:1px solid var(--line);
              border-radius:8px;position:relative;touch-action:none">
           <div id="knob" style="position:absolute;width:26px;height:26px;border-radius:50%;
                background:var(--ink);left:calc(50% - 13px);top:calc(50% - 13px)"></div>
         </div>
-        <div style="display:flex;flex-direction:column;gap:10px;flex:1">
+        <div style="display:flex;flex-direction:column;gap:10px;width:100%;max-width:220px">
           <label>Speed <input id="speed" type="range" min="10" max="100" value="60"></label>
           <div class="muted">or WASD / arrows, Q/E to turn</div>
           <button class="btn danger" id="mstop">STOP</button>

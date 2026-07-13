@@ -1,8 +1,10 @@
 // Fixed cockpit layout: mounts zone-grouped panels into fixed slots and
 // manages the Tools drawer. Replaces the old drag/resize grid.js.
 export function initLayout(registry, bus) {
-  const center = document.getElementById("cockpit-center");
+  const move = document.getElementById("cockpit-move");
+  const camera = document.getElementById("cockpit-camera");
   const side = document.getElementById("cockpit-side");
+  const bridgeLog = document.getElementById("bridge-log");
   const graphZone = document.getElementById("memory-graph");
   const drawer = document.getElementById("tools-drawer");
   const backdrop = document.getElementById("drawer-backdrop");
@@ -25,8 +27,10 @@ export function initLayout(registry, bus) {
     }
   }
 
-  mountInto(center, registry.cockpitCenter);
+  mountInto(move, registry.cockpitMove);
+  mountInto(camera, registry.cockpitCamera);
   mountInto(side, registry.cockpitSide);
+  mountInto(bridgeLog, registry.bridgeLog);
   mountInto(graphZone, registry.graph);
   mountInto(drawer, registry.tools);
 
