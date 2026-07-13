@@ -89,3 +89,4 @@ def test_update_returns_state():
     assert isinstance(state, ImuState)
     assert state.gyro == (0.0, 0.0, 0.0)
     assert math.isclose(state.roll, 0.0)
+    assert state.accel == (0.0, 0.0, 1.0)
