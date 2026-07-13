@@ -39,6 +39,9 @@ def create_app(deps: WebDeps) -> web.Application:
     register_routes(app)
     from .ws import register_ws
     register_ws(app)
+    if deps.log_buffer is not None:
+        from .ws import broadcast_json
+        deps.log_buffer.on_line = lambda line: broadcast_json(app, {"t": "log", "line": line})
     app.router.add_get("/", _index)
     app.router.add_static("/static", STATIC_DIR)
     return app

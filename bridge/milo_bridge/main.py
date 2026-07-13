@@ -64,8 +64,12 @@ async def main() -> None:
 
     from .webapp.control import ControlBroker
     from .webapp.deps import WebDeps
+    from .webapp.logbuf import RingBufferLogHandler
     from .webapp.media_hub import MediaHub
     from .webapp.server import start_web
+
+    log_buffer = RingBufferLogHandler()
+    logging.getLogger().addHandler(log_buffer)
 
     sleep_controller = SleepController(
         runner, display, loud_rms_threshold=cfg.loud_rms_threshold, servos=servos
@@ -80,7 +84,7 @@ async def main() -> None:
         config=cfg, runner=runner, display=display, servos=servos,
         camera=camera, audio=audio, imu=imu, gait=gait,
         graph_api=graph_api, graph_store=graph,
-        broker=broker, media_hub=hub, log_buffer=None,
+        broker=broker, media_hub=hub, log_buffer=log_buffer,
         # manager is assigned below; guard the startup window before it exists
         get_link_state=lambda: manager.link_state if manager is not None else "disconnected",
     )

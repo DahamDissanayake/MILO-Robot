@@ -77,3 +77,6 @@ class GraphApi:
             return {"match": None}
         node, similarity = match
         return {"match": node.to_dict(), "similarity": similarity}
+
+    def _op_search_text(self, req: dict) -> dict:
+        return self._store.search_text(str(req.get("q", "")), int(req.get("limit", 25)))
