@@ -1,7 +1,6 @@
 """MJPEG camera stream — a hub subscription per connected browser."""
 from __future__ import annotations
 
-import asyncio
 import logging
 
 from aiohttp import web
@@ -28,7 +27,7 @@ async def camera_stream(request: web.Request) -> web.StreamResponse:
                 f"--{BOUNDARY}\r\nContent-Type: image/jpeg\r\n"
                 f"Content-Length: {len(frame)}\r\n\r\n".encode() + frame + b"\r\n"
             )
-    except (ConnectionResetError, asyncio.CancelledError):
+    except ConnectionResetError:
         pass
     finally:
         hub.video.unsubscribe(q)
