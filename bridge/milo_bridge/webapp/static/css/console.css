@@ -73,12 +73,17 @@
 .sensor-details .spark-label { font-size: 11px; color: var(--muted); margin-bottom: 2px; }
 
 /* IMU 3D plate — a thin rectangular prism representing the flat-mounted
-   IMU board. sensors.js sets --pitch/--roll/--ax/--ay/--yaw directly from
-   the server's live "imu" WS messages (~10Hz) — pitch/roll are the fused,
-   calibrated, absolute tilt; yaw is a relative gyro-integrated estimate
-   (no magnetometer on this sensor); ax/ay nudge the plate from raw
-   accelerometer x/y. All default to 0 (flat, centered) until the first
-   message arrives.
+   IMU board. sensors.js sets --pitch/--roll/--ax/--ay directly from the
+   server's live "imu" WS messages (~10Hz) — pitch/roll are the fused,
+   calibrated, absolute tilt; ax/ay nudge the plate from raw accelerometer
+   x/y. All default to 0 (flat, centered) until the first message arrives.
+
+   Deliberately does NOT rotate with yaw: the robot's camera/front is
+   physically fixed, and yaw has no magnetometer to anchor it to an
+   absolute heading (it's a relative, drifting gyro-integration estimate —
+   see Mpu6050.update() in drivers/imu.py) — spinning the plate to "face"
+   a heading that isn't real would be misleading. The plate always faces
+   front; it only ever tilts (pitch/roll), never turns.
 
    Box dimensions: 120 (width, x) x 70 (depth, z) x 18 (thickness, y).
    Every face is centered on the same pivot (top:50%/left:50% plus a
@@ -99,8 +104,7 @@
     translateY(calc(var(--ay, 0) * -80px))
     rotateX(-42deg)
     rotateX(calc(var(--pitch, 0) * 1deg))
-    rotateY(calc(var(--roll, 0) * -1deg))
-    rotateZ(calc(var(--yaw, 0) * 1deg));
+    rotateY(calc(var(--roll, 0) * -1deg));
 }
 .imu-face {
   position: absolute; top: 50%; left: 50%; border: 1px solid var(--line); box-sizing: border-box;
