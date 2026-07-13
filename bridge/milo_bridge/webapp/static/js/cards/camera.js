@@ -1,0 +1,22 @@
+export default {
+  id: "camera", title: "Camera", w: 5, h: 4,
+  mount(el) {
+    el.innerHTML = `
+      <div style="display:flex;flex-direction:column;gap:8px;height:100%">
+        <img id="cam" src="/stream/camera" alt="camera offline"
+             style="width:100%;flex:1;object-fit:contain;background:#000;border-radius:4px"
+             onerror="this.dataset.err=1">
+        <div><button class="btn" id="snap">Snapshot</button></div>
+      </div>`;
+    const img = el.querySelector("#cam");
+    el.querySelector("#snap").onclick = () => {
+      const c = document.createElement("canvas");
+      c.width = img.naturalWidth || 640; c.height = img.naturalHeight || 480;
+      c.getContext("2d").drawImage(img, 0, 0);
+      const a = document.createElement("a");
+      a.href = c.toDataURL("image/jpeg");
+      a.download = `milo-${Date.now()}.jpg`;
+      a.click();
+    };
+  },
+};
