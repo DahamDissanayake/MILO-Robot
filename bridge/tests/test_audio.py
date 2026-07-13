@@ -1,7 +1,15 @@
-import numpy as np
-import pytest
+import subprocess
 
-from milo_bridge.drivers.audio import FRAME_SAMPLES, pick_fallback_device, probe_alsa_device, resolve_device, rms
+import numpy as np
+
+from milo_bridge.drivers.audio import (
+    DEFAULT_DEVICE,
+    FRAME_SAMPLES,
+    AudioIO,
+    capture_command,
+    playback_command,
+    rms,
+)
 
 
 def test_rms_empty_is_zero():
@@ -24,57 +32,82 @@ def test_rms_scales_with_amplitude():
     assert rms(loud.tobytes()) > 10 * rms(quiet.tobytes())
 
 
-DEVICES = [
-    {"name": "vc4-hdmi", "max_input_channels": 0, "max_output_channels": 2},
-    {"name": "plughw:0,0", "max_input_channels": 2, "max_output_channels": 2},
-]
+def test_capture_command_uses_stereo_raw_format():
+    assert capture_command("plughw:0,0") == [
+        "arecord", "-D", "plughw:0,0", "-c", "2", "-r", "16000", "-f", "S16_LE", "-t", "raw",
+    ]
 
 
-def test_pick_fallback_device_finds_first_match():
-    assert pick_fallback_device(DEVICES, min_input=2) == 1
+def test_playback_command_uses_mono_raw_format():
+    assert playback_command("plughw:0,0") == [
+        "aplay", "-D", "plughw:0,0", "-c", "1", "-r", "16000", "-f", "S16_LE", "-t", "raw",
+    ]
 
 
-def test_pick_fallback_device_raises_when_none_match():
-    with pytest.raises(LookupError):
-        pick_fallback_device(DEVICES, min_input=8)
+def test_audio_io_defaults_to_known_hardware_device():
+    assert AudioIO()._device == DEFAULT_DEVICE
 
 
-def test_resolve_device_explicit_wins():
-    assert resolve_device("plughw:1,0", default_index=-1, devices=DEVICES, min_input=2) == "plughw:1,0"
+def test_audio_io_explicit_device_wins():
+    assert AudioIO("plughw:1,0")._device == "plughw:1,0"
 
 
-def test_resolve_device_uses_portaudio_default_when_valid():
-    assert resolve_device(None, default_index=1, devices=DEVICES, min_input=2) is None
+class FakeStdin:
+    def __init__(self):
+        self.written = b""
+        self.closed = False
+
+    def write(self, data: bytes) -> None:
+        self.written += data
+
+    def flush(self) -> None:
+        pass
+
+    def close(self) -> None:
+        self.closed = True
 
 
-def test_resolve_device_falls_back_when_no_default():
-    assert resolve_device(None, default_index=-1, devices=DEVICES, min_input=2) == 1
+class FakePopen:
+    """Stand-in for subprocess.Popen recording what would've been aplay's stdin."""
+
+    instances: list["FakePopen"] = []
+
+    def __init__(self, cmd, stdin=None):
+        self.cmd = cmd
+        self.stdin = FakeStdin()
+        self.waited = False
+        FakePopen.instances.append(self)
+
+    def wait(self) -> None:
+        self.waited = True
 
 
-def test_probe_alsa_device_finds_first_accepted_card():
-    def check(name: str) -> None:
-        if name != "plughw:3,0":
-            raise RuntimeError("unsupported")
+def test_play_pcm_starts_aplay_once_and_writes_to_its_stdin(monkeypatch):
+    FakePopen.instances.clear()
+    monkeypatch.setattr(subprocess, "Popen", FakePopen)
+    audio = AudioIO("plughw:2,0")
 
-    assert probe_alsa_device(check) == "plughw:3,0"
+    audio.play_pcm(b"abc")
+    audio.play_pcm(b"def")
 
-
-def test_probe_alsa_device_raises_when_none_accepted():
-    def check(name: str) -> None:
-        raise RuntimeError("unsupported")
-
-    with pytest.raises(LookupError):
-        probe_alsa_device(check)
+    assert len(FakePopen.instances) == 1
+    assert FakePopen.instances[0].cmd == playback_command("plughw:2,0")
+    assert FakePopen.instances[0].stdin.written == b"abcdef"
 
 
-def test_resolve_device_raises_without_probe_when_enumeration_empty():
-    with pytest.raises(LookupError):
-        resolve_device(None, default_index=-1, devices=[], min_input=2)
+def test_close_closes_stdin_and_waits(monkeypatch):
+    FakePopen.instances.clear()
+    monkeypatch.setattr(subprocess, "Popen", FakePopen)
+    audio = AudioIO()
+    audio.play_pcm(b"abc")
+
+    audio.close()
+
+    proc = FakePopen.instances[0]
+    assert proc.stdin.closed
+    assert proc.waited
+    assert audio._playback is None
 
 
-def test_resolve_device_probes_alsa_when_enumeration_empty():
-    def probe(name: str) -> None:
-        if name != "plughw:1,0":
-            raise RuntimeError("unsupported")
-
-    assert resolve_device(None, default_index=-1, devices=[], probe=probe, min_input=2) == "plughw:1,0"
+def test_close_is_a_noop_before_any_playback():
+    AudioIO().close()  # must not raise
