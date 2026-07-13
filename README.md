@@ -85,7 +85,7 @@ decision — lives in **[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)**.
 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | System design — wiring diagrams, components, protocols, tech stack |
 | [`project-milo-plan.md`](project-milo-plan.md) | A–Z phased build plan (Phase 0 → G) with checklists |
 | [`common/`](common/) | `milo-common` — WebSocket protocol + pairing/auth shared by both sides |
-| [`bridge/`](bridge/) | `milo-bridge` — the Pi service: drivers, gait engine, knowledge graph, discovery |
+| [`bridge/`](bridge/) | `milo-bridge` — the Pi service: drivers, gait engine, knowledge graph, discovery. Also serves the **web dashboard** at `http://milo.local` — see [`docs/WEB-DASHBOARD.md`](docs/WEB-DASHBOARD.md) |
 | [`brain/`](brain/) | `milo-brain` — the desktop app: ASR/vision/TTS pipelines, LLM agent, tray UI |
 | [`training/`](training/) | MuJoCo model + PPO training + ONNX export for the gait policy |
 | [`hardware/reference-sesame/`](hardware/reference-sesame/) | Original Sesame firmware files Milo ports from (credit: Dorian Todd) |
