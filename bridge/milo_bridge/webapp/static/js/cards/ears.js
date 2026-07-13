@@ -25,7 +25,8 @@ export default {
 
     const offBin = bus.onBinary((u8) => {
       if (!on || u8[0] !== 0x01) return;
-      const pcm = new Int16Array(u8.buffer, u8.byteOffset + 1, (u8.byteLength - 1) >> 1);
+      const bytes = u8.slice(1); // fresh, zero-offset buffer -- Int16Array requires a 2-byte-aligned offset
+      const pcm = new Int16Array(bytes.buffer, 0, bytes.byteLength >> 1);
       const frames = pcm.length / CHANNELS;
       const buf = ctx.createBuffer(CHANNELS, frames, SAMPLE_RATE);
       let sum = [0, 0];
