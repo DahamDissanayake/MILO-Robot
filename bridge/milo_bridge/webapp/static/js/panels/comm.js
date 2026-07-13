@@ -36,32 +36,37 @@ export default {
           </div>
           <div class="muted" id="comm-note"></div>
         </div>
-        <div class="vu-vertical" id="vu"><div class="vu-fill"></div></div>
+        <div class="vu-group">
+          <div class="vu-col"><div class="vu-vertical" id="vu-l"><div class="vu-fill"></div></div><span class="vu-label">L</span></div>
+          <div class="vu-col"><div class="vu-vertical" id="vu-r"><div class="vu-fill"></div></div><span class="vu-label">R</span></div>
+        </div>
       </div>`;
 
-    // -- listening (headphones + VU meter): no control required -------------
+    // -- listening (headphones + VU meters): no control required -------------
     const headphones = el.querySelector("#headphones");
-    const vu = el.querySelector("#vu");
+    const vuL = el.querySelector("#vu-l");
+    const vuR = el.querySelector("#vu-r");
     let playCtx = null, playHead = 0, listening = false;
     let pending = [], pendingSamples = 0;
 
-    function setLevel(level) {
-      vu.style.setProperty("--level", Math.min(1, level).toFixed(3));
-      vu.classList.toggle("hot", level >= HOT_THRESHOLD);
+    function setLevel(bar, level) {
+      bar.style.setProperty("--level", Math.min(1, level).toFixed(3));
+      bar.classList.toggle("hot", level >= HOT_THRESHOLD);
     }
 
     function schedule(pcm) {
       const frames = pcm.length / CHANNELS;
       const buf = playCtx.createBuffer(CHANNELS, frames, SAMPLE_RATE);
-      let sumSq = 0;
+      const bars = [vuL, vuR];
       for (let ch = 0; ch < CHANNELS; ch++) {
         const out = buf.getChannelData(ch);
+        let sumSq = 0;
         for (let i = 0; i < frames; i++) {
           const v = pcm[i * CHANNELS + ch] / 32768;
           out[i] = v; sumSq += v * v;
         }
+        if (bars[ch]) setLevel(bars[ch], Math.sqrt(sumSq / frames) * 4);
       }
-      setLevel(Math.sqrt(sumSq / (frames * CHANNELS)) * 4);
       const src = playCtx.createBufferSource();
       src.buffer = buf; src.connect(playCtx.destination);
       if (playHead - playCtx.currentTime > MAX_LATENCY_S) {
@@ -96,7 +101,11 @@ export default {
       headphones.textContent = listening ? "🎧 Mute" : "🎧 Listen";
       headphones.classList.toggle("active", listening);
       if (listening && !playCtx) playCtx = new AudioContext({ sampleRate: SAMPLE_RATE });
-      if (listening) { playHead = 0; } else { pending = []; pendingSamples = 0; setLevel(0); }
+      if (listening) {
+        playHead = 0;
+      } else {
+        pending = []; pendingSamples = 0; setLevel(vuL, 0); setLevel(vuR, 0);
+      }
       bus.send({ t: "audio", on: listening });
     };
 

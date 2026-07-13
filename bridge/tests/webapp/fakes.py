@@ -5,6 +5,7 @@ import asyncio
 from pathlib import Path
 
 from milo_bridge.config import BridgeConfig
+from milo_bridge.drivers.imu import ImuState
 from milo_bridge.graph.api import GraphApi
 from milo_bridge.graph.store import GraphStore
 from milo_bridge.webapp.auth import hash_password
@@ -84,8 +85,13 @@ class FakeCamera:
 
 
 class FakeImu:
-    def read(self):
-        return {"pitch": 1.0, "roll": -2.0, "gyro_z": 0.5}
+    """Mirrors the real Mpu6050 driver's interface exactly: an `update()`
+    method (not `read()` — a prior mismatch here masked a production bug
+    where telemetry.py called a method the real driver doesn't have) that
+    returns a real `ImuState` (a dataclass, not a plain dict)."""
+
+    def update(self) -> ImuState:
+        return ImuState(pitch=1.0, roll=-2.0, gyro=(0.1, 0.2, 0.5))
 
 
 def make_deps(**overrides) -> WebDeps:

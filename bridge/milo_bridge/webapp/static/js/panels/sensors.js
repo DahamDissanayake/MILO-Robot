@@ -13,7 +13,7 @@ export default {
         <div class="sensor-tile"><div class="label">SoC Temp</div><div class="value" id="tile-temp">—</div></div>
         <div class="sensor-tile"><div class="label">CPU</div><div class="value" id="tile-cpu">—</div></div>
         <div class="sensor-tile"><div class="label">RAM</div><div class="value" id="tile-ram">—</div></div>
-        <div class="sensor-tile"><div class="label">Hardware</div><div class="value" id="tile-hw">—</div></div>
+        <div class="sensor-tile hw-tile"><div class="label">Hardware</div><div class="value" id="tile-hw">—</div></div>
       </div>
       <button class="btn ghost" id="sensor-details-btn" style="margin-top:10px">Details ▾</button>
       <div class="sensor-details hidden" id="sensor-details">
@@ -68,7 +68,11 @@ export default {
 
     fetch("/api/status").then((r) => r.json()).then((d) => {
       el.querySelector("#tile-hw").innerHTML = Object.entries(d.hardware)
-        .map(([k, ok]) => `<span style="margin-right:8px">${ok ? "●" : "○"} ${k}</span>`).join("");
+        .map(([k, ok]) => `
+          <div class="hw-row">
+            <span class="hw-name">${k}</span>
+            <span class="hw-state" style="color:${ok ? "var(--ok)" : "var(--danger)"}">${ok ? "Connected" : "Not connected"}</span>
+          </div>`).join("");
     });
 
     const details = el.querySelector("#sensor-details");
