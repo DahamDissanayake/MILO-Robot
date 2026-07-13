@@ -61,3 +61,60 @@ def render_frame(frame: EyeFrame) -> Image.Image:
     canvas.paste(right_img, (right_x, right_y))
 
     return canvas
+
+
+def _pulse(frame: EyeFrame, factor: float) -> EyeFrame:
+    """Scale both eyes' height by `factor`, for a subtle talk/love pulse."""
+    def scaled(eye: Eye) -> Eye:
+        return Eye(w=eye.w, h=round(eye.h * factor), radius=eye.radius,
+                    tilt=eye.tilt, dx=eye.dx, dy=eye.dy)
+    return EyeFrame(scaled(frame.left), scaled(frame.right), gap=frame.gap)
+
+
+def _talk(base: EyeFrame) -> list[EyeFrame]:
+    """Generic 2-frame speaking pulse layered on any base emotion frame."""
+    return [base, _pulse(base, 0.85)]
+
+
+_IDLE = EyeFrame(Eye(), Eye())
+_HAPPY = EyeFrame(Eye(h=16, tilt=-14, dy=-2), Eye(h=16, tilt=14, dy=-2))
+_SAD = EyeFrame(Eye(h=20, tilt=16, dy=6), Eye(h=20, tilt=-16, dy=6))
+_ANGRY = EyeFrame(
+    Eye(h=20, tilt=16, dy=2), Eye(h=20, tilt=-16, dy=2), gap=10,
+)
+_SLEEPY = EyeFrame(Eye(h=8, dy=4), Eye(h=8, dy=4))
+_SURPRISED = EyeFrame(Eye(w=40, h=40, dy=-4), Eye(w=40, h=40, dy=-4), gap=18)
+_CONFUSED = EyeFrame(Eye(), Eye(w=28, h=28, tilt=18, dy=-10))
+_LOVE = EyeFrame(Eye(h=18, tilt=-10, dy=-2), Eye(h=18, tilt=10, dy=-2))
+_THINKING_1 = EyeFrame(Eye(h=28, dx=-4, dy=-2), Eye(w=28, h=26, tilt=8, dx=-4, dy=-6))
+_THINKING_2 = EyeFrame(Eye(h=28, dx=4, dy=-2), Eye(w=28, h=26, tilt=8, dx=4, dy=-6))
+_EXCITED_1 = EyeFrame(Eye(w=36, h=36, dy=-6), Eye(w=36, h=36, dy=-6), gap=18)
+_EXCITED_2 = EyeFrame(Eye(w=36, h=36, dy=4), Eye(w=36, h=36, dy=4), gap=18)
+
+EMOTIONS: dict[str, list[EyeFrame]] = {
+    "idle": [_IDLE],
+    "idle_blink": [
+        EyeFrame(Eye(h=18), Eye(h=18)),
+        EyeFrame(Eye(h=6), Eye(h=6)),
+        EyeFrame(Eye(h=18), Eye(h=18)),
+        EyeFrame(Eye(h=32), Eye(h=32)),
+    ],
+    "happy": [_HAPPY],
+    "sad": [_SAD],
+    "angry": [_ANGRY],
+    "love": [_LOVE, _pulse(_LOVE, 1.2)],
+    "sleepy": [_SLEEPY],
+    "surprised": [_SURPRISED],
+    "confused": [_CONFUSED],
+    "thinking": [_THINKING_1, _THINKING_2],
+    "excited": [_EXCITED_1, _EXCITED_2],
+    "talk_happy": _talk(_HAPPY),
+    "talk_sad": _talk(_SAD),
+    "talk_angry": _talk(_ANGRY),
+    "talk_confused": _talk(_CONFUSED),
+    "talk_love": _talk(_LOVE),
+    "talk_sleepy": _talk(_SLEEPY),
+    "talk_surprised": _talk(_SURPRISED),
+    "talk_thinking": _talk(_THINKING_1),
+    "talk_excited": _talk(_EXCITED_1),
+}
