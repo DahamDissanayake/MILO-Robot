@@ -1,27 +1,18 @@
 // Sensors panel: live tiles for everything the robot actually reports
-// (IMU attitude/gyro as a 3D plate, SoC temp, CPU%, RAM%, hardware
-// presence), plus a Details toggle with a rolling system-history sparkline.
+// (a single fused IMU 3D plate — accel+gyro, pitch/roll absolute, yaw
+// relative — plus SoC temp, CPU%, RAM%, hardware presence), plus a
+// Details toggle with a rolling system-history sparkline.
 const HISTORY_LEN = 120;
-const GYRO_HOT_DPS = 90; // deg/s magnitude before the Gyro plate glows
+const GYRO_HOT_DPS = 90; // deg/s magnitude before the IMU plate glows
 
 export default {
   id: "sensors", title: "Sensors",
   mount(el, { bus }) {
     el.innerHTML = `
       <div class="sensor-tiles">
-        <div class="sensor-tile">
-          <div class="label">Pitch / Roll</div>
-          <div class="imu-plate-wrap"><div class="imu-plate" id="plate-attitude">
-            <div class="imu-face top"></div>
-            <div class="imu-face front"></div>
-            <div class="imu-face back"></div>
-            <div class="imu-face left"></div>
-            <div class="imu-face right"></div>
-          </div></div>
-        </div>
-        <div class="sensor-tile">
-          <div class="label">Gyro</div>
-          <div class="imu-plate-wrap"><div class="imu-plate" id="plate-gyro">
+        <div class="sensor-tile imu-tile">
+          <div class="label">IMU</div>
+          <div class="imu-plate-wrap"><div class="imu-plate" id="plate-imu">
             <div class="imu-face top"></div>
             <div class="imu-face front"></div>
             <div class="imu-face back"></div>
@@ -62,50 +53,18 @@ export default {
       }
     }
 
-    const plateA = el.querySelector("#plate-attitude");
-    const plateG = el.querySelector("#plate-gyro");
-    const attitude = { pitch: 0, roll: 0, ax: 0, ay: 0 };
-    const gyroRate = { x: 0, y: 0, z: 0 };
-    const gyroAngle = { x: 0, y: 0, z: 0 };
-
-    function applyAttitude() {
-      plateA.style.setProperty("--pitch", attitude.pitch.toFixed(2));
-      plateA.style.setProperty("--roll", attitude.roll.toFixed(2));
-      plateA.style.setProperty("--ax", attitude.ax.toFixed(3));
-      plateA.style.setProperty("--ay", attitude.ay.toFixed(3));
-    }
-    applyAttitude(); // starts flat at 0 until the first telemetry message
-
-    let lastFrame = null;
-    let raf = requestAnimationFrame(spinGyro);
-    function spinGyro(now) {
-      if (lastFrame != null) {
-        const dt = Math.min(0.1, (now - lastFrame) / 1000);
-        gyroAngle.x += gyroRate.x * dt;
-        gyroAngle.y += gyroRate.y * dt;
-        gyroAngle.z += gyroRate.z * dt;
-        plateG.style.setProperty("--pitch", gyroAngle.x.toFixed(2));
-        plateG.style.setProperty("--roll", gyroAngle.y.toFixed(2));
-        plateG.style.setProperty("--yaw", gyroAngle.z.toFixed(2));
-        const mag = Math.hypot(gyroRate.x, gyroRate.y, gyroRate.z);
-        plateG.classList.toggle("hot", mag >= GYRO_HOT_DPS);
-      }
-      lastFrame = now;
-      raf = requestAnimationFrame(spinGyro);
-    }
+    const plate = el.querySelector("#plate-imu");
+    const offImu = bus.on("imu", (m) => {
+      plate.style.setProperty("--pitch", (m.pitch ?? 0).toFixed(2));
+      plate.style.setProperty("--roll", (m.roll ?? 0).toFixed(2));
+      plate.style.setProperty("--yaw", (m.yaw ?? 0).toFixed(2));
+      plate.style.setProperty("--ax", (m.accel?.[0] ?? 0).toFixed(3));
+      plate.style.setProperty("--ay", (m.accel?.[1] ?? 0).toFixed(3));
+      const mag = Math.hypot(...(m.gyro ?? [0, 0, 0]));
+      plate.classList.toggle("hot", mag >= GYRO_HOT_DPS);
+    });
 
     const offT = bus.on("telemetry", (m) => {
-      if (m.imu) {
-        attitude.pitch = m.imu.pitch ?? attitude.pitch;
-        attitude.roll = m.imu.roll ?? attitude.roll;
-        attitude.ax = m.imu.accel?.[0] ?? attitude.ax;
-        attitude.ay = m.imu.accel?.[1] ?? attitude.ay;
-        applyAttitude();
-        const gyro = m.imu.gyro ?? [];
-        gyroRate.x = gyro[0] ?? gyroRate.x;
-        gyroRate.y = gyro[1] ?? gyroRate.y;
-        gyroRate.z = gyro[2] ?? gyroRate.z;
-      }
       el.querySelector("#tile-temp").textContent = m.temp_c == null ? "n/a" : `${m.temp_c.toFixed(1)}°C`;
       el.querySelector("#tile-cpu").textContent = m.cpu_percent == null ? "n/a" : `${m.cpu_percent}%`;
       el.querySelector("#tile-ram").textContent = m.mem_percent == null ? "n/a" : `${m.mem_percent}%`;
@@ -132,7 +91,7 @@ export default {
     };
 
     return () => {
-      cancelAnimationFrame(raf);
+      offImu();
       offT();
     };
   },

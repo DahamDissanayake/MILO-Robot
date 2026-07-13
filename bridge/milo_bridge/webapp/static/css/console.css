@@ -57,6 +57,7 @@
 .sensor-tiles { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
 .sensor-tile { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; }
 .hw-tile { grid-column: 1 / -1; }
+.imu-tile { grid-column: 1 / -1; }
 .sensor-tile .label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; }
 .sensor-tile .value { font-size: 18px; font-weight: 600; margin-top: 2px; }
 #tile-hw.value { font-size: 12px; font-weight: 400; margin-top: 4px; }
@@ -69,16 +70,19 @@
 .sensor-details .spark-label { font-size: 11px; color: var(--muted); margin-bottom: 2px; }
 
 /* IMU 3D plate — a thin rectangular prism representing the flat-mounted
-   IMU board. Pitch/Roll tiles set --pitch/--roll/--ax/--ay from live
-   telemetry; the Gyro tile integrates raw angular velocity into
-   --pitch/--roll/--yaw itself (see sensors.js). All default to 0 (flat,
-   centered) until the first update. */
+   IMU board. sensors.js sets --pitch/--roll/--ax/--ay/--yaw directly from
+   the server's live "imu" WS messages (~10Hz) — pitch/roll are the fused,
+   calibrated, absolute tilt; yaw is a relative gyro-integrated estimate
+   (no magnetometer on this sensor); ax/ay nudge the plate from raw
+   accelerometer x/y. All default to 0 (flat, centered) until the first
+   message arrives. */
 .imu-plate-wrap {
   height: 64px; margin-top: 4px; display: flex; align-items: center; justify-content: center;
   perspective: 220px;
 }
 .imu-plate {
   position: relative; width: 60px; height: 36px; transform-style: preserve-3d;
+  transition: transform 0.15s linear;
   transform:
     translateX(calc(var(--ax, 0) * 60px))
     translateY(calc(var(--ay, 0) * -60px))
@@ -87,7 +91,6 @@
     rotateY(calc(var(--roll, 0) * -1deg))
     rotateZ(calc(var(--yaw, 0) * 1deg));
 }
-#plate-attitude { transition: transform 0.12s linear; }
 .imu-face { position: absolute; top: 0; left: 0; border: 1px solid var(--line); box-sizing: border-box; }
 .imu-face.top   { width: 60px; height: 36px; background: var(--surface); border-radius: 3px; transform: rotateX(90deg) translateZ(4px); }
 .imu-face.front { width: 60px; height: 8px;  background: var(--ok);      transform: rotateY(0deg)   translateZ(18px); opacity: 0.85; }
