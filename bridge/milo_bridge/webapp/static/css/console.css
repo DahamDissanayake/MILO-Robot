@@ -75,28 +75,53 @@
    calibrated, absolute tilt; yaw is a relative gyro-integrated estimate
    (no magnetometer on this sensor); ax/ay nudge the plate from raw
    accelerometer x/y. All default to 0 (flat, centered) until the first
-   message arrives. */
+   message arrives.
+
+   Box dimensions: 120 (width, x) x 70 (depth, z) x 18 (thickness, y).
+   Every face is centered on the same pivot (top:50%/left:50% plus a
+   translate(-50%,-50%) as the *first* transform step) before it is
+   rotated into place and pushed out by translateZ(half the relevant
+   dimension) — that shared pivot is what makes the five faces meet at
+   shared edges and read as one sealed box instead of five independent
+   floating rectangles. */
 .imu-plate-wrap {
-  height: 64px; margin-top: 4px; display: flex; align-items: center; justify-content: center;
-  perspective: 220px;
+  height: 110px; margin-top: 6px; display: flex; align-items: center; justify-content: center;
+  perspective: 480px;
 }
 .imu-plate {
-  position: relative; width: 60px; height: 36px; transform-style: preserve-3d;
+  position: relative; width: 120px; height: 70px; transform-style: preserve-3d;
   transition: transform 0.15s linear;
   transform:
-    translateX(calc(var(--ax, 0) * 60px))
-    translateY(calc(var(--ay, 0) * -60px))
-    rotateX(-55deg)
+    translateX(calc(var(--ax, 0) * 80px))
+    translateY(calc(var(--ay, 0) * -80px))
+    rotateX(-42deg)
     rotateX(calc(var(--pitch, 0) * 1deg))
     rotateY(calc(var(--roll, 0) * -1deg))
     rotateZ(calc(var(--yaw, 0) * 1deg));
 }
-.imu-face { position: absolute; top: 0; left: 0; border: 1px solid var(--line); box-sizing: border-box; }
-.imu-face.top   { width: 60px; height: 36px; background: var(--surface); border-radius: 3px; transform: rotateX(90deg) translateZ(4px); }
-.imu-face.front { width: 60px; height: 8px;  background: var(--ok);      transform: rotateY(0deg)   translateZ(18px); opacity: 0.85; }
-.imu-face.back  { width: 60px; height: 8px;  background: var(--line);    transform: rotateY(180deg) translateZ(18px); }
-.imu-face.left  { width: 36px; height: 8px;  background: var(--line);    transform: rotateY(-90deg) translateZ(30px); }
-.imu-face.right { width: 36px; height: 8px;  background: var(--line);    transform: rotateY(90deg)  translateZ(30px); }
+.imu-face {
+  position: absolute; top: 50%; left: 50%; border: 1px solid var(--line); box-sizing: border-box;
+}
+.imu-face.top {
+  width: 120px; height: 70px; background: var(--surface); border-radius: 4px;
+  transform: translate(-50%, -50%) rotateX(90deg) translateZ(9px);
+}
+.imu-face.front {
+  width: 120px; height: 18px; background: var(--ok); opacity: 0.9;
+  transform: translate(-50%, -50%) rotateY(0deg) translateZ(35px);
+}
+.imu-face.back {
+  width: 120px; height: 18px; background: var(--line); filter: brightness(0.7);
+  transform: translate(-50%, -50%) rotateY(180deg) translateZ(35px);
+}
+.imu-face.left {
+  width: 70px; height: 18px; background: var(--line); filter: brightness(0.8);
+  transform: translate(-50%, -50%) rotateY(-90deg) translateZ(60px);
+}
+.imu-face.right {
+  width: 70px; height: 18px; background: var(--line); filter: brightness(0.85);
+  transform: translate(-50%, -50%) rotateY(90deg) translateZ(60px);
+}
 .imu-plate.hot .imu-face.top { border: 2px solid var(--danger); box-shadow: 0 0 12px 2px var(--danger); }
 .imu-plate.hot { filter: drop-shadow(0 0 6px var(--danger)); }
 
