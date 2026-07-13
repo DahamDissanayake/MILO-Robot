@@ -100,3 +100,26 @@ def test_yaw_accumulates_from_gyro_z():
     imu.update()          # first call: dt defaults to 0.01 -> yaw = 0.01
     state = imu.update()  # second call: dt = 0.5 - 0.0 = 0.5 -> yaw = 0.01 + 0.5 = 0.51
     assert math.isclose(state.yaw, 0.51)
+
+
+def test_zero_tares_current_orientation_to_flat():
+    bus = FakeBus([block(ay=16384, az=0)] * 5)  # lying on its side: roll snaps to 90
+    imu = Mpu6050(bus)
+    state1 = imu.update()
+    assert math.isclose(state1.roll, 90.0)
+    imu.zero()
+    state2 = imu.update()  # same physical orientation, now reported as flat
+    assert math.isclose(state2.roll, 0.0, abs_tol=1e-9)
+
+
+def test_zero_resets_yaw():
+    times = iter([0.0, 0.5, 1.0])
+    bus = FakeBus([block(gz=131)] * 5)  # spinning at 1.0 deg/s
+    imu = Mpu6050(bus, clock=lambda: next(times))
+    imu.update()  # dt=0.01 -> yaw=0.01
+    imu.update()  # dt=0.5  -> yaw=0.51
+    imu.zero()    # yaw -> 0
+    state = imu.update()  # dt=0.5 -> yaw=0.5 (only this update's contribution)
+    assert math.isclose(state.yaw, 0.5)
+    assert math.isclose(state.roll, 0.0)
+    assert math.isclose(state.pitch, 0.0)

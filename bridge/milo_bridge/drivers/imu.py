@@ -71,6 +71,8 @@ class Mpu6050:
         self._filter = ComplementaryFilter()
         self._gyro_bias = (0.0, 0.0, 0.0)
         self._yaw = 0.0
+        self._roll_offset = 0.0
+        self._pitch_offset = 0.0
         self._last_t: float | None = None
         self._bus.write_byte_data(self._address, REG_PWR_MGMT_1, 0)  # wake from sleep
 
@@ -100,12 +102,20 @@ class Mpu6050:
         """Average gyro at rest to find bias. Robot must be still (~2 s at 100 Hz)."""
         self._gyro_bias = (0.0, 0.0, 0.0)
         self._yaw = 0.0
+        self._roll_offset = 0.0
+        self._pitch_offset = 0.0
         total = [0.0, 0.0, 0.0]
         for _ in range(samples):
             _, gyro = self.read_raw()
             for i in range(3):
                 total[i] += gyro[i]
         self._gyro_bias = tuple(t / samples for t in total)  # type: ignore[assignment]
+
+    def zero(self) -> None:
+        """Tare: treat the current orientation as the new flat/zero reference."""
+        self._roll_offset = self._filter.roll
+        self._pitch_offset = self._filter.pitch
+        self._yaw = 0.0
 
     def update(self) -> ImuState:
         now = self._clock()
@@ -114,4 +124,7 @@ class Mpu6050:
         accel, gyro = self.read_raw()
         roll, pitch = self._filter.update(accel, gyro, dt)
         self._yaw += gyro[2] * dt
-        return ImuState(roll=roll, pitch=pitch, yaw=self._yaw, gyro=gyro, accel=accel)
+        return ImuState(
+            roll=roll - self._roll_offset, pitch=pitch - self._pitch_offset,
+            yaw=self._yaw, gyro=gyro, accel=accel,
+        )
