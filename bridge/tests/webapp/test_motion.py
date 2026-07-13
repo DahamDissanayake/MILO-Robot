@@ -2,6 +2,7 @@ import asyncio
 
 from milo_bridge.webapp.control import ControlBroker
 from milo_bridge.webapp.motion import MotionService, list_faces
+from milo_bridge.poses import POSES
 from .fakes import make_deps
 
 
@@ -39,7 +40,7 @@ async def test_gait_staleness_zeroes():
 async def test_pose_valid_and_invalid():
     deps = _controlled_deps()
     svc = MotionService(deps)
-    name = next(iter(__import__("milo_bridge.poses", fromlist=["POSES"]).POSES))
+    name = next(iter(POSES))
     assert await svc.pose("c1", name) == {"ok": True}
     await asyncio.sleep(0)
     assert deps.runner.ran == [name]
@@ -76,3 +77,48 @@ def test_list_faces_groups_frames():
     names = list_faces()
     assert "dance" in names and "dance_1" not in names
     assert "cute" in names
+
+
+async def test_handlers_never_raise_on_driver_error():
+    """Handlers catch driver errors and return error dicts instead of raising."""
+
+    # Test gait with failing gait driver
+    class FakeGaitFailing:
+        def set_velocity_command(self, vx, vy, yaw):
+            raise RuntimeError("gait driver failed")
+
+    deps = _controlled_deps()
+    deps.gait = FakeGaitFailing()
+    svc = MotionService(deps)
+    result = await svc.gait("c1", 1.0, 0.0, 0.0)
+    assert "error" in result
+    assert "RuntimeError" in result["error"]
+
+    # Test servo with failing servos driver
+    class FakeServosFailing:
+        def set_angle(self, servo, deg):
+            raise RuntimeError("servo driver failed")
+
+    deps = _controlled_deps()
+    deps.servos = FakeServosFailing()
+    svc = MotionService(deps)
+    result = await svc.servo("c1", "R1", 90)
+    assert "error" in result
+    assert "RuntimeError" in result["error"]
+
+    # Test stop with both drivers failing
+    class FakeGaitFailingStop:
+        def set_velocity_command(self, vx, vy, yaw):
+            raise RuntimeError("gait failed")
+
+    class FakeRunnerFailing:
+        def abort(self):
+            raise RuntimeError("runner failed")
+
+    deps = _controlled_deps()
+    deps.gait = FakeGaitFailingStop()
+    deps.runner = FakeRunnerFailing()
+    svc = MotionService(deps)
+    result = await svc.stop()
+    # Stop must always return {"ok": True}
+    assert result == {"ok": True}

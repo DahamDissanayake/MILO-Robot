@@ -30,6 +30,12 @@ def _clamp(v: float, lo: float, hi: float) -> float:
     return max(lo, min(hi, float(v)))
 
 
+def _log_pose_result(task):
+    exc = task.exception() if not task.cancelled() else None
+    if exc:
+        log.error("pose failed: %s", exc)
+
+
 class MotionService:
     def __init__(self, deps):
         self._deps = deps
@@ -49,9 +55,12 @@ class MotionService:
     async def gait(self, client_id: str, vx: float, vy: float, yaw: float) -> dict:
         if err := self._denied(client_id):
             return err
-        self._deps.gait.set_velocity_command(
-            _clamp(vx, -VX_LIM, VX_LIM), _clamp(vy, -VY_LIM, VY_LIM),
-            _clamp(yaw, -YAW_LIM, YAW_LIM))
+        try:
+            self._deps.gait.set_velocity_command(
+                _clamp(vx, -VX_LIM, VX_LIM), _clamp(vy, -VY_LIM, VY_LIM),
+                _clamp(yaw, -YAW_LIM, YAW_LIM))
+        except Exception as exc:
+            return {"error": f"{type(exc).__name__}: {exc}"}
         self._last_cmd = time.monotonic()
         self._moving = (vx, vy, yaw) != (0.0, 0.0, 0.0)
         return {"ok": True}
@@ -64,6 +73,7 @@ class MotionService:
         if self._pose_task is not None and not self._pose_task.done():
             return {"error": "pose-running"}
         self._pose_task = asyncio.ensure_future(self._deps.runner.run(name))
+        self._pose_task.add_done_callback(_log_pose_result)
         return {"ok": True}
 
     async def face(self, client_id: str, name: str) -> dict:
@@ -71,7 +81,10 @@ class MotionService:
             return err
         if self._deps.display is None:
             return {"error": "display unavailable"}
-        await self._deps.display.set_face(name)
+        try:
+            await self._deps.display.set_face(name)
+        except Exception as exc:
+            return {"error": f"{type(exc).__name__}: {exc}"}
         return {"ok": True}
 
     async def servo(self, client_id: str, servo: str, deg: float) -> dict:
@@ -79,21 +92,34 @@ class MotionService:
             return err
         if servo not in SERVO_CHANNELS:
             return {"error": f"unknown servo {servo!r}"}
-        self._deps.servos.set_angle(servo, _clamp(deg, DEG_MIN, DEG_MAX))
+        try:
+            self._deps.servos.set_angle(servo, _clamp(deg, DEG_MIN, DEG_MAX))
+        except Exception as exc:
+            return {"error": f"{type(exc).__name__}: {exc}"}
         return {"ok": True}
 
     async def stop(self) -> dict:
         """Emergency stop: anyone, anytime."""
-        self._deps.gait.set_velocity_command(0.0, 0.0, 0.0)
+        # STOP must attempt every action and never raise.
+        try:
+            self._deps.gait.set_velocity_command(0.0, 0.0, 0.0)
+        except Exception as exc:
+            log.exception("stop: gait.set_velocity_command failed")
         self._moving = False
-        self._deps.runner.abort()
+        try:
+            self._deps.runner.abort()
+        except Exception as exc:
+            log.exception("stop: runner.abort failed")
         return {"ok": True}
 
     # -- staleness watchdog --------------------------------------------------
     def _watchdog_tick(self) -> None:
         if self._moving and time.monotonic() - self._last_cmd > STALE_S:
             log.info("gait command stale — zeroing velocity")
-            self._deps.gait.set_velocity_command(0.0, 0.0, 0.0)
+            try:
+                self._deps.gait.set_velocity_command(0.0, 0.0, 0.0)
+            except Exception as exc:
+                log.exception("_watchdog_tick: zeroing failed")
             self._moving = False
 
     async def _watchdog(self) -> None:
@@ -102,6 +128,8 @@ class MotionService:
             await asyncio.sleep(0.1)
 
     def start(self) -> None:
+        if self._task is not None and not self._task.done():
+            return
         self._task = asyncio.ensure_future(self._watchdog())
 
     def stop_watchdog(self) -> None:
