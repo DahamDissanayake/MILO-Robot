@@ -94,7 +94,8 @@
 .imu-face.back  { width: 60px; height: 8px;  background: var(--line);    transform: rotateY(180deg) translateZ(18px); }
 .imu-face.left  { width: 36px; height: 8px;  background: var(--line);    transform: rotateY(-90deg) translateZ(30px); }
 .imu-face.right { width: 36px; height: 8px;  background: var(--line);    transform: rotateY(90deg)  translateZ(30px); }
-.imu-plate.hot .imu-face.top { border-color: var(--danger); box-shadow: 0 0 8px var(--danger); }
+.imu-plate.hot .imu-face.top { border: 2px solid var(--danger); box-shadow: 0 0 12px 2px var(--danger); }
+.imu-plate.hot { filter: drop-shadow(0 0 6px var(--danger)); }
 
 /* bridge log — visible in the main flow, not tucked in the tools drawer */
 #bridge-log { margin: 0 16px 16px; }
