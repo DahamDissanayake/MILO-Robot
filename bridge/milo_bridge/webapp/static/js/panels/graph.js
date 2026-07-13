@@ -19,24 +19,26 @@ export default {
     const detail = el.querySelector("#graph-detail");
     let nodes = [], edges = [], selected = null, highlighted = null, raf = null;
 
-    function resize() { cv.width = cv.clientWidth; cv.height = cv.clientHeight; }
+    function resize() { cv.width = cv.clientWidth; cv.height = cv.clientHeight; draw(); }
     resize();
     window.addEventListener("resize", resize);
 
     function merge(data) {
       const W = cv.width, H = cv.height;
       const byId = new Map(nodes.map((n) => [n.id, n]));
+      let changed = false;
       for (const n of data.nodes) {
         if (byId.has(n.id)) { Object.assign(byId.get(n.id), n); continue; }
         nodes.push({
           ...n, x: W / 2 + (Math.random() - 0.5) * 40, y: H / 2 + (Math.random() - 0.5) * 40,
           vx: 0, vy: 0, born: performance.now(),
         });
+        changed = true;
       }
       const edgeKey = (e) => `${e.src}:${e.dst}:${e.type}`;
       const existing = new Set(edges.map(edgeKey));
-      for (const e of data.edges) if (!existing.has(edgeKey(e))) edges.push(e);
-      if (!raf) tick();
+      for (const e of data.edges) if (!existing.has(edgeKey(e))) { edges.push(e); changed = true; }
+      if (changed && !raf) tick();
     }
 
     async function loadAll() {

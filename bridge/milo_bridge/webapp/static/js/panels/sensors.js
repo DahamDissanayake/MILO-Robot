@@ -50,7 +50,7 @@ export default {
       const pitch = m.imu?.pitch, roll = m.imu?.roll;
       const gyroZ = m.imu ? (m.imu.gyro_z ?? m.imu.gyro?.[2] ?? null) : null;
       el.querySelector("#tile-attitude").textContent =
-        m.imu ? `${pitch.toFixed(1)}° / ${roll.toFixed(1)}°` : "n/a";
+        m.imu ? `${pitch?.toFixed(1) ?? "—"}° / ${roll?.toFixed(1) ?? "—"}°` : "n/a";
       el.querySelector("#tile-gyro").textContent = gyroZ == null ? "n/a" : `${gyroZ.toFixed(1)}°/s`;
       el.querySelector("#tile-temp").textContent = m.temp_c == null ? "n/a" : `${m.temp_c.toFixed(1)}°C`;
       el.querySelector("#tile-cpu").textContent = m.cpu_percent == null ? "n/a" : `${m.cpu_percent}%`;
