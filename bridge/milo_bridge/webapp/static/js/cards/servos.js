@@ -16,9 +16,15 @@ export default {
         bus.send({ t: "servo", servo: sl.dataset.servo, deg: Number(sl.value) });
       };
     });
-    el.querySelector("#center").onclick = () => SERVOS.forEach((s) => {
-      const sl = el.querySelector(`[data-servo="${s}"]`);
-      sl.value = 90; sl.oninput();
-    });
+    el.querySelector("#center").onclick = () => {
+      const angles = {};
+      SERVOS.forEach((s) => {
+        const sl = el.querySelector(`[data-servo="${s}"]`);
+        sl.value = 90;
+        el.querySelector(`[data-val="${s}"]`).textContent = "90°";
+        angles[s] = 90;
+      });
+      bus.send({ t: "servo_batch", angles });
+    };
   },
 };

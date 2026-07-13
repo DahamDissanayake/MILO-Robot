@@ -64,6 +64,7 @@ async def _handle_text(app, ws, client_id: str, data: dict) -> None:
         "pose": lambda: motion.pose(client_id, data.get("name", "")),
         "face": lambda: motion.face(client_id, data.get("name", "")),
         "servo": lambda: motion.servo(client_id, data.get("servo", ""), data.get("deg", 90)),
+        "servo_batch": lambda: motion.servo_batch(client_id, data.get("angles", {})),
     }
     if t not in handlers:
         await ws.send_json({"t": "err", "for": t, "error": "unknown-type"})

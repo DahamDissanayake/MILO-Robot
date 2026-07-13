@@ -136,3 +136,16 @@ async def test_telemetry_pushed():
         assert data["owner"] == "none"
     finally:
         await client.close()
+
+
+async def test_servo_batch_dispatch():
+    deps = make_deps(broker=ControlBroker())
+    client, ws = await _ws(deps)
+    try:
+        await ws.send_json({"t": "control", "take": True})
+        await _recv_json_until(ws, "control")
+        await ws.send_json({"t": "servo_batch", "angles": {"R1": 90, "L4": 90}})
+        await _recv_json_until(ws, "ack")
+        assert deps.servos.angles == {"R1": 90, "L4": 90}
+    finally:
+        await client.close()
