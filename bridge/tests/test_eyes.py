@@ -1,9 +1,6 @@
 import sys
 from pathlib import Path
 
-import pytest
-from PIL import Image
-
 sys.path.insert(0, str(Path(__file__).parent.parent / "assets" / "faces"))
 from eyes import Eye, EyeFrame, WIDTH, HEIGHT, render_frame  # noqa: E402
 
