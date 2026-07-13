@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import logging
 import uuid
@@ -19,10 +20,17 @@ AUDIO_OUT = 0x01
 AUDIO_IN = 0x02
 
 
+async def _send_safe(ws: web.WebSocketResponse, payload: dict) -> None:
+    try:
+        await ws.send_json(payload)
+    except (ConnectionResetError, RuntimeError):
+        pass  # socket died between the closed-check and the write
+
+
 def broadcast_json(app: web.Application, payload: dict) -> None:
     for ws in list(app["ws_clients"]):
         if not ws.closed:
-            asyncio.ensure_future(ws.send_json(payload))
+            asyncio.ensure_future(_send_safe(ws, payload))
 
 
 async def _handle_text(app, ws, client_id: str, data: dict) -> None:
@@ -73,7 +81,7 @@ def _broadcast_owner(app: web.Application) -> None:
     for ws, state in list(app["ws_state"].items()):
         if not ws.closed:
             you = bool(deps.broker and deps.broker.is_web_controller(state["id"]))
-            asyncio.ensure_future(ws.send_json({"t": "control", "owner": owner, "you": you}))
+            asyncio.ensure_future(_send_safe(ws, {"t": "control", "owner": owner, "you": you}))
 
 
 async def _audio_out_pump(app, ws) -> None:
@@ -114,21 +122,27 @@ async def websocket_handler(request: web.Request) -> web.WebSocketResponse:
     client_id = uuid.uuid4().hex[:8]
     app["ws_clients"].add(ws)
     app["ws_state"][ws] = {"id": client_id, "audio_on": False}
-    await ws.send_json({"t": "hello", "id": client_id})
-    pump = asyncio.ensure_future(_audio_out_pump(app, ws))
+    pump = None
     try:
+        await ws.send_json({"t": "hello", "id": client_id})
+        pump = asyncio.ensure_future(_audio_out_pump(app, ws))
         async for msg in ws:
             if msg.type == WSMsgType.TEXT:
                 try:
                     data = json.loads(msg.data)
                 except json.JSONDecodeError:
                     continue
+                if not isinstance(data, dict):
+                    continue
                 await _handle_text(app, ws, client_id, data)
             elif msg.type == WSMsgType.BINARY and msg.data[:1] == bytes([AUDIO_IN]):
                 if deps.audio is not None and deps.broker and deps.broker.is_web_controller(client_id):
                     deps.audio.play_pcm(msg.data[1:])
     finally:
-        pump.cancel()
+        if pump is not None:
+            pump.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await pump
         app["ws_clients"].discard(ws)
         app["ws_state"].pop(ws, None)
         if deps.broker:
@@ -162,8 +176,10 @@ async def _on_startup(app: web.Application) -> None:
 
 async def _on_cleanup(app: web.Application) -> None:
     app["motion"].stop_watchdog()
-    for t in app.get("bg_tasks", []):
+    tasks = app.get("bg_tasks", [])
+    for t in tasks:
         t.cancel()
+    await asyncio.gather(*tasks, return_exceptions=True)
 
 
 def register_ws(app: web.Application) -> None:

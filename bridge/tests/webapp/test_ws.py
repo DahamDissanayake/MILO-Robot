@@ -6,7 +6,8 @@ from aiohttp.test_utils import TestClient, TestServer
 
 from milo_bridge.webapp import create_app
 from milo_bridge.webapp.control import ControlBroker
-from .fakes import make_deps
+from milo_bridge.webapp.media_hub import MediaHub
+from .fakes import FakeAudio, make_deps
 
 
 async def _ws(deps):
@@ -101,6 +102,24 @@ async def test_intercom_binary_plays_when_controlling():
                 break
             await asyncio.sleep(0.05)
         assert deps.audio.played == [b"pcm-data"]
+    finally:
+        await client.close()
+
+
+async def test_audio_out_binary_frames():
+    deps = make_deps(broker=ControlBroker(), media_hub=MediaHub(audio=FakeAudio(frames=(b"\x00\x01" * 160,) * 50)))
+    client, ws = await _ws(deps)
+    try:
+        await ws.send_json({"t": "audio", "on": True})
+        msg = None
+        for _ in range(20):
+            msg = await asyncio.wait_for(ws.receive(), 2.0)
+            if msg.type == aiohttp.WSMsgType.BINARY:
+                break
+        else:
+            raise AssertionError("no binary audio-out frame received")
+        assert msg.data[0] == 0x01
+        assert len(msg.data) > 1
     finally:
         await client.close()
 
