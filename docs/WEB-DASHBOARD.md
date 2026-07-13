@@ -60,6 +60,28 @@ falls back automatically to port 8080 and logs the fallback, so
 about mDNS across VLANs or guest networks), fall back to the robot's raw
 LAN IP, e.g. `http://192.168.1.42:8080`.
 
+### Logging in
+
+`http://milo.local` lands on a login page. The default seeded credentials
+(set on first run in `~/.milo/config.json`, per the `BridgeConfig` fields
+`web_username`/`web_password_hash`) are:
+
+- **Username:** `dama`
+- **Password:** `MILO@gate`
+
+The password is stored as a salted `scrypt` hash — never in plaintext.
+Sessions are per-browser and end when you close the browser (no "stay
+logged in" cookie). To change the password later, compute a new hash and
+paste it into `~/.milo/config.json`, then restart the service:
+
+```bash
+python -c "from milo_bridge.webapp.auth import hash_password; print(hash_password('new-password'))"
+```
+
+Edit `~/.milo/config.json`'s `web_password_hash` field to the printed
+value (and `web_username` if you want a different username too), then
+`sudo systemctl restart milo-bridge`.
+
 ## 3. Feature tour
 
 The dashboard ships ten cards. Every card that can move hardware or make
