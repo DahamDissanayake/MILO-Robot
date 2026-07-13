@@ -1,0 +1,110 @@
+"""Motion commands from web clients: control-checked, clamped, stale-safed."""
+from __future__ import annotations
+
+import asyncio
+import logging
+import re
+import time
+from pathlib import Path
+
+from ..drivers.servos import SERVO_CHANNELS
+from ..poses import POSES
+
+log = logging.getLogger(__name__)
+
+STALE_S = 0.5
+ASSETS_FACES = Path(__file__).resolve().parents[2] / "assets" / "faces"
+
+VX_LIM, VY_LIM, YAW_LIM = 1.0, 1.0, 2.0
+DEG_MIN, DEG_MAX = 0, 180
+
+
+def list_faces() -> list[str]:
+    names = set()
+    for p in sorted(ASSETS_FACES.glob("*.png")):
+        names.add(re.sub(r"_\d+$", "", p.stem))
+    return sorted(names)
+
+
+def _clamp(v: float, lo: float, hi: float) -> float:
+    return max(lo, min(hi, float(v)))
+
+
+class MotionService:
+    def __init__(self, deps):
+        self._deps = deps
+        self._last_cmd = 0.0
+        self._moving = False
+        self._task: asyncio.Task | None = None
+        self._pose_task: asyncio.Task | None = None
+
+    # -- control gate ------------------------------------------------------
+    def _denied(self, client_id: str) -> dict | None:
+        broker = self._deps.broker
+        if broker is None or not broker.is_web_controller(client_id):
+            return {"error": "not-controlling"}
+        return None
+
+    # -- commands ----------------------------------------------------------
+    async def gait(self, client_id: str, vx: float, vy: float, yaw: float) -> dict:
+        if err := self._denied(client_id):
+            return err
+        self._deps.gait.set_velocity_command(
+            _clamp(vx, -VX_LIM, VX_LIM), _clamp(vy, -VY_LIM, VY_LIM),
+            _clamp(yaw, -YAW_LIM, YAW_LIM))
+        self._last_cmd = time.monotonic()
+        self._moving = (vx, vy, yaw) != (0.0, 0.0, 0.0)
+        return {"ok": True}
+
+    async def pose(self, client_id: str, name: str) -> dict:
+        if err := self._denied(client_id):
+            return err
+        if name not in POSES:
+            return {"error": f"unknown pose {name!r}"}
+        if self._pose_task is not None and not self._pose_task.done():
+            return {"error": "pose-running"}
+        self._pose_task = asyncio.ensure_future(self._deps.runner.run(name))
+        return {"ok": True}
+
+    async def face(self, client_id: str, name: str) -> dict:
+        if err := self._denied(client_id):
+            return err
+        if self._deps.display is None:
+            return {"error": "display unavailable"}
+        await self._deps.display.set_face(name)
+        return {"ok": True}
+
+    async def servo(self, client_id: str, servo: str, deg: float) -> dict:
+        if err := self._denied(client_id):
+            return err
+        if servo not in SERVO_CHANNELS:
+            return {"error": f"unknown servo {servo!r}"}
+        self._deps.servos.set_angle(servo, _clamp(deg, DEG_MIN, DEG_MAX))
+        return {"ok": True}
+
+    async def stop(self) -> dict:
+        """Emergency stop: anyone, anytime."""
+        self._deps.gait.set_velocity_command(0.0, 0.0, 0.0)
+        self._moving = False
+        self._deps.runner.abort()
+        return {"ok": True}
+
+    # -- staleness watchdog --------------------------------------------------
+    def _watchdog_tick(self) -> None:
+        if self._moving and time.monotonic() - self._last_cmd > STALE_S:
+            log.info("gait command stale — zeroing velocity")
+            self._deps.gait.set_velocity_command(0.0, 0.0, 0.0)
+            self._moving = False
+
+    async def _watchdog(self) -> None:
+        while True:
+            self._watchdog_tick()
+            await asyncio.sleep(0.1)
+
+    def start(self) -> None:
+        self._task = asyncio.ensure_future(self._watchdog())
+
+    def stop_watchdog(self) -> None:
+        if self._task is not None:
+            self._task.cancel()
+            self._task = None
