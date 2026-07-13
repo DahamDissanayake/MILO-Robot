@@ -9,6 +9,14 @@ const CHANNELS = 2;
 // "listen to the room", not meant for interactive back-and-forth voice.
 const COALESCE_CHUNKS = 4;   // ~80ms per scheduled buffer
 const LOOKAHEAD_S = 0.15;
+// playHead only ever moves forward; nothing about scheduling ahead of time
+// brings it back down. If frames ever arrive faster than real-time (a burst
+// after a brief stall, a slow start right when the connection opens), the
+// backlog compounds and never resyncs -- latency creeps upward for the rest
+// of the session. Cap it: once the scheduled backlog exceeds this, snap back
+// to "now + lookahead" instead of letting it grow, accepting a brief glitch
+// in exchange for bounded, LAN-appropriate latency.
+const MAX_LATENCY_S = 0.35;
 
 export default {
   id: "ears", title: "Ears (Listen)", w: 3, h: 3,
@@ -47,7 +55,11 @@ export default {
       levels = sum.map((s) => Math.sqrt(s / frames));
       const src = ctx.createBufferSource();
       src.buffer = buf; src.connect(ctx.destination);
-      playHead = Math.max(playHead, ctx.currentTime + LOOKAHEAD_S);
+      if (playHead - ctx.currentTime > MAX_LATENCY_S) {
+        playHead = ctx.currentTime + LOOKAHEAD_S; // resync: drop the backlog, bound latency
+      } else {
+        playHead = Math.max(playHead, ctx.currentTime + LOOKAHEAD_S);
+      }
       src.start(playHead);
       playHead += buf.duration;
     }
