@@ -61,7 +61,6 @@ export default {
     const offImu = bus.on("imu", (m) => {
       plate.style.setProperty("--pitch", (m.pitch ?? 0).toFixed(2));
       plate.style.setProperty("--roll", (m.roll ?? 0).toFixed(2));
-      plate.style.setProperty("--yaw", (m.yaw ?? 0).toFixed(2));
       plate.style.setProperty("--ax", (m.accel?.[0] ?? 0).toFixed(3));
       plate.style.setProperty("--ay", (m.accel?.[1] ?? 0).toFixed(3));
       const mag = Math.hypot(...(m.gyro ?? [0, 0, 0]));
