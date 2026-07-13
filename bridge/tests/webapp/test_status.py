@@ -51,3 +51,33 @@ async def test_api_404_returns_json_error():
         assert "error" in data
     finally:
         await client.close()
+
+
+async def test_static_assets_always_revalidate():
+    """Regression test: aiohttp's default static file serving sets no
+    Cache-Control header, so browsers apply their own heuristic caching
+    and can go on serving a fully stale JS module (e.g. an old registry.js
+    that still imports a since-deleted panel file) across a redeploy —
+    silently blanking the page, since one failed ES module import aborts
+    the whole module graph with no visible error. Every /static/ response
+    must force the browser to revalidate with the server on each load."""
+    client = await _client(make_deps())
+    try:
+        resp = await client.get("/static/js/main.js")
+        assert resp.status == 200
+        assert "no-cache" in resp.headers.get("Cache-Control", "")
+    finally:
+        await client.close()
+
+
+async def test_html_shell_always_revalidates():
+    """Same staleness risk as static assets applies to the HTML shell
+    itself (/ and /login) — both are FileResponse-served and must always
+    reflect the current deploy, not a browser-cached prior version."""
+    client = await _client(make_deps())
+    try:
+        resp = await client.get("/")
+        assert resp.status == 200
+        assert "no-cache" in resp.headers.get("Cache-Control", "")
+    finally:
+        await client.close()
