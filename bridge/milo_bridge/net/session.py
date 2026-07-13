@@ -27,32 +27,30 @@ class RobotSession:
         *,
         runner,
         display,
-        camera=None,
+        media_hub=None,
+        broker=None,
         audio=None,
         graph_api=None,
         gait=None,
-        on_audio_level=None,
     ):
         self._sock = sock
         self._runner = runner
         self._display = display
-        self._camera = camera
+        self._hub = media_hub
+        self._broker = broker
+        # `audio` here is the local speaker only (T_TTS playback below);
+        # outbound mic/camera capture streaming is owned by the media hub.
         self._audio = audio
         self._graph_api = graph_api
         self._gait = gait
-        self._on_audio_level = on_audio_level
         self._pose_task: asyncio.Task | None = None
 
     async def run(self) -> None:
         pumps: list[asyncio.Task] = []
-        if self._camera is not None:
-            pumps.append(asyncio.create_task(streams.pump_video(self._sock, self._camera)))
-        if self._audio is not None:
-            pumps.append(
-                asyncio.create_task(
-                    streams.pump_audio(self._sock, self._audio, on_level=self._on_audio_level)
-                )
-            )
+        if self._hub is not None and self._hub.video is not None:
+            pumps.append(asyncio.create_task(streams.pump_video(self._sock, self._hub.video)))
+        if self._hub is not None and self._hub.audio is not None:
+            pumps.append(asyncio.create_task(streams.pump_audio(self._sock, self._hub.audio)))
         try:
             while True:
                 msg = await self._sock.recv()
@@ -81,9 +79,13 @@ class RobotSession:
             await self._display.set_face(face, AnimMode.LOOP if face.startswith("talk_") else AnimMode.ONCE)
         move = msg.get("move") or {}
         if move.get("stop"):
+            # STOP is always allowed, regardless of who holds control (see
+            # ControlBroker docstring) — never gated below.
             self._runner.abort()
             if self._gait is not None:
                 self._gait.set_velocity_command(0.0, 0.0, 0.0)
+        elif self._broker is not None and not self._broker.allow_brain_motion():
+            log.info("dropping brain motion cmd while web client controls: %s", msg)
         elif "velocity" in move and self._gait is not None:
             vx, vy, yaw = move["velocity"]
             self._gait.set_velocity_command(vx, vy, yaw)
@@ -128,10 +130,11 @@ class SessionManager:
         servos,
         display,
         runner,
-        camera=None,
         audio=None,
         graph_api=None,
         gait=None,
+        media_hub=None,
+        broker=None,
         sleep_controller=None,
         discovery: BrainDiscovery | None = None,
         connect=None,
@@ -139,13 +142,17 @@ class SessionManager:
         self._cfg = cfg
         self._display = display
         self._runner = runner
-        self._camera = camera
+        # Local speaker only (T_TTS playback); capture streaming is owned by
+        # media_hub, built once in main() from the same driver.
         self._audio = audio
         self._graph_api = graph_api
         self._gait = gait
+        self._media_hub = media_hub
+        self._broker = broker
         self._store = PairedStore(cfg.paired_path)
         self._discovery = discovery or BrainDiscovery()
         self._connect = connect
+        self.link_state: str = "disconnected"
         if sleep_controller is None:
             from ..sleep import SleepController
 
@@ -185,17 +192,25 @@ class SessionManager:
                 )
                 log.info("connected to brain %s (%s)", peer.name, peer.id)
                 await self._sleep.ensure_awake()
-                session = RobotSession(
-                    sock,
-                    runner=self._runner,
-                    display=self._display,
-                    camera=self._camera,
-                    audio=self._audio,
-                    graph_api=self._graph_api,
-                    gait=self._gait,
-                    on_audio_level=self._sleep.handle_audio_level,
-                )
-                await session.run()
+                if self._broker is not None:
+                    self._broker.set_brain_connected(True)
+                self.link_state = "connected"
+                try:
+                    session = RobotSession(
+                        sock,
+                        runner=self._runner,
+                        display=self._display,
+                        media_hub=self._media_hub,
+                        broker=self._broker,
+                        audio=self._audio,
+                        graph_api=self._graph_api,
+                        gait=self._gait,
+                    )
+                    await session.run()
+                finally:
+                    if self._broker is not None:
+                        self._broker.set_brain_connected(False)
+                    self.link_state = "disconnected"
         except HandshakeError as exc:
             log.warning("handshake with %s failed: %s", record.brain_id, exc)
             await asyncio.sleep(self._cfg.reconnect_seconds)

@@ -62,21 +62,26 @@ async def main() -> None:
     graph = GraphStore(cfg.graph_db_path)
     graph_api = GraphApi(graph)
 
+    from .webapp.control import ControlBroker
     from .webapp.deps import WebDeps
+    from .webapp.media_hub import MediaHub
     from .webapp.server import start_web
+
+    sleep_controller = SleepController(
+        runner, display, loud_rms_threshold=cfg.loud_rms_threshold, servos=servos
+    )
+
+    broker = ControlBroker()
+    hub = MediaHub(camera=camera, audio=audio, on_audio_level=sleep_controller.handle_audio_level)
 
     web_deps = WebDeps(
         config=cfg, runner=runner, display=display, servos=servos,
         camera=camera, audio=audio, imu=imu, gait=gait,
         graph_api=graph_api, graph_store=graph,
-        broker=None, media_hub=None, log_buffer=None,
-        get_link_state=lambda: "disconnected",
+        broker=broker, media_hub=hub, log_buffer=None,
+        get_link_state=lambda: manager.link_state,
     )
     web_task = asyncio.create_task(start_web(web_deps)) if cfg.web_enabled else None
-
-    sleep_controller = SleepController(
-        runner, display, loud_rms_threshold=cfg.loud_rms_threshold, servos=servos
-    )
 
     await runner.run("rest")
     display.start_idle()
@@ -87,10 +92,11 @@ async def main() -> None:
         servos=servos,
         display=display,
         runner=runner,
-        camera=camera,
         audio=audio,
         graph_api=graph_api,
         gait=gait,
+        media_hub=hub,
+        broker=broker,
         sleep_controller=sleep_controller,
     )
 

@@ -145,3 +145,49 @@ def test_graph_dispatches_to_api():
     t, fields = session._sock.sent[-1]
     assert t == protocol.T_GRAPH_RESULT
     assert fields["nodes"] == [{"type": "person"}]
+
+
+class FakeBroker:
+    def __init__(self, allow: bool):
+        self._allow = allow
+
+    def allow_brain_motion(self):
+        return self._allow
+
+
+def test_brain_motion_dropped_while_broker_denies():
+    session, deps = make_session(broker=FakeBroker(allow=False))
+    asyncio.run(session.dispatch(msg(protocol.T_CMD, move={"velocity": [0.1, 0.0, 15.0]})))
+    assert deps["gait"].commands == []
+
+
+def test_brain_pose_and_turn_dropped_while_broker_denies():
+    async def run():
+        session, deps = make_session(broker=FakeBroker(allow=False))
+        await session.dispatch(msg(protocol.T_CMD, move={"pose": "wave"}))
+        await session.dispatch(msg(protocol.T_CMD, move={"turn": -45}))
+        await asyncio.sleep(0)
+        return deps
+
+    deps = asyncio.run(run())
+    assert deps["runner"].ran == []
+    assert deps["gait"].commands == []
+
+
+def test_brain_motion_allowed_when_broker_permits():
+    session, deps = make_session(broker=FakeBroker(allow=True))
+    asyncio.run(session.dispatch(msg(protocol.T_CMD, move={"velocity": [0.1, 0.0, 15.0]})))
+    assert deps["gait"].commands == [(0.1, 0.0, 15.0)]
+
+
+def test_stop_always_allowed_even_while_broker_denies():
+    session, deps = make_session(broker=FakeBroker(allow=False))
+    asyncio.run(session.dispatch(msg(protocol.T_CMD, move={"stop": True})))
+    assert deps["runner"].aborted == 1
+    assert deps["gait"].commands == [(0.0, 0.0, 0.0)]
+
+
+def test_face_updates_are_not_gated_by_broker():
+    session, deps = make_session(broker=FakeBroker(allow=False))
+    asyncio.run(session.dispatch(msg(protocol.T_CMD, face="talk_happy")))
+    assert deps["display"].faces == ["talk_happy"]
