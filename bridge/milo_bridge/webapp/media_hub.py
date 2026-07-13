@@ -32,14 +32,42 @@ class Fanout:
         q: asyncio.Queue = asyncio.Queue(maxsize=QUEUE_SIZE)
         self._subs.add(q)
         if not self.active:
-            self._task = asyncio.ensure_future(self._run())
+            self._start_task()
         return q
 
     def unsubscribe(self, q: asyncio.Queue) -> None:
         self._subs.discard(q)
         if not self._subs and self._task is not None:
             self._task.cancel()
+            # Do NOT null self._task here. cancel() only *schedules*
+            # cancellation - the task may still be running (e.g. mid-await
+            # in a blocking-in-thread camera/audio call) for a while after
+            # this returns. If we nulled self._task now, `active` would
+            # report False while a reader is still alive, and a rapid
+            # subscribe() arriving in that window would spawn a *second*
+            # concurrent reader of the same physical device. `_on_task_done`
+            # clears self._task once the task has genuinely finished.
+
+    def _start_task(self) -> None:
+        self._task = asyncio.ensure_future(self._run())
+        self._task.add_done_callback(self._on_task_done)
+
+    def _on_task_done(self, task: asyncio.Task) -> None:
+        if self._task is task:
             self._task = None
+        # If the task that just finished was cancelled (i.e. unsubscribe()
+        # emptied `_subs` and requested cancellation) but a new subscriber
+        # arrived *before* the cancellation actually unwound, subscribe()
+        # saw `active` still True (the old task wasn't done yet) and only
+        # re-added to `_subs` without starting a reader. Now that the old
+        # reader has truly finished, start a fresh one for those pending
+        # subscribers. This deliberately does NOT fire for a *natural*
+        # death (an uncaught driver exception, or generator exhaustion) -
+        # in that case `task.cancelled()` is False, so we leave existing
+        # subscribers waiting until a fresh subscribe() call notices
+        # `active is False` and starts a new reader (see `active`/`_run`).
+        if task.cancelled() and self._subs and self._task is None:
+            self._start_task()
 
     async def _run(self) -> None:
         try:

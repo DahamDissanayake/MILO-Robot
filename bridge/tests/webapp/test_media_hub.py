@@ -86,3 +86,93 @@ async def test_media_hub_audio_level_callback():
 async def test_hub_none_drivers():
     hub = MediaHub(camera=None, audio=None)
     assert hub.video is None and hub.audio is None
+
+
+async def test_reader_death_self_heals_active_flag():
+    """Finding 1: when the driver generator dies mid-stream, `active` must
+    flip to False on its own (via the task's done-callback) - not only
+    when some *future* subscribe() call happens to notice. Subscribers
+    left in `_subs` are not serviced further, but at least a reconnect
+    loop polling `active` will see the true state promptly instead of
+    hanging forever believing a reader is still running."""
+
+    async def gen():
+        yield b"f0"
+        raise RuntimeError("driver exploded")
+
+    fan = Fanout(gen, "video")
+    q = fan.subscribe()
+    assert await asyncio.wait_for(q.get(), 1.0) == b"f0"
+
+    # No new subscribe() call here - the fix must self-heal `active`
+    # purely from the reader task's own completion, not from lazy
+    # detection inside subscribe(). Poll briefly (no fixed sleep) so the
+    # test isn't flaky if a done-callback needs one extra loop tick.
+    for _ in range(50):
+        if fan.active is False:
+            break
+        await asyncio.sleep(0)
+    assert fan.active is False
+    # The subscriber is still registered but the reader is gone - this is
+    # the documented residual half of the bug (fixed by a fresh
+    # subscribe(), not by this fix alone).
+    assert q in fan._subs
+
+
+async def test_rapid_unsubscribe_resubscribe_never_runs_two_readers():
+    """Finding 2: cancel() only *schedules* cancellation. If a new
+    subscribe() arrives while the old reader is still unwinding (e.g.
+    blocked mid-await inside the driver), it must NOT spin up a second
+    concurrent reader of the same physical device. This forces the exact
+    interleaving deterministically via an asyncio.Event, no sleep-based
+    timing guesses."""
+
+    hold = asyncio.Event()
+    calls = 0
+    concurrent = 0
+    max_concurrent = 0
+
+    async def gen():
+        nonlocal calls, concurrent, max_concurrent
+        calls += 1
+        concurrent += 1
+        max_concurrent = max(max_concurrent, concurrent)
+        try:
+            await hold.wait()  # simulates being blocked mid-open
+            while True:
+                yield b"x"
+                await asyncio.sleep(0)
+        finally:
+            concurrent -= 1
+
+    fan = Fanout(gen, "video")
+    q1 = fan.subscribe()
+    # Let reader task A start and reach `await hold.wait()`.
+    await asyncio.sleep(0)
+    assert calls == 1
+
+    fan.unsubscribe(q1)          # empties _subs -> schedules task A.cancel()
+    q2 = fan.subscribe()         # arrives before task A has unwound
+
+    # Task A's cancellation hasn't been delivered yet (no await happened
+    # between cancel() and here), so the fanout must still consider itself
+    # active and must NOT have started a second reader.
+    assert fan.active is True
+    assert calls == 1
+
+    # Now let the event loop actually deliver the cancellation to task A
+    # and, once it has genuinely finished, let the done-callback start a
+    # replacement reader for q2.
+    for _ in range(50):
+        if calls >= 2:
+            break
+        await asyncio.sleep(0)
+    assert calls == 2
+    # The critical assertion: task A's generator must have fully unwound
+    # (decrementing `concurrent`) before task B's generator started, so
+    # at no point were two readers open at once.
+    assert max_concurrent == 1
+
+    hold.set()
+    assert await asyncio.wait_for(q2.get(), 1.0) == b"x"
+    fan.unsubscribe(q2)
