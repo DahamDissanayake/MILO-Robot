@@ -1,11 +1,14 @@
 #grid {
-  display: grid; grid-template-columns: repeat(12, 1fr);
-  grid-auto-rows: 80px; gap: 10px; padding: 12px;
+  position: relative;
+  padding: 12px;
 }
 .card {
+  position: absolute;
   background: var(--surface); border: 1px solid var(--line); border-radius: 8px;
-  display: flex; flex-direction: column; overflow: hidden; position: relative;
+  display: flex; flex-direction: column; overflow: hidden;
+  transition: left 0.15s ease, top 0.15s ease, width 0.15s ease, height 0.15s ease;
 }
+.card.dragging, .card.resizing { transition: none; opacity: 0.85; z-index: 10; }
 .card.dragging { opacity: 0.55; outline: 2px dashed var(--muted); }
 .card.drop-target { outline: 2px solid var(--ink); }
 .card-head {
@@ -26,7 +29,3 @@
   font-size: 11px; color: var(--muted);
 }
 .unavail { color: var(--muted); font-style: italic; }
-@media (max-width: 800px) {
-  #grid { grid-template-columns: repeat(2, 1fr); }
-  .card { grid-column: span 2 !important; }
-}
