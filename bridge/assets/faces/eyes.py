@@ -80,12 +80,12 @@ _IDLE = EyeFrame(Eye(), Eye())
 _HAPPY = EyeFrame(Eye(h=16, tilt=-14, dy=-2), Eye(h=16, tilt=14, dy=-2))
 _SAD = EyeFrame(Eye(h=20, tilt=16, dy=6), Eye(h=20, tilt=-16, dy=6))
 _ANGRY = EyeFrame(
-    Eye(h=20, tilt=16, dy=2), Eye(h=20, tilt=-16, dy=2), gap=10,
+    Eye(h=14, tilt=-22, dy=3), Eye(h=14, tilt=22, dy=3), gap=8,
 )
 _SLEEPY = EyeFrame(Eye(h=8, dy=4), Eye(h=8, dy=4))
 _SURPRISED = EyeFrame(Eye(w=40, h=40, dy=-4), Eye(w=40, h=40, dy=-4), gap=18)
 _CONFUSED = EyeFrame(Eye(), Eye(w=28, h=28, tilt=18, dy=-10))
-_LOVE = EyeFrame(Eye(h=18, tilt=-10, dy=-2), Eye(h=18, tilt=10, dy=-2))
+_LOVE = EyeFrame(Eye(h=18, tilt=-8, dy=-1), Eye(h=18, tilt=8, dy=-1))
 _THINKING_1 = EyeFrame(Eye(h=28, dx=-4, dy=-2), Eye(w=28, h=26, tilt=8, dx=-4, dy=-6))
 _THINKING_2 = EyeFrame(Eye(h=28, dx=4, dy=-2), Eye(w=28, h=26, tilt=8, dx=4, dy=-6))
 _EXCITED_1 = EyeFrame(Eye(w=36, h=36, dy=-6), Eye(w=36, h=36, dy=-6), gap=18)
