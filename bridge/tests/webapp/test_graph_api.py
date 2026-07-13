@@ -53,3 +53,34 @@ async def test_poses_and_faces_endpoints():
         assert "happy" in faces["faces"]
     finally:
         await client.close()
+
+
+async def test_all_returns_full_graph_capped():
+    deps = make_deps()
+    alice, bob, ball = _seed(deps.graph_store)
+    result = deps.graph_store.all(limit=200)
+    ids = {n["id"] for n in result["nodes"]}
+    assert {alice.id, bob.id, ball.id} <= ids
+    edge_pairs = {(e["src"], e["dst"]) for e in result["edges"]}
+    assert (alice.id, ball.id) in edge_pairs
+    assert (alice.id, bob.id) in edge_pairs
+
+
+async def test_all_respects_limit():
+    deps = make_deps()
+    for i in range(5):
+        deps.graph_store.upsert_node("fact", {"n": i})
+    result = deps.graph_store.all(limit=3)
+    assert len(result["nodes"]) == 3
+
+
+async def test_search_with_empty_query_returns_full_graph_via_http():
+    deps = make_deps()
+    _seed(deps.graph_store)
+    client = await _client(deps)
+    try:
+        resp = await client.get("/api/graph/search", params={"limit": "200"})
+        data = await resp.json()
+        assert len(data["nodes"]) == 3
+    finally:
+        await client.close()

@@ -2,8 +2,9 @@
 
 A browser control panel served directly off the robot — no brain, no phone
 app, no extra install. Point any device on the same LAN at Milo and you get
-a live cockpit: camera, ears, voice, movement, poses, servo trims, sensors,
-memory graph, and the bridge's own log, all in one page.
+a live cockpit: camera, communication (listen and talk), movement, poses,
+servo trims, sensors, memory graph, and the bridge's own log, all in one
+page.
 
 ## 1. What it is
 
@@ -13,15 +14,26 @@ on `bridge/milo_bridge/webapp/`. It needs no build step — it's hand-written
 ES modules loaded straight from `static/`. Every route is gated behind a
 login page (see §7's smoke checklist), so you do need to sign in once per
 browser before you can see anything at all — but once you're in, **observation
-is still always free**: no card that only watches (camera, ears, sensors,
-status, logs, memory graph) requires anything beyond being logged in. Taking
-the robot's actuators away from the brain (driving it, posing it, talking through
+is still always free**: no panel that only watches (camera, the Communication
+panel's listening side, sensors, the status bar's telemetry, the Bridge Log,
+the memory graph) requires anything beyond being logged in. Taking the
+robot's actuators away from the brain (driving it, posing it, talking through
 it) requires explicitly clicking **Take Control**, and one physical **STOP**
 button is always live, for anyone, in any tab, whether or not they hold
-control. The page is a responsive drag-and-resize card grid — arrange it
-once, on one device, and it stays arranged; open the same URL from a second
-phone and get a different, independent layout. It works in light or dark
-mode and follows your OS theme by default.
+control.
+
+The page is a fixed "cockpit" console, not a rearrangeable grid: a status
+bar runs across the top (brand, connection state, current control owner,
+and the page-level action buttons), a two-column cockpit below it puts
+Camera → Move → Communication in the center column and Sensors in a side
+column, and a full-width Memory Graph section sits below the cockpit.
+Less-frequently-used panels — Poses & Emotes, Servo Test, and Bridge Log —
+live in a Tools drawer opened from the status bar's **Tools** button. This
+layout is identical for every device — there's no per-browser saved
+arrangement to diverge between a laptop and a phone — and a real mobile
+breakpoint (at 900px and below) reflows the cockpit to a single column and
+collapses the status bar's secondary stats behind a **⋯** toggle. It works
+in light or dark mode and follows your OS theme by default.
 
 _screenshot to be added after first run_
 
@@ -84,68 +96,87 @@ value (and `web_username` if you want a different username too), then
 
 ## 3. Feature tour
 
-The dashboard ships ten cards. Every card that can move hardware or make
-noise is marked **needs control** below; the rest are pure observation and
-work in every tab, all the time.
+The dashboard is built from a status bar plus seven panels: three in the
+fixed cockpit's center column, one in its side column, one full-width
+section below the cockpit, and three tucked into a Tools drawer. Every
+panel that can move hardware or make noise is marked **needs control**
+below; the rest are pure observation and work in every tab, all the time.
 
-- **Status** — a plain table of the telemetry the bridge already tracks for
-  itself: brain link state, who currently owns control (`none` / `brain` /
-  `web`), which gait backend is active (`cpg` or the trained ONNX policy),
-  CPU %, SoC temperature, RAM %, and how long the web server has been up.
-  It refreshes every two seconds off the same telemetry broadcast every
-  connected tab receives, so it costs nothing extra to have open.
-- **Camera** — a live MJPEG feed at `/stream/camera`, one hub subscription
-  per browser tab, so opening the dashboard on three devices doesn't triple
-  the load on the camera driver — they all share the single upstream reader.
-  A **Snapshot** button grabs the current frame into a downloadable JPEG
-  client-side, no server round trip needed.
-- **Move** (needs control) — an on-screen joystick, or WASD / arrow keys
-  with Q/E to turn, driving the gait engine's velocity command. A speed
-  slider scales every axis together. Commands are sent at a steady 100 ms
-  cadence while a direction is held and immediately zeroed on release, and
-  there is always a local **STOP** button on the card in addition to the
-  global one in the header.
-- **Ears (Listen)** (observe-only, no control needed) — subscribes to the
-  robot's live microphone audio over the WebSocket's binary channel and
-  plays it back through your browser's speakers, with a small VU meter per
-  channel. Anyone can listen in without taking control — it's a monitor,
-  not an actuator.
-- **Voice (Speak)** (needs control) — two ways to make Milo talk: hold the
-  **Hold to Talk** button for a push-to-talk intercom (your microphone is
-  captured, resampled, and streamed to the robot's speaker while the button
-  is held), or type text and hit **Say** to have the robot speak it via
-  text-to-speech. TTS goes through `espeak-ng` on the Pi — it must be
-  installed with `sudo apt install espeak-ng`, or `/api/speak` reports
-  `tts-unavailable` and the card shows the error inline.
-- **Poses & Emotes** (needs control) — buttons for every scripted pose in
-  `milo_bridge.poses` and every face bitmap under `assets/faces/`, fetched
-  from `/api/poses` and `/api/faces` so the card never needs updating when
-  poses or faces are added — it just reflects what's on the robot.
-- **Servo Test** (needs control) — one slider per servo channel (R1–R4,
-  L1–L4), each sending a live `deg` update as you drag, plus a **Center All
-  (90°)** button for quickly returning every joint to neutral during
-  assembly or calibration work.
-- **Sensors** (observe-only) — a small IMU chart (pitch/roll history as a
-  scrolling sparkline) driven by the same telemetry stream as the Status
-  card, plus a row of hardware-presence dots (camera / audio / IMU /
-  display) fetched once from `/api/status` so you can tell at a glance what
-  the robot thinks is actually attached.
-- **Memory Graph** (observe-only) — a force-directed canvas view of Milo's
-  on-robot knowledge graph. Type a search term and hit **Search** (or
-  Enter) to query `/api/graph/search`; matching nodes and their edges are
-  laid out with a simple spring simulation, and clicking a node shows its
-  full type and properties below the canvas.
-- **Bridge Log** (observe-only) — a live tail of the bridge's own log
-  output. It loads the last 100 lines from `/api/logs` on mount, then
-  appends new lines in real time as the bridge's `RingBufferLogHandler`
-  broadcasts them over the WebSocket — useful for watching what the robot
-  is actually doing without SSHing in.
+- **Status bar** — merges the old header and Status card into one strip
+  across the top: brand, a connection dot, who currently owns control
+  (`none` / `brain` / `web`), and the page-level actions (Take Control,
+  STOP, Tools, Logout, theme toggle). A secondary stat group — Link, Gait
+  backend, CPU %, SoC temperature, RAM %, and web-server uptime — sits
+  alongside those on desktop, refreshed off the same telemetry broadcast
+  every connected tab already receives; below the ~900px mobile breakpoint
+  it's hidden behind a **⋯** toggle button so the bar stays one line.
+- **Camera** (observe-only, cockpit center) — a live MJPEG feed at
+  `/stream/camera`, one hub subscription per browser tab, so opening the
+  dashboard on three devices doesn't triple the load on the camera driver
+  — they all share the single upstream reader. A **Snapshot** button grabs
+  the current frame into a downloadable JPEG client-side, no server round
+  trip needed.
+- **Move** (needs control, cockpit center) — an on-screen joystick, or
+  WASD / arrow keys with Q/E to turn, driving the gait engine's velocity
+  command. A speed slider scales every axis together. Commands are sent at
+  a steady 100 ms cadence while a direction is held and immediately zeroed
+  on release, and there is always a local **STOP** button on the panel in
+  addition to the global one in the status bar.
+- **Communication** (cockpit center) — replaces the old separate Ears and
+  Voice cards. A headphones toggle turns live listening on or off and
+  needs no control at all — anyone can listen in — and drives a vertical
+  VU meter that fills green and switches to red above roughly half scale.
+  Push-to-talk (**Hold to Talk**) and the type-and-**Say** text bar (both
+  need control) are gated independently of listening: both stay visibly
+  locked until this tab holds control, and if control is lost mid-hold (a
+  heartbeat timeout, another tab taking control, or the connection
+  dropping) an in-flight push-to-talk session is torn down immediately
+  rather than just being blocked from starting again. TTS goes through
+  `espeak-ng` on the Pi — it must be installed with
+  `sudo apt install espeak-ng`, or `/api/speak` reports `tts-unavailable`
+  and the panel shows the error inline.
+- **Sensors** (observe-only, cockpit side column) — six live tiles: Pitch
+  / Roll, Gyro, SoC Temp, CPU, and RAM, plus a row of hardware-presence
+  dots (camera / audio / IMU / display) fetched once from `/api/status`,
+  so you can tell at a glance what the robot thinks is actually attached.
+  A **Details** toggle reveals two rolling-history sparkline canvases —
+  Attitude (pitch/roll) and System (CPU / RAM / Temp) — built from the
+  same telemetry stream.
+- **Memory Graph** (observe-only, full-width below the cockpit) — a
+  force-directed canvas view of Milo's on-robot knowledge graph. It shows
+  the entire graph as soon as it mounts, not only after you search, and
+  polls every 5 seconds to pick up graph changes from other sources
+  (there's no live WebSocket push for graph mutations); newly-arrived
+  nodes grow into view over about 400 ms instead of popping in. Typing a
+  search term and hitting **Search** (or Enter) highlights matching nodes
+  in place and dims the rest, rather than replacing the visible graph —
+  **Clear** resets the highlight — and clicking any node shows its full
+  type and properties below the canvas.
+- **Tools drawer** — opened with the status bar's **Tools** button, holds
+  the panels used less often. On desktop it slides in from the right and
+  can be closed either by clicking the backdrop or the drawer's own
+  **✕ Close** button; on mobile the drawer becomes a full-screen overlay
+  that covers both the backdrop and the status bar underneath it, so the
+  in-drawer **✕ Close** button is the only way to close it there. It
+  contains:
+  - **Poses & Emotes** (needs control) — buttons for every scripted pose
+    in `milo_bridge.poses` and every face bitmap under `assets/faces/`,
+    fetched from `/api/poses` and `/api/faces` so the panel never needs
+    updating when poses or faces are added — it just reflects what's on
+    the robot.
+  - **Servo Test** (needs control) — one slider per servo channel
+    (R1–R4, L1–L4), each sending a live `deg` update as you drag, plus a
+    **Center All (90°)** button for quickly returning every joint to
+    neutral during assembly or calibration work.
+  - **Bridge Log** (observe-only) — a live tail of the bridge's own log
+    output. It loads the last 100 lines from `/api/logs` on mount, then
+    appends new lines in real time as the bridge's `RingBufferLogHandler`
+    broadcasts them over the WebSocket — useful for watching what the
+    robot is actually doing without SSHing in.
 
-Cards can be dragged by their header to reorder, resized from their
-bottom-right corner, hidden with the header's ✕ and brought back with
-**+ Card**, and the whole layout can be wiped back to defaults with the ⟲
-button in the header. Layout, per-card size, and hidden state all persist
-per-browser in `localStorage`, independently of every other tab or device.
+The layout itself is fixed — nothing can be dragged, resized, or hidden —
+and the Tools drawer is what replaces the old per-card hide/show and its
+`localStorage`-persisted per-browser state.
 
 ## 4. Control & safety
 
@@ -153,9 +184,10 @@ Motion, poses, servos, and voice output all funnel through one gate:
 `milo_bridge.webapp.control.ControlBroker`. The rules are deliberately
 simple:
 
-- **Observation is never brokered.** Camera, ears, sensors, status, logs,
-  and the memory graph work in every tab regardless of who — if anyone —
-  holds control.
+- **Observation is never brokered.** Camera, the Communication panel's
+  listening side, Sensors, the status bar's telemetry, the Bridge Log, and
+  the Memory Graph work in every tab regardless of who — if anyone — holds
+  control.
 - **The brain has motion rights by default.** Whenever no web client holds
   the control slot, `broker.allow_brain_motion()` is true and the brain's
   own gait/pose commands reach the hardware as normal (see
@@ -177,34 +209,35 @@ simple:
   that's gone.
 - **Gait commands go stale fast.** Independently of the heartbeat, the
   motion watchdog zeroes the gait velocity if a non-zero command hasn't been
-  refreshed in 0.5 seconds. The Move card already re-sends every 100 ms
+  refreshed in 0.5 seconds. The Move panel already re-sends every 100 ms
   while a direction is held, so this only fires if the browser tab itself
   stalls or the connection drops mid-motion — it's the last line of defense
   against a robot left walking into a wall.
-- **STOP is exempt from all of the above.** The header's STOP button (and
-  the Move card's own STOP button) sends `{"t":"stop"}`, which is handled
+- **STOP is exempt from all of the above.** The status bar's STOP button
+  (and the Move panel's own STOP button) sends `{"t":"stop"}`, which is handled
   outside the control gate entirely: it zeroes gait velocity and aborts any
   running pose unconditionally, for any tab, controlling or not. Safety
   never depends on holding the control slot.
 
-## 5. Writing a new card
+## 5. Writing a new panel
 
-Cards are the unit of extension: a new dashboard feature is one static JS
-file plus one line in the registry — nothing else needs to change, and
+Panels are the unit of extension: a new dashboard feature is one static JS
+file plus one entry in the registry — nothing else needs to change, and
 `bridge/tests/webapp/test_static_integrity.py` fails the build if a
-registered card's file goes missing, so this contract can't silently rot.
+registered panel's file goes missing, so this contract can't silently rot.
 
-Every card is a plain object with an `id`, a `title`, a grid size (`w`/`h`
-in 12-column grid units), and a `mount(el, { bus })` function that renders
-into `el` and returns an optional cleanup function. Here's a complete,
-working example — a card that shows the robot's uptime and a button that
-pings STOP for fun:
+Every panel is a plain object with an `id`, a `title`, and a
+`mount(el, { bus })` function that renders into `el` and returns an
+optional cleanup function. Here's a complete, working example — a panel
+that shows the robot's uptime and a button that pings STOP for fun:
 
 ```js
-// bridge/milo_bridge/webapp/static/js/cards/hello.js
+// bridge/milo_bridge/webapp/static/js/panels/hello.js
 export default {
-  id: "hello", title: "Hello Milo", w: 3, h: 2,
-  // needsControl: true   // uncomment if this card should lock while nobody has control
+  id: "hello", title: "Hello Milo",
+  // needsControl: true   // uncomment if the WHOLE panel should lock until
+                           // this tab holds control — layout.js handles the
+                           // dimming/overlay for you (see move.js, poses.js)
 
   mount(el, { bus }) {
     el.innerHTML = `
@@ -219,8 +252,10 @@ export default {
     const onClick = () => bus.send({ t: "hb" }); // any existing message type works here
     ping.addEventListener("click", onClick);
 
-    // mount() may return a cleanup function; grid.js calls it if the card
-    // is ever unmounted (hidden via the header ✕, or on a full re-render).
+    // mount() may return a cleanup function. The fixed cockpit mounts every
+    // panel once at startup and never unmounts it, so layout.js doesn't
+    // call this itself — but returning one is still good practice, and
+    // bus.on()'s own unsubscribe function makes it nearly free.
     return () => {
       off();
       ping.removeEventListener("click", onClick);
@@ -229,53 +264,71 @@ export default {
 };
 ```
 
-Register it with one line in `bridge/milo_bridge/webapp/static/js/registry.js`:
+Register it in `bridge/milo_bridge/webapp/static/js/registry.js` by adding
+it to whichever zone array it belongs in — `cockpitCenter` (the main
+column), `cockpitSide` (the narrower side column), `graph` (the full-width
+section below the cockpit), or `tools` (the drawer):
 
 ```js
-import hello from "./cards/hello.js";
+import hello from "./panels/hello.js";
 // ...
-export const cards = [status, camera, move, ears, voice, poses, servos, sensors, graph, log, hello];
+export const registry = {
+  cockpitCenter: [camera, move, comm, hello],
+  cockpitSide: [sensors],
+  graph: [graph],
+  tools: [poses, servos, log],
+};
 ```
+
+A panel opts into locking its **entire** body until this tab holds control
+by setting `needsControl: true`, the way `move.js` and `poses.js` do —
+`layout.js` dims the panel and disables pointer events on it automatically
+whenever `bus.controlled` is false. If only *part* of a panel needs that
+treatment — like the Communication panel, where listening is free but
+push-to-talk and Say require control — leave `needsControl` unset and gate
+those specific controls yourself inside `mount()`, the way `comm.js` does:
+subscribe to the `"control"` and `"_close"` bus topics, toggle a
+`locked-control` class and `disabled` state on just the affected elements,
+and tear down any in-flight session (like a push-to-talk audio stream) the
+moment control is lost.
 
 That's the whole frontend contract: `bus.on(topic, fn)` subscribes to any
 inbound WebSocket message type (`telemetry`, `control`, `log`, or any custom
 `t` your server route pushes), `bus.onBinary(fn)` subscribes to binary audio
 frames, and `bus.send(obj)` / `bus.sendBytes(u8)` send JSON or binary frames
 back. `bus.controlled` and the `"control"` topic tell you whether this tab
-currently holds the control slot, which is how `grid.js` decides whether to
-visually lock a card marked `needsControl: true`.
+currently holds the control slot.
 
-If the card needs a new HTTP endpoint (not just WebSocket messages), add a
+If the panel needs a new HTTP endpoint (not just WebSocket messages), add a
 module under `bridge/milo_bridge/webapp/api/` following the existing ones
 (`status.py`, `graph.py`, `logs.py`, `speak.py`, `media.py`,
 `motion_meta.py`) — each exposes a `register(app: web.Application) -> None`
 that adds its routes — and wire it into
 `bridge/milo_bridge/webapp/api/__init__.py:register_routes()` with one
-import and one call, the same one-line-to-add pattern as the card registry.
+import and one call, the same one-line-to-add pattern as the panel registry.
 
 ## 6. Audio rates
 
-The dashboard's two audio cards each hardcode a `SAMPLE_RATE` constant that
-must match the robot's actual capture/playback rate:
+The Communication panel hardcodes a single `SAMPLE_RATE` constant that must
+match the robot's actual capture/playback rate — it's shared by both audio
+paths now that the old Ears and Voice cards are one panel:
 
-- `bridge/milo_bridge/webapp/static/js/cards/ears.js` — `SAMPLE_RATE = 16000`,
-  used to build the `AudioContext` and each `AudioBuffer` that plays back
-  microphone audio streamed down from the robot. It must match whatever
-  rate `AudioIO.capture_frames()` actually captures at on the Pi.
-- `bridge/milo_bridge/webapp/static/js/cards/voice.js` — `SAMPLE_RATE = 16000`,
-  used for the intercom `AudioContext` that captures your browser's
-  microphone before streaming it up to the robot's speaker. It must match
-  whatever rate `AudioIO.play_pcm()` expects on playback.
+- `bridge/milo_bridge/webapp/static/js/panels/comm.js` — `SAMPLE_RATE = 16000`,
+  used both to build the `AudioContext`/`AudioBuffer`s that play back
+  microphone audio streamed down from the robot (must match whatever rate
+  `AudioIO.capture_frames()` actually captures at on the Pi) and for the
+  push-to-talk `AudioContext` that captures your browser's microphone
+  before streaming it up to the robot's speaker (must match whatever rate
+  `AudioIO.play_pcm()` expects on playback).
 
-Both are currently `16000` to match the INMP441 mic / MAX98357A amp
+It's currently `16000` to match the INMP441 mic / MAX98357A amp
 configuration used on the reference hardware. If your build's audio HAT or
-driver uses a different rate, change both constants to match — a mismatch
+driver uses a different rate, change the constant to match — a mismatch
 doesn't error, it just plays back pitched up or down, since the PCM frames
-carry no sample-rate header of their own over the wire. There's no reason
-the two constants need to be equal to each other in principle (capture and
-playback are independent paths), but keeping them equal makes the numbers
-easy to reason about and matches the current hardware, which uses the same
-rate for both.
+carry no sample-rate header of their own over the wire. Capture and
+playback are independent paths in principle and could use different rates,
+but sharing one constant keeps the numbers easy to reason about and
+matches the current hardware, which uses the same rate for both.
 
 ## 7. Development off-Pi
 
@@ -290,57 +343,55 @@ python bridge/tools/webdev.py
 ```
 
 Then open `http://localhost:8080`. Everything works except real media: the
-camera card streams a repeating placeholder frame instead of a live feed,
-the ears/voice cards move real PCM bytes back and forth (so the plumbing is
-fully exercised) but there's no real microphone or speaker on the other
-end, and text-to-speech will report `tts-unavailable` unless `espeak-ng`
-happens to be installed on your dev machine too. Motion cards (Move, Poses,
-Servo Test) work fully — they just print into `FakeGait`/`FakeServos`/
-`FakeRunner` instead of moving real hardware, which is exactly what makes
-this useful for frontend iteration.
+Camera panel streams a repeating placeholder frame instead of a live feed,
+the Communication panel moves real PCM bytes back and forth for both
+listening and push-to-talk (so the plumbing is fully exercised) but
+there's no real microphone or speaker on the other end, and text-to-speech
+will report `tts-unavailable` unless `espeak-ng` happens to be installed
+on your dev machine too. Motion panels (Move, Poses, Servo Test) work
+fully — they just print into `FakeGait`/`FakeServos`/`FakeRunner` instead
+of moving real hardware, which is exactly what makes this useful for
+frontend iteration.
 
 ### Manual smoke checklist
 
-Run through this in a browser (both themes) after any change that touches
-the webapp, before considering it done:
+Run through this in a browser (both themes, and at both a desktop and a
+mobile viewport width) after any change that touches the webapp, before
+considering it done. To seed graph nodes for the Memory Graph check below,
+run:
+
+```bash
+curl -X POST http://localhost:8080/api/graph \
+  -H "Content-Type: application/json" \
+  -d '{"op":"upsert_node","type":"person","props":{"name":"Ada"}}'
+```
 
 - [ ] Page loads at `http://localhost:8080`; toggle the theme button and
-      confirm both light and dark look correct; reload and confirm the
-      layout (card order, sizes, any hidden cards) survives the reload.
-- [ ] Click **Take Control** — the Move / Voice / Poses / Servo Test cards
-      unlock (their `needsControl` lock overlay disappears). Open a second
-      tab and try **Take Control** there too — it must be denied (the
-      button stays "Take Control", not "Release Control", and an
-      `{"t":"err","for":"control","error":"held-by-other"}` comes back).
+      confirm both light and dark look correct.
+- [ ] Click **Take Control** — the Move / Communication (push-to-talk +
+      Say) / Poses / Servo Test controls unlock. Open a second tab and try
+      **Take Control** there too — it must be denied.
 - [ ] With the *first* tab controlling, click **STOP** from the *second*,
-      non-controlling tab — it must still work (gait zeroed, any running
-      pose aborted); STOP is never gated by control.
-- [ ] The Camera card streams frames continuously (placeholder frames
-      off-Pi, but the `<img>` must keep updating, not show the
-      "camera offline" broken-image state) and the Bridge Log card shows
-      new lines arriving live as the server logs activity.
-- [ ] Seed a couple of graph nodes so the Memory Graph card has something
-      to find — e.g. from a Python shell or `curl`:
-      ```bash
-      curl -X POST http://localhost:8080/api/graph \
-        -H "Content-Type: application/json" \
-        -d '{"op":"upsert_node","type":"person","props":{"name":"Ada"}}'
-      ```
-      then search for `ada` in the Memory Graph card and confirm the seeded
-      node appears with the right label.
-- [ ] Open `http://localhost:8080` logged out (clear cookies or use a
-      private window) → redirected to `/login`. Enter the wrong password
-      → inline error, still on `/login`. Enter `dama` / `MILO@gate`
-      (the seeded default) → lands on the dashboard. Close and reopen the
-      browser (not just the tab) → logged out again, since the session
-      cookie has no expiry and dies with the browser.
-- [ ] Click **Logout** in the header → back on `/login`; reloading `/`
-      directly stays on `/login` until you sign in again.
-- [ ] On the Servo Test card, drag one servo's slider to make its card
-      taller, or resize the card itself bigger from its corner handle:
-      watch the cards after it in the layout order smoothly slide into
-      their next free slot *while you're still dragging*, not just after
-      you release. No two cards should ever overlap, and there should be
-      no dead gap a card could have filled.
-- [ ] Click **Center All (90°)** on the Servo Test card: all 8 sliders
-      move to 90° together, not in a visible left-to-right sequence.
+      non-controlling tab — it must still work; STOP is never gated by
+      control.
+- [ ] The Camera panel streams frames continuously and the Bridge Log
+      panel (in the Tools drawer) shows new lines arriving live.
+- [ ] In the Communication panel, toggle **Listen** without holding
+      control — it works, and the vertical VU meter reacts. Confirm
+      push-to-talk and Say stay visibly locked until Take Control is held.
+- [ ] Seed a couple of graph nodes (see the `curl` example above) and
+      confirm they appear in the Memory Graph section automatically,
+      without needing to search first; confirm searching highlights
+      matches rather than hiding non-matches.
+- [ ] Click **Tools** in the status bar — the drawer opens with Poses &
+      Emotes, Servo Test, and Bridge Log. Confirm it closes both ways:
+      clicking the backdrop, and clicking the drawer's own **✕ Close**
+      button.
+- [ ] At a narrow (≤900px) viewport: the status bar's secondary stats
+      collapse behind a **⋯** toggle, the cockpit becomes a single column
+      in priority order (camera, move, communication, sensors), and the
+      Tools drawer becomes a full-width overlay — confirm the **✕ Close**
+      button closes it here too, since the full-screen drawer covers the
+      backdrop and the status bar's Tools button at this width.
+- [ ] Logged-out and login-error flows (`/login`) are unchanged from
+      before this redesign — confirm they still work.

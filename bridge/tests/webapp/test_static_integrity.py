@@ -25,7 +25,7 @@ def test_login_page_references_exist():
 
 
 def test_shell_files_exist():
-    for f in ["index.html", "css/theme.css", "css/grid.css", "js/main.js",
-              "js/registry.js", "js/bus.js", "js/grid.js",
-              "js/cards/status.js", "js/cards/log.js"]:
+    for f in ["index.html", "css/theme.css", "css/console.css", "js/main.js",
+              "js/registry.js", "js/bus.js", "js/layout.js", "js/statusbar.js",
+              "js/panels/log.js"]:
         assert (STATIC / f).exists(), f"missing {f}"

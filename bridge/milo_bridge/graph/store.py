@@ -138,6 +138,18 @@ class GraphStore:
             nodes = [n for n in nodes if n.props.get(prop) == value]
         return nodes
 
+    def _edges_among(self, ids: set[int]) -> list[Edge]:
+        """Edges whose src and dst are both in `ids`."""
+        if not ids:
+            return []
+        marks = ",".join("?" * len(ids))
+        cur = self._db.execute(
+            f"SELECT id, src, dst, type, props, created_at FROM edges "
+            f"WHERE src IN ({marks}) AND dst IN ({marks})",
+            (*ids, *ids),
+        )
+        return [Edge(r[0], r[1], r[2], r[3], json.loads(r[4]), r[5]) for r in cur.fetchall()]
+
     def search_text(self, q: str, limit: int = 25) -> dict:
         """Free-text search over node type and props JSON; edges among matches."""
         pat = f"%{q}%"
@@ -147,16 +159,18 @@ class GraphStore:
             (pat, pat, limit),
         )
         nodes = [Node(r[0], r[1], json.loads(r[2]), r[3], r[4]) for r in cur.fetchall()]
-        ids = {n.id for n in nodes}
-        edges = []
-        if ids:
-            marks = ",".join("?" * len(ids))
-            cur = self._db.execute(
-                f"SELECT id, src, dst, type, props, created_at FROM edges "
-                f"WHERE src IN ({marks}) AND dst IN ({marks})",
-                (*ids, *ids),
-            )
-            edges = [Edge(r[0], r[1], r[2], r[3], json.loads(r[4]), r[5]) for r in cur.fetchall()]
+        edges = self._edges_among({n.id for n in nodes})
+        return {"nodes": [n.to_dict() for n in nodes], "edges": [e.to_dict() for e in edges]}
+
+    def all(self, limit: int = 200) -> dict:
+        """The whole graph, most-recently-updated nodes first, capped at `limit`."""
+        cur = self._db.execute(
+            "SELECT id, type, props, created_at, updated_at FROM nodes "
+            "ORDER BY updated_at DESC LIMIT ?",
+            (limit,),
+        )
+        nodes = [Node(r[0], r[1], json.loads(r[2]), r[3], r[4]) for r in cur.fetchall()]
+        edges = self._edges_among({n.id for n in nodes})
         return {"nodes": [n.to_dict() for n in nodes], "edges": [e.to_dict() for e in edges]}
 
     # -- edges ---------------------------------------------------------------

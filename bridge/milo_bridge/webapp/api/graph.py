@@ -15,7 +15,7 @@ async def get_search(request: web.Request) -> web.Response:
     q = request.query.get("q", "").strip()
     limit = int(request.query.get("limit", "25"))
     if not q:
-        return web.json_response({"nodes": [], "edges": []})
+        return web.json_response(deps.graph_store.all(limit))
     return web.json_response(deps.graph_store.search_text(q, limit))
 
 
