@@ -155,7 +155,7 @@ pip install -e ./common
 pip install -e "./bridge[pi]"
 ```
 
-The `[pi]` extra pulls the hardware stack: `adafruit-circuitpython-pca9685`, `adafruit-blinka`, `luma.oled`, `smbus2`, `sounddevice`, `onnxruntime`. This takes a while on a Zero 2W — onnxruntime and numpy are large. If pip is killed (out of memory), retry; or add temporary swap:
+The `[pi]` extra pulls the hardware stack: `adafruit-circuitpython-pca9685`, `adafruit-blinka`, `luma.oled`, `smbus2`, `onnxruntime`. This takes a while on a Zero 2W — onnxruntime and numpy are large. If pip is killed (out of memory), retry; or add temporary swap:
 
 ```bash
 # only if pip keeps getting killed
@@ -164,7 +164,7 @@ sudo sed -i 's/CONF_SWAPSIZE=.*/CONF_SWAPSIZE=1024/' /etc/dphys-swapfile
 sudo dphys-swapfile setup && sudo dphys-swapfile swapon
 ```
 
-`sounddevice` also needs the ALSA dev library if it complains: `sudo apt install -y libportaudio2`.
+Audio capture/playback shells out to `arecord`/`aplay` directly (not a Python audio library), so make sure `alsa-utils` is installed: `sudo apt install -y alsa-utils` (usually present by default on Raspberry Pi OS).
 
 ### 3.3 Sanity check the install (no hardware needed)
 
@@ -370,7 +370,7 @@ python -m milo_bridge.cli paired
 | `ssh milo.local` fails | Wrong WiFi band (needs 2.4 GHz), typo in imager WiFi settings, or mDNS not resolving — use the IP from your router |
 | `pip install` killed on the Pi | Out of RAM — add the 1 GB swap from 3.2, retry |
 | `picamera2` import error in the venv | Venv created without `--system-site-packages` — recreate it with the flag |
-| `sounddevice` PortAudio error | `sudo apt install -y libportaudio2` |
+| `arecord`/`aplay` not found | `sudo apt install -y alsa-utils` |
 | No audio device after reboot | Typo in `config.txt` overlay lines; check `dtoverlay=googlevoicehat-soundcard` spelling |
 | Service crashes on boot loop | `journalctl -u milo-bridge -n 50` — usually wrong username/paths in the unit file or hardware not wired yet |
 | CLI says device busy | The service holds the hardware — `sudo systemctl stop milo-bridge`, run CLI, restart the service |

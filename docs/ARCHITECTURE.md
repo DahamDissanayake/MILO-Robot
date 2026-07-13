@@ -62,7 +62,7 @@ MILO-Robot/
 │   │   │   ├── display.py         # SSD1306 faces + idle blink loop (luma.oled)
 │   │   │   ├── imu.py             # MPU6050 @100Hz → complementary filter
 │   │   │   ├── camera.py          # picamera2 MJPEG 640×480@15fps
-│   │   │   └── audio.py           # sounddevice stereo 16kHz capture + PCM playback
+│   │   │   └── audio.py           # arecord/aplay stereo 16kHz capture + PCM playback
 │   │   ├── gait/
 │   │   │   ├── engine.py          # 50Hz control loop; set_velocity_command(vx,vy,yaw)
 │   │   │   ├── policy.py          # ONNX RL policy backend (onnxruntime)
@@ -415,7 +415,7 @@ PWM: 50 Hz, 500–2500 µs pulse range, per-servo trim offsets, **20 ms staggere
 | OLED | `luma.oled` | clean SSD1306 API, PIL-image based |
 | IMU | `smbus2` register driver (MPU6050) | tiny, no heavyweight dependency |
 | Camera | `picamera2` | official libcamera stack, MJPEG encode |
-| Audio | `sounddevice` (ALSA) | stereo I2S capture + playback |
+| Audio | `arecord`/`aplay` (alsa-utils) | stereo I2S capture + playback; avoids PortAudio's ALSA enumeration, which is empty on this hardware without a configured ALSA default |
 | Gait inference | `onnxruntime` | <1 ms/step for a 2×64 MLP on the Zero 2W |
 | Graph | stdlib `sqlite3` | zero-dependency, fits 512 MB RAM |
 | Networking | `websockets`, `zeroconf` | one multiplexed WS + mDNS discovery |

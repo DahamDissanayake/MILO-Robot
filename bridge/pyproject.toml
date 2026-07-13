@@ -25,7 +25,6 @@ pi = [
     "adafruit-blinka>=8",
     "luma.oled>=3.13",
     "smbus2>=0.4",
-    "sounddevice>=0.4",
     "onnxruntime>=1.17",
 ]
 dev = ["pytest>=8", "pytest-asyncio>=0.23", "onnx>=1.16", "onnxruntime>=1.17"]
