@@ -8,6 +8,7 @@ import time
 from pathlib import Path
 
 from ..drivers.servos import SERVO_CHANNELS
+from ..gait.engine import MODES
 from ..poses import POSES
 
 log = logging.getLogger(__name__)
@@ -107,6 +108,35 @@ class MotionService:
         try:
             clamped = {name: _clamp(deg, DEG_MIN, DEG_MAX) for name, deg in angles.items()}
             await self._deps.servos.set_pose(clamped, stagger=True)
+        except Exception as exc:
+            return {"error": f"{type(exc).__name__}: {exc}"}
+        return {"ok": True}
+
+    async def mode(self, client_id: str, name: str) -> dict:
+        if err := self._denied(client_id):
+            return err
+        if name not in MODES:
+            return {"error": f"unknown mode {name!r}"}
+        try:
+            self._deps.gait.set_mode(name)
+        except Exception as exc:
+            return {"error": f"{type(exc).__name__}: {exc}"}
+        return {"ok": True, "mode": name}
+
+    async def reset(self, client_id: str) -> dict:
+        if err := self._denied(client_id):
+            return err
+        try:
+            self._deps.gait.reset()
+        except Exception as exc:
+            return {"error": f"{type(exc).__name__}: {exc}"}
+        return {"ok": True}
+
+    async def standby(self, client_id: str) -> dict:
+        if err := self._denied(client_id):
+            return err
+        try:
+            self._deps.gait.standby()
         except Exception as exc:
             return {"error": f"{type(exc).__name__}: {exc}"}
         return {"ok": True}

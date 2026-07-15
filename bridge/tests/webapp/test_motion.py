@@ -160,3 +160,71 @@ async def test_servo_batch_never_raises_on_bad_angle_value():
     svc = MotionService(deps)
     res = await svc.servo_batch("c1", {"R1": "not-a-number"})
     assert "error" in res
+
+
+async def test_mode_requires_control():
+    deps = make_deps(broker=ControlBroker())
+    svc = MotionService(deps)
+    res = await svc.mode("nobody", "balanced")
+    assert res == {"error": "not-controlling"}
+    assert deps.gait.mode == "raw"
+
+
+async def test_mode_sets_valid_mode():
+    deps = _controlled_deps()
+    svc = MotionService(deps)
+    assert await svc.mode("c1", "balanced") == {"ok": True, "mode": "balanced"}
+    assert deps.gait.mode == "balanced"
+
+
+async def test_mode_rejects_unknown_name():
+    deps = _controlled_deps()
+    svc = MotionService(deps)
+    res = await svc.mode("c1", "sideways")
+    assert "error" in res
+    assert deps.gait.mode == "raw"
+
+
+async def test_reset_requires_control_and_calls_gait():
+    deps = make_deps(broker=ControlBroker())
+    svc = MotionService(deps)
+    assert await svc.reset("nobody") == {"error": "not-controlling"}
+    assert deps.gait.reset_called is False
+
+    deps2 = _controlled_deps()
+    svc2 = MotionService(deps2)
+    assert await svc2.reset("c1") == {"ok": True}
+    assert deps2.gait.reset_called is True
+
+
+async def test_standby_requires_control_and_calls_gait():
+    deps = make_deps(broker=ControlBroker())
+    svc = MotionService(deps)
+    assert await svc.standby("nobody") == {"error": "not-controlling"}
+    assert deps.gait.standby_called is False
+
+    deps2 = _controlled_deps()
+    svc2 = MotionService(deps2)
+    assert await svc2.standby("c1") == {"ok": True}
+    assert deps2.gait.standby_called is True
+
+
+async def test_mode_reset_standby_never_raise_on_driver_error():
+    class FailingGait:
+        mode = "raw"
+
+        def set_mode(self, name):
+            raise RuntimeError("mode failed")
+
+        def reset(self):
+            raise RuntimeError("reset failed")
+
+        def standby(self):
+            raise RuntimeError("standby failed")
+
+    deps = _controlled_deps()
+    deps.gait = FailingGait()
+    svc = MotionService(deps)
+    assert "error" in await svc.mode("c1", "balanced")
+    assert "error" in await svc.reset("c1")
+    assert "error" in await svc.standby("c1")

@@ -20,9 +20,21 @@ class FakeGait:
 
     def __init__(self):
         self.vel = (0.0, 0.0, 0.0)
+        self.mode = "raw"
+        self.reset_called = False
+        self.standby_called = False
 
     def set_velocity_command(self, vx, vy, yaw_rate):
         self.vel = (vx, vy, yaw_rate)
+
+    def set_mode(self, name):
+        self.mode = name
+
+    def reset(self):
+        self.reset_called = True
+
+    def standby(self):
+        self.standby_called = True
 
 
 class FakeServos:
