@@ -11,7 +11,10 @@ export default {
     el.innerHTML = `
       <div class="sensor-tiles">
         <div class="sensor-tile imu-tile">
-          <div class="label">IMU</div>
+          <div class="imu-tile-head">
+            <div class="label">IMU</div>
+            <button class="btn ghost imu-reset-btn" id="imu-reset-btn">Reset to Flat</button>
+          </div>
           <div class="imu-plate-wrap"><div class="imu-plate" id="plate-imu">
             <div class="imu-face top"></div>
             <div class="imu-face front"></div>
@@ -19,6 +22,7 @@ export default {
             <div class="imu-face left"></div>
             <div class="imu-face right"></div>
           </div></div>
+          <div class="muted imu-reset-note" id="imu-reset-note"></div>
         </div>
         <div class="sensor-tile"><div class="label">SoC Temp</div><div class="value" id="tile-temp">—</div></div>
         <div class="sensor-tile"><div class="label">CPU</div><div class="value" id="tile-cpu">—</div></div>
@@ -57,7 +61,6 @@ export default {
     const offImu = bus.on("imu", (m) => {
       plate.style.setProperty("--pitch", (m.pitch ?? 0).toFixed(2));
       plate.style.setProperty("--roll", (m.roll ?? 0).toFixed(2));
-      plate.style.setProperty("--yaw", (m.yaw ?? 0).toFixed(2));
       plate.style.setProperty("--ax", (m.accel?.[0] ?? 0).toFixed(3));
       plate.style.setProperty("--ay", (m.accel?.[1] ?? 0).toFixed(3));
       const mag = Math.hypot(...(m.gyro ?? [0, 0, 0]));
@@ -82,6 +85,17 @@ export default {
             <span class="hw-state" style="color:${ok ? "var(--ok)" : "var(--danger)"}">${ok ? "Connected" : "Not connected"}</span>
           </div>`).join("");
     });
+
+    const resetBtn = el.querySelector("#imu-reset-btn");
+    const resetNote = el.querySelector("#imu-reset-note");
+    resetBtn.onclick = async () => {
+      resetBtn.disabled = true;
+      const r = await fetch("/api/imu/zero", { method: "POST" })
+        .then((r) => r.json()).catch(() => ({ error: "network" }));
+      resetBtn.disabled = false;
+      resetNote.textContent = r.error ? `✗ ${r.error}` : "✓ zeroed";
+      setTimeout(() => { resetNote.textContent = ""; }, 1500);
+    };
 
     const details = el.querySelector("#sensor-details");
     const detailsBtn = el.querySelector("#sensor-details-btn");
