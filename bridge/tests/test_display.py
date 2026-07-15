@@ -121,3 +121,34 @@ def test_idle_loop_blinks(assets: Path):
 
     asyncio.run(run())
     assert len(device.shown) >= 3  # idle frames plus at least one blink
+
+
+def test_render_status_image_fits_display():
+    image = disp.render_status_image({"servos": True, "display": False})
+    assert image.size == (128, 64)
+    assert image.getbbox() is not None
+
+
+def test_show_status_displays_then_holds(assets: Path):
+    device = RecordingDevice()
+    face = FaceDisplay(device, assets)
+
+    async def run():
+        await face.show_status({"servos": True}, seconds=0.01)
+
+    asyncio.run(run())
+    assert len(device.shown) == 1
+    assert face.current_face is None
+
+
+def test_start_idle_uses_custom_base_face(assets: Path):
+    device = RecordingDevice()
+    face = FaceDisplay(device, assets)
+
+    async def run():
+        face.start_idle(base_face="happy")
+        await asyncio.sleep(0.05)
+        face.stop_idle()
+
+    asyncio.run(run())
+    assert face.current_face == "happy"

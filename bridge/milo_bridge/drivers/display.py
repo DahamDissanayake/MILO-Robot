@@ -79,6 +79,18 @@ def render_pin_image(pin: str) -> Image.Image:
     return image
 
 
+def render_status_image(status: dict[str, bool]) -> Image.Image:
+    """Startup checklist: one line per hardware item, OK/FAIL."""
+    image = Image.new("1", (WIDTH, HEIGHT), 0)
+    draw = ImageDraw.Draw(image)
+    draw.text((4, 2), "STARTUP CHECK", fill=1)
+    y = 14
+    for name, ok in status.items():
+        draw.text((4, y), f"{name.upper():<8}{'OK' if ok else 'FAIL'}", fill=1)
+        y += 10
+    return image
+
+
 class FaceDisplay:
     def __init__(self, device, assets_dir: Path, rng: random.Random | None = None):
         self._device = device
@@ -86,6 +98,7 @@ class FaceDisplay:
         self._rng = rng or random.Random()
         self._cache: dict[str, list[Image.Image]] = {}
         self.current_face: str | None = None
+        self._idle_base = "idle"
         self._anim_task: asyncio.Task | None = None
         self._idle_task: asyncio.Task | None = None
 
@@ -151,9 +164,17 @@ class FaceDisplay:
         self.current_face = None
         self._show(render_pin_image(pin))
 
-    def start_idle(self) -> None:
+    async def show_status(self, status: dict[str, bool], seconds: float = 3.0) -> None:
+        self._cancel_anim()
+        self.stop_idle()
+        self.current_face = None
+        self._show(render_status_image(status))
+        await asyncio.sleep(seconds)
+
+    def start_idle(self, base_face: str = "idle") -> None:
         """Idle face + random blinking, until stop_idle()."""
         if self._idle_task is None or self._idle_task.done():
+            self._idle_base = base_face
             self._idle_task = asyncio.create_task(self._idle_loop())
 
     def stop_idle(self) -> None:
@@ -162,7 +183,7 @@ class FaceDisplay:
             self._idle_task = None
 
     async def _idle_loop(self) -> None:
-        await self.set_face("idle", AnimMode.BOOMERANG)
+        await self.set_face(self._idle_base, AnimMode.BOOMERANG)
         while True:
             await asyncio.sleep(next_blink_delay(self._rng))
             await self._blink()
@@ -175,7 +196,7 @@ class FaceDisplay:
         for frame in blink:
             self._show(frame)
             await asyncio.sleep(1.0 / DEFAULT_FPS / 2)
-        await self.set_face("idle", AnimMode.BOOMERANG)
+        await self.set_face(self._idle_base, AnimMode.BOOMERANG)
 
     def _cancel_anim(self) -> None:
         if self._anim_task is not None:
