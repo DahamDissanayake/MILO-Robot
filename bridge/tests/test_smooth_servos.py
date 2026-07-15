@@ -107,3 +107,24 @@ def test_relax_clears_targets_and_relaxes_driver():
     assert driver.last_angle("R1") is None
     smooth.tick()  # no pending targets after relax -- nothing to write
     assert driver.last_angle("R1") is None
+
+
+def test_relax_remembers_pre_relax_targets_for_hold():
+    driver = _driver()
+    smooth = SmoothServos(driver, clock=lambda: 0.0)
+    smooth.set_angle("R1", 120)
+    smooth.tick()
+    assert driver.last_angle("R1") == 120
+    smooth.relax()
+    assert driver.last_angle("R1") is None
+    smooth.hold()
+    smooth.tick()
+    assert driver.last_angle("R1") == 120
+
+
+def test_hold_without_a_prior_relax_is_a_no_op():
+    driver = _driver()
+    smooth = SmoothServos(driver, clock=lambda: 0.0)
+    smooth.hold()
+    smooth.tick()
+    assert driver.last_angle("R1") is None

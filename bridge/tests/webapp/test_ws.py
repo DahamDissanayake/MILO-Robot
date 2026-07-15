@@ -218,3 +218,19 @@ async def test_restart_dispatch_requires_control():
         assert data["error"] == "not-controlling"
     finally:
         await client.close()
+
+
+async def test_relax_and_hold_dispatch():
+    deps = make_deps(broker=ControlBroker())
+    client, ws = await _ws(deps)
+    try:
+        await ws.send_json({"t": "control", "take": True})
+        await _recv_json_until(ws, "control")
+        await ws.send_json({"t": "relax"})
+        await _recv_json_until(ws, "ack")
+        assert deps.servos.relaxed is True
+        await ws.send_json({"t": "hold"})
+        await _recv_json_until(ws, "ack")
+        assert deps.servos.held is True
+    finally:
+        await client.close()

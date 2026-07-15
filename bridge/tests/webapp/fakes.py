@@ -40,12 +40,20 @@ class FakeGait:
 class FakeServos:
     def __init__(self):
         self.angles = {}
+        self.relaxed = False
+        self.held = False
 
     def set_angle(self, servo, angle):
         self.angles[servo] = angle
 
     async def set_pose(self, angles, stagger=True):
         self.angles.update(angles)
+
+    def relax(self):
+        self.relaxed = True
+
+    def hold(self):
+        self.held = True
 
 
 class FakeRunner:

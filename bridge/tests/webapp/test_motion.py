@@ -246,3 +246,42 @@ async def test_restart_schedules_exit_when_controlling(monkeypatch):
     assert result == {"ok": True}
     await asyncio.sleep(0.05)
     assert calls == [0]
+
+
+async def test_relax_requires_control_and_calls_servos():
+    deps = make_deps(broker=ControlBroker())
+    svc = MotionService(deps)
+    assert await svc.relax("nobody") == {"error": "not-controlling"}
+    assert deps.servos.relaxed is False
+
+    deps2 = _controlled_deps()
+    svc2 = MotionService(deps2)
+    assert await svc2.relax("c1") == {"ok": True}
+    assert deps2.servos.relaxed is True
+
+
+async def test_hold_requires_control_and_calls_servos():
+    deps = make_deps(broker=ControlBroker())
+    svc = MotionService(deps)
+    assert await svc.hold("nobody") == {"error": "not-controlling"}
+    assert deps.servos.held is False
+
+    deps2 = _controlled_deps()
+    svc2 = MotionService(deps2)
+    assert await svc2.hold("c1") == {"ok": True}
+    assert deps2.servos.held is True
+
+
+async def test_relax_and_hold_never_raise_on_driver_error():
+    class FailingServos:
+        def relax(self):
+            raise RuntimeError("relax failed")
+
+        def hold(self):
+            raise RuntimeError("hold failed")
+
+    deps = _controlled_deps()
+    deps.servos = FailingServos()
+    svc = MotionService(deps)
+    assert "error" in await svc.relax("c1")
+    assert "error" in await svc.hold("c1")

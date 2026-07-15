@@ -153,6 +153,24 @@ class MotionService:
         asyncio.get_running_loop().call_later(RESTART_DELAY_S, os._exit, 0)
         return {"ok": True}
 
+    async def relax(self, client_id: str) -> dict:
+        if err := self._denied(client_id):
+            return err
+        try:
+            self._deps.servos.relax()
+        except Exception as exc:
+            return {"error": f"{type(exc).__name__}: {exc}"}
+        return {"ok": True}
+
+    async def hold(self, client_id: str) -> dict:
+        if err := self._denied(client_id):
+            return err
+        try:
+            self._deps.servos.hold()
+        except Exception as exc:
+            return {"error": f"{type(exc).__name__}: {exc}"}
+        return {"ok": True}
+
     async def stop(self) -> dict:
         """Emergency stop: anyone, anytime."""
         # STOP must attempt every action and never raise.

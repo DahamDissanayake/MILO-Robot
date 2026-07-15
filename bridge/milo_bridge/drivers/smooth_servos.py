@@ -20,6 +20,8 @@ import asyncio
 import time
 from collections.abc import Mapping
 
+from .servos import SERVO_NAMES
+
 DEFAULT_SLEW_DEG_PER_S = 300.0
 TICK_HZ = 50
 
@@ -39,6 +41,7 @@ class SmoothServos:
         self._sleep = sleep
         self._clock = clock
         self._targets: dict[str, float] = {}
+        self._pre_relax_targets: dict[str, float] = {}
         self._last_t: float | None = None
         self._task: asyncio.Task | None = None
 
@@ -58,8 +61,19 @@ class SmoothServos:
         return self._servos.last_angle(servo)
 
     def relax(self) -> None:
+        self._pre_relax_targets = {
+            name: self._servos.last_angle(name)
+            for name in SERVO_NAMES
+            if self._servos.last_angle(name) is not None
+        }
         self._targets.clear()
         self._servos.relax()
+
+    def hold(self) -> None:
+        """Re-engage every servo at the angle it was commanded to right
+        before the last relax() call. No-op if nothing was ever relaxed."""
+        for name, angle in self._pre_relax_targets.items():
+            self.set_angle(name, angle)
 
     def tick(self) -> None:
         now = self._clock()
