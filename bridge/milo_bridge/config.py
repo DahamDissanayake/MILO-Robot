@@ -7,11 +7,14 @@ Secrets (pairing tokens) live in a separate file so config can be shared freely.
 from __future__ import annotations
 
 import json
+import logging
 import uuid
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, field, asdict, fields
 from pathlib import Path
 
 DEFAULT_DIR = Path.home() / ".milo"
+
+log = logging.getLogger(__name__)
 
 
 @dataclass
@@ -52,8 +55,14 @@ class BridgeConfig:
     @classmethod
     def load(cls, path: Path | None = None) -> "BridgeConfig":
         path = path or DEFAULT_DIR / "config.json"
+        stale: list[str] = []
         if path.exists():
-            cfg = cls(**json.loads(path.read_text(encoding="utf-8")))
+            data = json.loads(path.read_text(encoding="utf-8"))
+            known = {f.name for f in fields(cls)}
+            stale = sorted(set(data) - known)
+            if stale:
+                log.warning("dropping stale config keys (renamed/removed field): %s", stale)
+            cfg = cls(**{k: v for k, v in data.items() if k in known})
         else:
             cfg = cls()
         if not cfg.robot_id:
@@ -63,6 +72,8 @@ class BridgeConfig:
             from .webapp.auth import hash_password
             cfg.web_password_hash = hash_password("MILO@gate")
             cfg.save(path)
+        if stale:
+            cfg.save(path)  # persist the cleaned-up schema so the stale key doesn't keep reappearing
         return cfg
 
     def save(self, path: Path | None = None) -> None:
