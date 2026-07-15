@@ -233,6 +233,11 @@ def test_boot_grace_period_delays_sleep_when_no_brain_found(tmp_path):
     asyncio.run(manager._tick())
     assert sleep_controller.asleep_calls == 0  # still within the grace period
 
+    # Boundary check: at exactly t=BOOT_GRACE_S, sleep must NOT fire (> is strict, not >=)
+    now["t"] = SessionManager.BOOT_GRACE_S
+    asyncio.run(manager._tick())
+    assert sleep_controller.asleep_calls == 0  # grace period boundary is exclusive
+
     now["t"] = SessionManager.BOOT_GRACE_S + 1
     asyncio.run(manager._tick())
     assert sleep_controller.asleep_calls == 1  # grace period has elapsed
