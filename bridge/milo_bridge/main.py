@@ -114,6 +114,13 @@ async def main() -> None:
 
     await display.show_status(hardware_status)
     await runner.run("wake_up")
+    # wake_up's own completion already called start_idle() with the default
+    # "idle" base face (PoseRunner.run's end_stand tail) -- start_idle() is
+    # idempotent-guarded while an idle loop is already running, so a plain
+    # start_idle(base_face=...) call here would silently no-op. stop_idle()
+    # first forces the guard open so the hardware-status-aware face actually
+    # takes effect.
+    display.stop_idle()
     display.start_idle(base_face="idle" if all(hardware_status.values()) else "confused")
     log.info("boot sequence complete; scanning for brains")
 

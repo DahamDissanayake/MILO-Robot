@@ -152,3 +152,38 @@ def test_start_idle_uses_custom_base_face(assets: Path):
 
     asyncio.run(run())
     assert face.current_face == "happy"
+
+
+def test_start_idle_is_a_no_op_while_already_running(assets: Path):
+    """Regression guard for a real boot bug: PoseRunner.run() already calls
+    start_idle() (default face) whenever a completed pose ends in stand, so
+    a caller's own start_idle(base_face=...) called right after is silently
+    a no-op unless the caller stops the already-running idle loop first."""
+    device = RecordingDevice()
+    face = FaceDisplay(device, assets)
+
+    async def run():
+        face.start_idle()  # simulates PoseRunner's own post-pose call
+        await asyncio.sleep(0.01)
+        face.start_idle(base_face="happy")  # a caller's own call, no stop_idle() first
+        await asyncio.sleep(0.01)
+        face.stop_idle()
+
+    asyncio.run(run())
+    assert face.current_face == "idle"  # proves the second call was a no-op
+
+
+def test_stop_idle_then_start_idle_actually_overrides_base_face(assets: Path):
+    device = RecordingDevice()
+    face = FaceDisplay(device, assets)
+
+    async def run():
+        face.start_idle()
+        await asyncio.sleep(0.01)
+        face.stop_idle()
+        face.start_idle(base_face="happy")
+        await asyncio.sleep(0.01)
+        face.stop_idle()
+
+    asyncio.run(run())
+    assert face.current_face == "happy"
