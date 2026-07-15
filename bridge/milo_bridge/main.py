@@ -1,10 +1,10 @@
 """milo-bridge service entrypoint.
 
 Composition root: build drivers, gait engine, knowledge graph, and sleep
-controller, show a startup hardware checklist, run the wake_up gesture,
-settle into stand with a hardware-status-aware idle face, then hand
-control to the SessionManager (discovery -> pairing/auth -> streams ->
-dispatch).
+controller, show a startup hardware checklist, play the boot tilt gesture
+(the same look_down/standby motion Q/E trigger by hand) to settle into
+stand with a hardware-status-aware idle face, then hand control to the
+SessionManager (discovery -> pairing/auth -> streams -> dispatch).
 
 Every peripheral degrades gracefully — a missing camera, policy file, PCA9685,
 or OLED logs a warning and falls back to a null stand-in instead of killing
@@ -113,20 +113,19 @@ async def main() -> None:
     web_task = asyncio.create_task(start_web(web_deps)) if cfg.web_enabled else None
 
     await display.show_status(hardware_status)
-    await runner.run("wake_up")
-    # wake_up's own end_stand tail already snapped every servo to
-    # STAND_ANGLES, but that doesn't set GaitEngine's own holding_target --
-    # without this, balanced/angled mode's self-leveling would only fall
-    # back to STAND_ANGLES by coincidence (its own None-target default)
-    # rather than by an explicit guarantee. standby() makes the stand pose
-    # the robot's actual, recorded default gait state at boot.
+    # Boot gesture is the same look_down tilt Q/E trigger by hand, immediately
+    # followed by the same standby() recovery a released E does -- previously
+    # this was a bespoke "wake_up" dip, which read as an unwanted extra pose
+    # jump (stand -> dip -> stand) rather than a single deliberate gesture.
+    # look_down has end_stand=False (it's meant to hold, not auto-recover), so
+    # standby() below is doing the real work of returning to stand, not just
+    # confirming what already happened.
+    await runner.run("look_down")
     gait.standby()
-    # wake_up's own completion already called start_idle() with the default
-    # "idle" base face (PoseRunner.run's end_stand tail) -- start_idle() is
-    # idempotent-guarded while an idle loop is already running, so a plain
-    # start_idle(base_face=...) call here would silently no-op. stop_idle()
-    # first forces the guard open so the hardware-status-aware face actually
-    # takes effect.
+    # look_down doesn't call start_idle() itself (end_stand=False skips
+    # PoseRunner's own recovery tail), so set the hardware-status-aware face
+    # directly -- stop_idle() first is just defensive in case an idle loop is
+    # already running from an earlier boot path.
     display.stop_idle()
     display.start_idle(base_face="idle" if all(hardware_status.values()) else "confused")
     log.info("boot sequence complete; scanning for brains")
