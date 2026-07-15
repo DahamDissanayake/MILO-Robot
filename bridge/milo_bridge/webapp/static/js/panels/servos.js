@@ -13,10 +13,7 @@ export default {
         <button class="btn" id="reset" style="flex:1">Reset (90°)</button>
         <button class="btn" id="standby" style="flex:1">Standby</button>
       </div>
-      <div style="display:flex;gap:8px;margin-top:8px">
-        <button class="btn" id="release" style="flex:1">Release</button>
-        <button class="btn" id="hold" style="flex:1">Hold</button>
-      </div>
+      <button class="btn" id="manual" style="margin-top:8px;width:100%">Manual Servo Mode: Off</button>
       <button class="btn danger" id="restart" style="margin-top:8px;width:100%">Restart Bridge (I2C reset)</button>`;
     el.querySelectorAll("input[type=range]").forEach((sl) => {
       sl.oninput = () => {
@@ -32,12 +29,25 @@ export default {
       bus.send({ t: "reset" });
     };
     el.querySelector("#standby").onclick = () => bus.send({ t: "standby" });
-    el.querySelector("#release").onclick = () => bus.send({ t: "relax" });
-    el.querySelector("#hold").onclick = () => bus.send({ t: "hold" });
+
+    const manualBtn = el.querySelector("#manual");
+    function setManualButton(on) {
+      manualBtn.textContent = `Manual Servo Mode: ${on ? "On" : "Off"}`;
+      manualBtn.classList.toggle("active", on);
+    }
+    setManualButton(false);
+    const offManual = bus.on("manual", (m) => setManualButton(m.on));
+    manualBtn.onclick = () => {
+      const nowOn = !manualBtn.classList.contains("active");
+      bus.send({ t: "manual", on: nowOn });
+    };
+
     el.querySelector("#restart").onclick = () => {
       if (confirm("Restart the bridge service? Every connected tab will briefly disconnect.")) {
         bus.send({ t: "restart" });
       }
     };
+
+    return () => offManual();
   },
 };
