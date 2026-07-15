@@ -23,6 +23,7 @@ class FakeGait:
         self.mode = "raw"
         self.reset_called = False
         self.standby_called = False
+        self.manual_on = False
 
     def set_velocity_command(self, vx, vy, yaw_rate):
         self.vel = (vx, vy, yaw_rate)
@@ -35,6 +36,9 @@ class FakeGait:
 
     def standby(self):
         self.standby_called = True
+
+    def set_manual(self, on):
+        self.manual_on = on
 
 
 class FakeServos:

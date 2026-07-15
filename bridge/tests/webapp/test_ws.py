@@ -253,3 +253,31 @@ async def test_turn_and_strafe_dispatch():
         assert deps.runner.ran == ["turn_left", "crab_right"]
     finally:
         await client.close()
+
+
+async def test_manual_broadcasts_to_all_clients():
+    deps = make_deps(broker=ControlBroker())
+    client, ws1 = await _ws(deps)
+    try:
+        ws2 = await client.ws_connect("/ws")
+        await ws1.send_json({"t": "control", "take": True})
+        await _recv_json_until(ws1, "control")
+        await ws1.send_json({"t": "manual", "on": True})
+        data1 = await _recv_json_until(ws1, "manual")
+        data2 = await _recv_json_until(ws2, "manual")
+        assert data1 == {"t": "manual", "on": True}
+        assert data2 == {"t": "manual", "on": True}
+        assert deps.gait.manual_on is True
+    finally:
+        await client.close()
+
+
+async def test_manual_denied_without_control():
+    deps = make_deps(broker=ControlBroker())
+    client, ws = await _ws(deps)
+    try:
+        await ws.send_json({"t": "manual", "on": True})
+        data = await _recv_json_until(ws, "err")
+        assert data["error"] == "not-controlling"
+    finally:
+        await client.close()

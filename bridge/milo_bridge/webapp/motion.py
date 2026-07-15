@@ -172,6 +172,17 @@ class MotionService:
             return {"error": f"{type(exc).__name__}: {exc}"}
         return {"ok": True}
 
+    async def manual(self, client_id: str, on: bool) -> dict:
+        if err := self._denied(client_id):
+            return err
+        try:
+            self._deps.gait.set_manual(on)
+            if on:
+                self._deps.runner.abort()
+        except Exception as exc:
+            return {"error": f"{type(exc).__name__}: {exc}"}
+        return {"ok": True, "on": on}
+
     async def turn(self, client_id: str, direction: str) -> dict:
         if err := self._denied(client_id):
             return err

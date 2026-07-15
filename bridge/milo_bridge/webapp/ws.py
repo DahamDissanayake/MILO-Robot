@@ -63,6 +63,13 @@ async def _handle_text(app, ws, client_id: str, data: dict) -> None:
         else:
             _broadcast_mode(app, res["mode"])
         return
+    if t == "manual":
+        res = await motion.manual(client_id, bool(data.get("on")))
+        if "error" in res:
+            await ws.send_json({"t": "err", "for": "manual", "error": res["error"]})
+        else:
+            _broadcast_manual(app, res["on"])
+        return
     if t == "audio":
         ws_state = app["ws_state"][ws]
         ws_state["audio_on"] = bool(data.get("on"))
@@ -104,6 +111,12 @@ def _broadcast_mode(app: web.Application, name: str) -> None:
     for ws, state in list(app["ws_state"].items()):
         if not ws.closed:
             asyncio.ensure_future(_send_safe(ws, {"t": "mode", "name": name}))
+
+
+def _broadcast_manual(app: web.Application, on: bool) -> None:
+    for ws, state in list(app["ws_state"].items()):
+        if not ws.closed:
+            asyncio.ensure_future(_send_safe(ws, {"t": "manual", "on": on}))
 
 
 async def _audio_out_pump(app, ws) -> None:

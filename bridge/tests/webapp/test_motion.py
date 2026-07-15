@@ -341,3 +341,38 @@ async def test_strafe_rejects_unknown_direction():
     res = await svc.strafe("c1", "sideways")
     assert "error" in res
     assert deps.runner.ran == []
+
+
+async def test_manual_requires_control():
+    deps = make_deps(broker=ControlBroker())
+    svc = MotionService(deps)
+    res = await svc.manual("nobody", True)
+    assert res == {"error": "not-controlling"}
+    assert deps.gait.manual_on is False
+
+
+async def test_manual_on_sets_gait_and_aborts_runner():
+    deps = _controlled_deps()
+    svc = MotionService(deps)
+    assert await svc.manual("c1", True) == {"ok": True, "on": True}
+    assert deps.gait.manual_on is True
+    assert deps.runner.aborted is True
+
+
+async def test_manual_off_sets_gait_without_aborting():
+    deps = _controlled_deps()
+    svc = MotionService(deps)
+    assert await svc.manual("c1", False) == {"ok": True, "on": False}
+    assert deps.gait.manual_on is False
+    assert deps.runner.aborted is False
+
+
+async def test_manual_never_raises_on_driver_error():
+    class FailingGait:
+        def set_manual(self, on):
+            raise RuntimeError("manual failed")
+
+    deps = _controlled_deps()
+    deps.gait = FailingGait()
+    svc = MotionService(deps)
+    assert "error" in await svc.manual("c1", True)
