@@ -4,8 +4,9 @@ Composition root: build drivers, gait engine, knowledge graph, and sleep
 controller, boot to rest with the idle face, then hand control to the
 SessionManager (discovery -> pairing/auth -> streams -> dispatch).
 
-Optional hardware degrades gracefully — a missing camera or policy file logs
-a warning instead of killing the service; the PCA9685 and OLED are required.
+Every peripheral degrades gracefully — a missing camera, policy file, PCA9685,
+or OLED logs a warning and falls back to a null stand-in instead of killing
+the service.
 """
 
 from __future__ import annotations
