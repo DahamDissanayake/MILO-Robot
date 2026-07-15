@@ -127,3 +127,9 @@ def test_is_running_true_while_a_cycle_is_mid_flight():
         assert runner.is_running is False
 
     asyncio.run(run())
+
+
+def test_wake_up_ends_at_stand():
+    servos, _, completed = run_pose("wake_up")
+    assert completed
+    assert servos.angles == STAND_ANGLES
