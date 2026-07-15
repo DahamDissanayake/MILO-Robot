@@ -207,3 +207,14 @@ async def test_reset_and_standby_dispatch():
         assert deps.gait.standby_called is True
     finally:
         await client.close()
+
+
+async def test_restart_dispatch_requires_control():
+    deps = make_deps(broker=ControlBroker())
+    client, ws = await _ws(deps)
+    try:
+        await ws.send_json({"t": "restart"})
+        data = await _recv_json_until(ws, "err")
+        assert data["error"] == "not-controlling"
+    finally:
+        await client.close()

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import re
 import time
 from pathlib import Path
@@ -14,6 +15,7 @@ from ..poses import POSES
 log = logging.getLogger(__name__)
 
 STALE_S = 0.5
+RESTART_DELAY_S = 0.3  # gives the WS ack a moment to flush before the process exits
 ASSETS_FACES = Path(__file__).resolve().parents[2] / "assets" / "faces"
 
 VX_LIM, VY_LIM, YAW_LIM = 1.0, 1.0, 2.0
@@ -139,6 +141,16 @@ class MotionService:
             self._deps.gait.standby()
         except Exception as exc:
             return {"error": f"{type(exc).__name__}: {exc}"}
+        return {"ok": True}
+
+    async def restart(self, client_id: str) -> dict:
+        """Cleanly exit so systemd's Restart=always brings the service back
+        with every I2C driver freshly re-probed -- the recovery path for a
+        peripheral that was unplugged and replugged."""
+        if err := self._denied(client_id):
+            return err
+        log.warning("restart requested by %s — exiting for systemd to restart with fresh hardware", client_id)
+        asyncio.get_running_loop().call_later(RESTART_DELAY_S, os._exit, 0)
         return {"ok": True}
 
     async def stop(self) -> dict:

@@ -228,3 +228,21 @@ async def test_mode_reset_standby_never_raise_on_driver_error():
     assert "error" in await svc.mode("c1", "balanced")
     assert "error" in await svc.reset("c1")
     assert "error" in await svc.standby("c1")
+
+
+async def test_restart_requires_control():
+    deps = make_deps(broker=ControlBroker())
+    svc = MotionService(deps)
+    assert await svc.restart("nobody") == {"error": "not-controlling"}
+
+
+async def test_restart_schedules_exit_when_controlling(monkeypatch):
+    deps = _controlled_deps()
+    svc = MotionService(deps)
+    monkeypatch.setattr("milo_bridge.webapp.motion.RESTART_DELAY_S", 0.01)
+    calls = []
+    monkeypatch.setattr("milo_bridge.webapp.motion.os._exit", lambda code: calls.append(code))
+    result = await svc.restart("c1")
+    assert result == {"ok": True}
+    await asyncio.sleep(0.05)
+    assert calls == [0]

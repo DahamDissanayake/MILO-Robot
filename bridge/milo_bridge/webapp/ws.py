@@ -75,6 +75,7 @@ async def _handle_text(app, ws, client_id: str, data: dict) -> None:
         "servo_batch": lambda: motion.servo_batch(client_id, data.get("angles", {})),
         "reset": lambda: motion.reset(client_id),
         "standby": lambda: motion.standby(client_id),
+        "restart": lambda: motion.restart(client_id),
     }
     if t not in handlers:
         await ws.send_json({"t": "err", "for": t, "error": "unknown-type"})
