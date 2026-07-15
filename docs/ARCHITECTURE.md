@@ -399,7 +399,7 @@ Device-tree config (`/boot/firmware/config.txt`): `dtparam=i2s=on` + `dtoverlay=
         BACK
 ```
 
-PWM: 50 Hz, 500–2500 µs pulse range, per-servo trim offsets, **20 ms staggered activation** between simultaneous multi-servo writes (brownout lesson inherited from the ESP32 firmware).
+PWM: 50 Hz, 500–2500 µs pulse range, per-servo trim offsets, **20 ms staggered activation** between simultaneous multi-servo writes (brownout lesson inherited from the ESP32 firmware), and a **safe-angle clamp of 5°–175°** applied to every write — a servo driven to its mechanical hard-stop stalls at full current, sagging the shared rail and twitching the others, so a commanded 0°/180° drives the safe near-extreme instead of grinding into the wall.
 
 ---
 

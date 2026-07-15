@@ -3,7 +3,10 @@
 Carries over two hard-won lessons from the Sesame ESP32 firmware:
 per-servo calibrated pulse ranges (calibrate without disassembly) and
 staggered multi-servo writes (simultaneous starts on 8 MG90s brown out
-the rail).
+the rail). A third safeguard was added on the Pi: every write is clamped a
+few degrees short of each mechanical stop (SAFE_ANGLE_MIN/SAFE_ANGLE_MAX)
+so a commanded extreme can never stall a servo -- a stalled servo grinds at
+full current, sagging the shared rail and twitching every other servo.
 
 The PCA9685 object is injected so all angle/duty math tests run off-hardware;
 ``ServoDriver.from_hardware()`` builds the real I2C device on the Pi.
@@ -19,6 +22,15 @@ PWM_FREQUENCY_HZ = 50
 PULSE_MIN_US = 500
 PULSE_MAX_US = 2500
 DEFAULT_PULSE_RANGE = (PULSE_MIN_US, PULSE_MAX_US)
+
+# Never command the last few degrees at either end. A servo driven into its
+# mechanical hard-stop can't reach the requested position, so its controller
+# grinds the motor at full power against the wall -- a stall that pulls ~5x
+# normal current, sags the shared servo rail, and makes every other servo
+# twitch. Clamping every hardware write into this band keeps 0deg/180deg
+# commands off the wall (they drive the safe near-extreme instead).
+SAFE_ANGLE_MIN = 5.0
+SAFE_ANGLE_MAX = 175.0
 
 # Channel map inherited from the Sesame firmware (movement-sequences.h).
 SERVO_CHANNELS: dict[str, int] = {
@@ -44,9 +56,13 @@ class ServoDriver:
     """8-servo driver with per-channel pulse-range calibration and staggered writes.
 
     ``pca`` must expose ``channels[i].duty_cycle`` (the Adafruit PCA9685 API).
-    Each channel's own ``(min_us, max_us)`` pulse range means 0deg and 180deg
-    always drive that channel's calibrated physical extreme -- there's no
-    additive-offset-then-clamp step that can strand the endpoints.
+    Each channel has its own ``(min_us, max_us)`` pulse range so 0-180deg maps
+    onto that channel's calibrated span with no additive-offset-then-clamp step
+    that can strand the endpoints. Every write is then clamped into the
+    ``[SAFE_ANGLE_MIN, SAFE_ANGLE_MAX]`` band before it reaches the hardware, so
+    a commanded 0deg/180deg drives the servo to its safe near-extreme rather
+    than grinding into the mechanical wall. ``last_angle`` still reports the
+    logical commanded angle -- the slew layer above reasons in full 0-180 space.
     """
 
     def __init__(
@@ -80,9 +96,12 @@ class ServoDriver:
         return cls(pca, pulse_ranges=pulse_ranges, stagger_ms=stagger_ms)
 
     def _write(self, channel: int, angle: float) -> None:
+        # Clamp the *pulse* into the safe band so a commanded extreme can't
+        # stall the servo against its hard-stop; keep last_angle in full
+        # 0-180 logical space for the slew layer above.
         min_us, max_us = self.pulse_ranges[channel]
-        duty = pulse_us_to_duty(angle_to_pulse_us(angle, min_us, max_us))
-        self._pca.channels[channel].duty_cycle = duty
+        safe = min(max(angle, SAFE_ANGLE_MIN), SAFE_ANGLE_MAX)
+        self._pca.channels[channel].duty_cycle = pulse_us_to_duty(angle_to_pulse_us(safe, min_us, max_us))
         self._last_angles[channel] = angle
 
     def set_angle(self, servo: int | str, angle: float) -> None:

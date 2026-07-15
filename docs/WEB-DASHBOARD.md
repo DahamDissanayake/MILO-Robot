@@ -196,7 +196,11 @@ the rest are pure observation and work in every tab, all the time.
     (R1–R4, L1–L4), each sending a live `deg` update as you drag, plus
     **Reset (90°)** and **Standby** buttons for quickly returning every
     joint to neutral or to the stand pose during assembly or calibration
-    work.
+    work. Sliders still run 0–180°, but the driver clamps every write to a
+    safe **5°–175°** band before it reaches the hardware: driving a servo to
+    its true mechanical stop stalls it (it grinds at full current, browns out
+    the shared rail, and makes the other servos twitch), so a commanded 0°/180°
+    lands at the safe near-extreme instead.
 
 The layout itself is fixed — nothing can be dragged, resized, or hidden —
 and the Tools drawer is what replaces the old per-card hide/show and its

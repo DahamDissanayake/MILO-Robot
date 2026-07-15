@@ -9,6 +9,12 @@ self-leveling at a standstill.
 This is also the robot's mode/reset/standby coordinator: both the web app
 and the brain call the same GaitEngine instance, so ``set_mode``/``reset``/
 ``standby`` apply identically no matter who's driving.
+
+Every servo write here is clamped into the safe angle band
+(``SAFE_ANGLE_MIN..SAFE_ANGLE_MAX``) so a full CPG swing or a 0/180 discrete
+target can never drive a servo into its mechanical hard-stop -- ServoDriver
+enforces the same limit at the hardware gate, this is the same guarantee one
+layer up for the highest-frequency writer.
 """
 
 from __future__ import annotations
@@ -20,6 +26,7 @@ from pathlib import Path
 
 import numpy as np
 
+from ..drivers.servos import SAFE_ANGLE_MAX, SAFE_ANGLE_MIN
 from ..poses import REST_ANGLES, STAND_ANGLES
 from . import balance
 from .cpg import CpgGait
@@ -95,11 +102,17 @@ class GaitEngine:
         """Smoothly return every servo to the stand pose."""
         self._set_discrete_target(STAND_ANGLES)
 
+    def _write(self, name: str, angle: float) -> None:
+        # Keep every gait write inside the servos' safe band -- a full CPG
+        # swing or a 0/180 discrete target must never reach a mechanical
+        # hard-stop (ServoDriver enforces the same limit at the hardware gate).
+        self._servos.set_angle(name, min(max(angle, SAFE_ANGLE_MIN), SAFE_ANGLE_MAX))
+
     def _set_discrete_target(self, angles: dict[str, float]) -> None:
         self._active = False
         self._holding_target = dict(angles)
         for name, angle in angles.items():
-            self._servos.set_angle(name, angle)
+            self._write(name, angle)
 
     def set_manual(self, on: bool) -> None:
         """Stop writing servos entirely while a human is testing them
@@ -141,7 +154,7 @@ class GaitEngine:
         if self._mode in _BALANCE_MODES and state is not None:
             angles = balance.correct(angles, state.roll, state.pitch, self._mode)
         for name, angle in angles.items():
-            self._servos.set_angle(name, angle)
+            self._write(name, angle)
         return angles
 
     def _hold_level(self) -> dict[str, float] | None:
@@ -151,7 +164,7 @@ class GaitEngine:
         base = self._holding_target if self._holding_target is not None else STAND_ANGLES
         angles = balance.correct(dict(base), state.roll, state.pitch, self._mode)
         for name, angle in angles.items():
-            self._servos.set_angle(name, angle)
+            self._write(name, angle)
         return angles
 
     async def run(self) -> None:

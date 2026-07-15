@@ -41,8 +41,22 @@ def test_set_angle_by_name_and_channel():
     driver = ServoDriver(pca, stagger_ms=0)
     driver.set_angle("R3", 90)
     assert pca.channels[5].duty_cycle == sv.pulse_us_to_duty(1500)
+    driver.set_angle(0, 0)  # commanded 0deg, but driven only to the safe near-extreme
+    assert pca.channels[0].duty_cycle == sv.pulse_us_to_duty(sv.angle_to_pulse_us(sv.SAFE_ANGLE_MIN))
+
+
+def test_write_clamps_pulse_into_the_safe_angle_band():
+    pca = FakePca()
+    driver = ServoDriver(pca, stagger_ms=0)
+    driver.set_angle(0, 0)  # a commanded mechanical extreme...
+    assert pca.channels[0].duty_cycle == sv.pulse_us_to_duty(sv.angle_to_pulse_us(sv.SAFE_ANGLE_MIN))
+    driver.set_angle(0, 180)
+    assert pca.channels[0].duty_cycle == sv.pulse_us_to_duty(sv.angle_to_pulse_us(sv.SAFE_ANGLE_MAX))
+    driver.set_angle(0, -50)  # ...and anything past it clamps too
+    assert pca.channels[0].duty_cycle == sv.pulse_us_to_duty(sv.angle_to_pulse_us(sv.SAFE_ANGLE_MIN))
+    # last_angle still reports the logical command, not the clamped pulse
     driver.set_angle(0, 0)
-    assert pca.channels[0].duty_cycle == sv.pulse_us_to_duty(500)
+    assert driver.last_angle(0) == 0
 
 
 def test_angle_to_pulse_custom_range():
@@ -51,25 +65,25 @@ def test_angle_to_pulse_custom_range():
     assert sv.angle_to_pulse_us(90, min_us=600, max_us=2400) == 1500
 
 
-def test_calibrated_range_hits_true_endpoints():
+def test_calibrated_range_maps_within_the_safe_band():
     pca = FakePca()
     ranges = [(600, 2400)] + [sv.DEFAULT_PULSE_RANGE] * 7
     driver = ServoDriver(pca, pulse_ranges=ranges, stagger_ms=0)
-    driver.set_angle(0, 0)
-    assert pca.channels[0].duty_cycle == sv.pulse_us_to_duty(600)
+    driver.set_angle(0, 0)  # safe-clamped to 5deg within this channel's calibrated span
+    assert pca.channels[0].duty_cycle == sv.pulse_us_to_duty(sv.angle_to_pulse_us(sv.SAFE_ANGLE_MIN, 600, 2400))
     driver.set_angle(0, 180)
-    assert pca.channels[0].duty_cycle == sv.pulse_us_to_duty(2400)
-    driver.set_angle(0, 90)
+    assert pca.channels[0].duty_cycle == sv.pulse_us_to_duty(sv.angle_to_pulse_us(sv.SAFE_ANGLE_MAX, 600, 2400))
+    driver.set_angle(0, 90)  # mid-range is unaffected by the safe clamp
     assert pca.channels[0].duty_cycle == sv.pulse_us_to_duty(1500)
 
 
-def test_uncalibrated_channel_still_hits_default_endpoints():
+def test_uncalibrated_channel_safe_clamps_the_default_range():
     pca = FakePca()
     driver = ServoDriver(pca, stagger_ms=0)
     driver.set_angle("R3", 0)
-    assert pca.channels[5].duty_cycle == sv.pulse_us_to_duty(500)
+    assert pca.channels[5].duty_cycle == sv.pulse_us_to_duty(sv.angle_to_pulse_us(sv.SAFE_ANGLE_MIN))
     driver.set_angle("R3", 180)
-    assert pca.channels[5].duty_cycle == sv.pulse_us_to_duty(2500)
+    assert pca.channels[5].duty_cycle == sv.pulse_us_to_duty(sv.angle_to_pulse_us(sv.SAFE_ANGLE_MAX))
 
 
 def test_set_pose_staggers_between_writes():

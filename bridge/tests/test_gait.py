@@ -4,6 +4,7 @@ import numpy as np
 import pytest
 
 from milo_bridge.drivers.imu import ImuState
+from milo_bridge.drivers.servos import SAFE_ANGLE_MAX, SAFE_ANGLE_MIN
 from milo_bridge.gait.cpg import GAIT_NEUTRAL, LEGS, CpgGait
 from milo_bridge.gait.engine import GaitEngine
 from milo_bridge.gait.policy import (
@@ -17,6 +18,12 @@ from milo_bridge.gait.policy import (
 from milo_bridge.poses import REST_ANGLES, STAND_ANGLES
 
 
+def _safe(angles):
+    """A target dict as the gait engine now writes it: clamped into the safe
+    band, so STAND's rear legs at 0/180 land at 5/175."""
+    return {n: min(max(a, SAFE_ANGLE_MIN), SAFE_ANGLE_MAX) for n, a in angles.items()}
+
+
 class FakeServos:
     def __init__(self):
         self.angles: dict[str, float] = dict(STAND_ANGLES)
@@ -28,6 +35,24 @@ class FakeServos:
 
     def last_angle(self, name):
         return self.angles.get(name)
+
+
+def test_gait_writes_stay_within_the_safe_angle_band():
+    # A stalled servo at a mechanical hard-stop browns out the shared rail,
+    # so no gait write -- discrete stand target (has 0/180) or a live CPG
+    # swing -- may ever land outside [SAFE_ANGLE_MIN, SAFE_ANGLE_MAX].
+    servos = FakeServos()
+    engine = GaitEngine(servos, clock=lambda: 0.0)
+    engine.standby()  # STAND drives the rear legs to 0deg and 180deg
+    assert all(SAFE_ANGLE_MIN <= a <= SAFE_ANGLE_MAX for a in servos.angles.values())
+
+    now = {"t": 0.0}
+    engine = GaitEngine(servos, clock=lambda: now["t"])
+    engine.set_velocity_command(0.15, 0.0, 45.0)
+    for step in range(1, 200):
+        now["t"] = step * 0.02
+        engine.tick()
+        assert all(SAFE_ANGLE_MIN <= a <= SAFE_ANGLE_MAX for a in servos.angles.values())
 
 
 # --- CPG ------------------------------------------------------------------
@@ -206,7 +231,7 @@ def test_standby_writes_stand_angles():
     servos = FakeServos()
     engine = GaitEngine(servos, clock=lambda: 0.0)
     engine.standby()
-    assert servos.angles == STAND_ANGLES
+    assert servos.angles == _safe(STAND_ANGLES)
 
 
 def test_auto_standby_on_stop_in_balanced_mode_only():
@@ -216,7 +241,7 @@ def test_auto_standby_on_stop_in_balanced_mode_only():
     engine_balanced.set_velocity_command(0.1, 0.0, 0.0)
     servos_balanced.angles = {}  # isolate the stop's effect from the walk-start write
     engine_balanced.set_velocity_command(0.0, 0.0, 0.0)
-    assert servos_balanced.angles == STAND_ANGLES
+    assert servos_balanced.angles == _safe(STAND_ANGLES)
 
     servos_raw = FakeServos()
     engine_raw = GaitEngine(servos_raw, clock=lambda: 0.0)
@@ -300,9 +325,9 @@ def test_standby_in_balanced_mode_survives_the_next_tick():
     engine = GaitEngine(servos, imu=imu, clock=lambda: 0.0)
     engine.set_mode("balanced")
     engine.standby()
-    assert servos.angles == STAND_ANGLES
+    assert servos.angles == _safe(STAND_ANGLES)
     engine.tick()
-    assert servos.angles == STAND_ANGLES
+    assert servos.angles == _safe(STAND_ANGLES)
 
 
 def test_new_gait_command_clears_a_stale_holding_target():
@@ -314,7 +339,7 @@ def test_new_gait_command_clears_a_stale_holding_target():
     engine.set_velocity_command(0.0, 0.0, 0.0)  # stop again, still raw mode (no auto-standby)
     engine.set_mode("balanced")
     engine.tick()
-    assert servos.angles == STAND_ANGLES  # falls back to STAND_ANGLES, not the stale REST target
+    assert servos.angles == _safe(STAND_ANGLES)  # falls back to STAND_ANGLES, not the stale REST target
 
 
 # --- manual servo mode -------------------------------------------------------
