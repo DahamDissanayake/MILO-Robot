@@ -16,26 +16,35 @@ def test_zero_tilt_leaves_angles_unchanged():
     assert result == angles
 
 
-def test_roll_correction_opposes_left_and_right_hips_and_knees():
+def test_left_and_right_hips_oppose_each_other_under_roll():
     angles = dict(GAIT_NEUTRAL)
     result = correct(angles, roll_deg=15.0, pitch_deg=0.0, mode="balanced")
-    for left_joint, right_joint in (("L1", "R1"), ("L2", "R2")):
-        left_delta = result[left_joint] - angles[left_joint]
-        right_delta = result[right_joint] - angles[right_joint]
-        assert left_delta != 0
-        assert right_delta != 0
-        assert (left_delta > 0) != (right_delta > 0)  # opposite directions
+    left_delta = result["L1"] - angles["L1"]
+    right_delta = result["R1"] - angles["R1"]
+    assert left_delta != 0
+    assert right_delta != 0
+    assert (left_delta > 0) != (right_delta > 0)
 
 
-def test_pitch_correction_opposes_front_and_rear_joints():
+def test_hip_and_knee_move_toward_opposite_ends_on_each_leg():
+    angles = dict(GAIT_NEUTRAL)
+    result = correct(angles, roll_deg=15.0, pitch_deg=0.0, mode="balanced")
+    for hip, knee in (("L1", "L2"), ("R1", "R2"), ("L3", "L4"), ("R3", "R4")):
+        hip_delta = result[hip] - angles[hip]
+        knee_delta = result[knee] - angles[knee]
+        assert hip_delta != 0
+        assert knee_delta != 0
+        assert (hip_delta > 0) != (knee_delta > 0)  # straightening, not moving together
+
+
+def test_front_and_rear_hips_oppose_each_other_under_pitch():
     angles = dict(GAIT_NEUTRAL)
     result = correct(angles, roll_deg=0.0, pitch_deg=15.0, mode="balanced")
-    for front_joint, rear_joint in (("L1", "L3"), ("L2", "L4")):  # FL vs RL, hip and knee
-        front_delta = result[front_joint] - angles[front_joint]
-        rear_delta = result[rear_joint] - angles[rear_joint]
-        assert front_delta != 0
-        assert rear_delta != 0
-        assert (front_delta > 0) != (rear_delta > 0)
+    front_delta = result["L1"] - angles["L1"]
+    rear_delta = result["L3"] - angles["L3"]
+    assert front_delta != 0
+    assert rear_delta != 0
+    assert (front_delta > 0) != (rear_delta > 0)
 
 
 def test_correction_clamped_to_mode_max():

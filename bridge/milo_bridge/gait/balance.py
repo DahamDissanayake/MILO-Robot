@@ -43,14 +43,17 @@ def correct(angles: dict[str, float], roll_deg: float, pitch_deg: float, mode: s
     """Apply IMU-fed roll/pitch trim to ``angles`` (a full hip+knee angle
     dict as produced by CpgGait.angles_at / OnnxPolicy.step). Returns a new
     dict; ``angles`` is never mutated. ``mode="raw"`` (or any mode without
-    tuned params) returns ``angles`` unchanged. Hip and knee move together
-    per leg (same signed delta) so the reaction reads as "stretch that
-    leg out," not a subtle hip rotation -- a hip-only nudge was too weak
-    to have real mechanical effect. Each leg's combined roll+pitch
-    correction is clamped to ``max_correction_deg`` once (not per-axis) --
-    clamping the two axes independently before summing them would let a
-    leg's total correction reach up to 2x the documented per-mode
-    maximum when both roll and pitch are extreme at once."""
+    tuned params) returns ``angles`` unchanged. Hip and knee move toward
+    *opposite* ends of their range (one increases, the other decreases)
+    on each leg -- confirmed against a concrete on-robot example (a rear
+    leg's hip should swing toward 180 while its knee swings toward 0 to
+    "straighten" the leg) -- moving them the same direction, as an
+    earlier revision did, doesn't produce a real physical reaction. Each
+    leg's combined roll+pitch correction is clamped to
+    ``max_correction_deg`` once (not per-axis) -- clamping the two axes
+    independently before summing them would let a leg's total correction
+    reach up to 2x the documented per-mode maximum when both roll and
+    pitch are extreme at once."""
     if mode not in PARAMS:
         return angles
     params = PARAMS[mode]
@@ -64,7 +67,8 @@ def correct(angles: dict[str, float], roll_deg: float, pitch_deg: float, mode: s
         side = 1.0 if leg[1] == "L" else -1.0  # opposite sign per side
         front = 1.0 if leg[0] == "F" else -1.0  # opposite sign front vs rear
         delta = _clamp(side * roll_term + front * pitch_term, params.max_correction_deg)
-        for joint in (hip, knee):
-            if joint in corrected:
-                corrected[joint] = max(0.0, min(180.0, corrected[joint] + delta))
+        if hip in corrected:
+            corrected[hip] = max(0.0, min(180.0, corrected[hip] + delta))
+        if knee in corrected:
+            corrected[knee] = max(0.0, min(180.0, corrected[knee] - delta))
     return corrected
