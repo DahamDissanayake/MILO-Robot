@@ -45,14 +45,31 @@ def test_set_angle_by_name_and_channel():
     assert pca.channels[0].duty_cycle == sv.pulse_us_to_duty(500)
 
 
-def test_trim_is_applied_and_clamped():
+def test_angle_to_pulse_custom_range():
+    assert sv.angle_to_pulse_us(0, min_us=600, max_us=2400) == 600
+    assert sv.angle_to_pulse_us(180, min_us=600, max_us=2400) == 2400
+    assert sv.angle_to_pulse_us(90, min_us=600, max_us=2400) == 1500
+
+
+def test_calibrated_range_hits_true_endpoints():
     pca = FakePca()
-    trims = [10] + [0] * 7
-    driver = ServoDriver(pca, trims=trims, stagger_ms=0)
+    ranges = [(600, 2400)] + [sv.DEFAULT_PULSE_RANGE] * 7
+    driver = ServoDriver(pca, pulse_ranges=ranges, stagger_ms=0)
+    driver.set_angle(0, 0)
+    assert pca.channels[0].duty_cycle == sv.pulse_us_to_duty(600)
+    driver.set_angle(0, 180)
+    assert pca.channels[0].duty_cycle == sv.pulse_us_to_duty(2400)
     driver.set_angle(0, 90)
-    assert pca.channels[0].duty_cycle == sv.pulse_us_to_duty(sv.angle_to_pulse_us(100))
-    driver.set_angle(0, 175)  # 175 + 10 clamps to 180
-    assert pca.channels[0].duty_cycle == sv.pulse_us_to_duty(2500)
+    assert pca.channels[0].duty_cycle == sv.pulse_us_to_duty(1500)
+
+
+def test_uncalibrated_channel_still_hits_default_endpoints():
+    pca = FakePca()
+    driver = ServoDriver(pca, stagger_ms=0)
+    driver.set_angle("R3", 0)
+    assert pca.channels[5].duty_cycle == sv.pulse_us_to_duty(500)
+    driver.set_angle("R3", 180)
+    assert pca.channels[5].duty_cycle == sv.pulse_us_to_duty(2500)
 
 
 def test_set_pose_staggers_between_writes():
@@ -68,9 +85,9 @@ def test_set_pose_staggers_between_writes():
     assert sleeps == [0.02, 0.02]
 
 
-def test_wrong_trim_count_rejected():
+def test_wrong_pulse_range_count_rejected():
     with pytest.raises(ValueError):
-        ServoDriver(FakePca(), trims=[0, 0, 0])
+        ServoDriver(FakePca(), pulse_ranges=[(500, 2500), (500, 2500)])
 
 
 def test_relax_zeroes_all_channels():
