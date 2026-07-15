@@ -1,7 +1,9 @@
 """Dependency bundle handed to the web app — everything it may touch.
 
-Typed loosely (Any) on purpose: real drivers on the Pi, fakes in tests,
-and None where optional hardware is absent.
+Typed loosely (Any) on purpose: real drivers on the Pi, fakes in tests.
+camera/audio/imu are None where that optional hardware is absent;
+servos/display are never None -- they fall back to NullServos/NullDisplay
+on failure instead.
 """
 from __future__ import annotations
 
