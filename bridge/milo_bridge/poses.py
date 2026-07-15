@@ -139,14 +139,10 @@ POSES: dict[str, Pose] = {
     ),
     "wake_up": Pose(
         "wake_up", "surprised", AnimMode.ONCE,
-        [Step(STAND_ANGLES, 150)]
-        + _repeat(
-            [
-                Step({"R1": 150, "L1": 30, "R2": 60, "L2": 150}, 120),
-                Step({"R1": 120, "L1": 60, "R2": 30, "L2": 120}, 120),
-            ],
-            4,
-        ),
+        [
+            Step(STAND_ANGLES, 150),
+            Step({"R2": 65, "L2": 115, "R4": 20, "L4": 160}, 250),
+        ],
     ),
     "crab": Pose(
         "crab", "crab", AnimMode.ONCE,
