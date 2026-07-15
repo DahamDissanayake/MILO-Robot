@@ -13,8 +13,8 @@ from typing import Any, Callable
 class WebDeps:
     config: Any
     runner: Any            # PoseRunner
-    display: Any | None    # FaceDisplay
-    servos: Any            # ServoDriver
+    display: Any            # FaceDisplay (never None -- NullDisplay stands in on failure)
+    servos: Any            # ServoDriver (never None -- NullServos stands in on failure)
     camera: Any | None     # CameraStreamer
     audio: Any | None      # AudioIO
     imu: Any | None        # Mpu6050
