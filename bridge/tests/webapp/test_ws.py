@@ -234,3 +234,22 @@ async def test_relax_and_hold_dispatch():
         assert deps.servos.held is True
     finally:
         await client.close()
+
+
+async def test_turn_and_strafe_dispatch():
+    deps = make_deps(broker=ControlBroker())
+    client, ws = await _ws(deps)
+    try:
+        await ws.send_json({"t": "control", "take": True})
+        await _recv_json_until(ws, "control")
+        await ws.send_json({"t": "turn", "dir": "left"})
+        await _recv_json_until(ws, "ack")
+        assert deps.runner.ran == ["turn_left"]
+        await ws.send_json({"t": "stop"})
+        await _recv_json_until(ws, "ack")
+        assert deps.runner.aborted is True
+        await ws.send_json({"t": "strafe", "dir": "right"})
+        await _recv_json_until(ws, "ack")
+        assert deps.runner.ran == ["turn_left", "crab_right"]
+    finally:
+        await client.close()

@@ -285,3 +285,59 @@ async def test_relax_and_hold_never_raise_on_driver_error():
     svc = MotionService(deps)
     assert "error" in await svc.relax("c1")
     assert "error" in await svc.hold("c1")
+
+
+async def test_turn_requires_control():
+    deps = make_deps(broker=ControlBroker())
+    svc = MotionService(deps)
+    res = await svc.turn("nobody", "left")
+    assert res == {"error": "not-controlling"}
+    assert deps.runner.ran == []
+
+
+async def test_turn_runs_the_matching_pose_with_a_large_cycle_count():
+    deps = _controlled_deps()
+    svc = MotionService(deps)
+    assert await svc.turn("c1", "left") == {"ok": True}
+    await asyncio.sleep(0)
+    assert deps.runner.ran == ["turn_left"]
+
+
+async def test_turn_rejects_unknown_direction():
+    deps = _controlled_deps()
+    svc = MotionService(deps)
+    res = await svc.turn("c1", "sideways")
+    assert "error" in res
+    assert deps.runner.ran == []
+
+
+async def test_turn_shares_the_single_flight_guard_with_pose():
+    deps = _controlled_deps()
+    svc = MotionService(deps)
+    assert await svc.turn("c1", "left") == {"ok": True}
+    res = await svc.turn("c1", "right")
+    assert res == {"error": "pose-running"}
+
+
+async def test_strafe_requires_control():
+    deps = make_deps(broker=ControlBroker())
+    svc = MotionService(deps)
+    res = await svc.strafe("nobody", "left")
+    assert res == {"error": "not-controlling"}
+    assert deps.runner.ran == []
+
+
+async def test_strafe_runs_the_matching_crab_pose():
+    deps = _controlled_deps()
+    svc = MotionService(deps)
+    assert await svc.strafe("c1", "right") == {"ok": True}
+    await asyncio.sleep(0)
+    assert deps.runner.ran == ["crab_right"]
+
+
+async def test_strafe_rejects_unknown_direction():
+    deps = _controlled_deps()
+    svc = MotionService(deps)
+    res = await svc.strafe("c1", "sideways")
+    assert "error" in res
+    assert deps.runner.ran == []

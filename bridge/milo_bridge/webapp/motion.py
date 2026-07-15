@@ -17,6 +17,7 @@ log = logging.getLogger(__name__)
 STALE_S = 0.5
 RESTART_DELAY_S = 0.3  # gives the WS ack a moment to flush before the process exits
 ASSETS_FACES = Path(__file__).resolve().parents[2] / "assets" / "faces"
+HOLD_CYCLES = 10_000  # effectively "until aborted" -- matches this codebase's own test idiom
 
 VX_LIM, VY_LIM, YAW_LIM = 1.0, 1.0, 2.0
 DEG_MIN, DEG_MAX = 0, 180
@@ -169,6 +170,28 @@ class MotionService:
             self._deps.servos.hold()
         except Exception as exc:
             return {"error": f"{type(exc).__name__}: {exc}"}
+        return {"ok": True}
+
+    async def turn(self, client_id: str, direction: str) -> dict:
+        if err := self._denied(client_id):
+            return err
+        if direction not in ("left", "right"):
+            return {"error": f"unknown turn direction {direction!r}"}
+        if self._pose_task is not None and not self._pose_task.done():
+            return {"error": "pose-running"}
+        self._pose_task = asyncio.ensure_future(self._deps.runner.run(f"turn_{direction}", cycles=HOLD_CYCLES))
+        self._pose_task.add_done_callback(_log_pose_result)
+        return {"ok": True}
+
+    async def strafe(self, client_id: str, direction: str) -> dict:
+        if err := self._denied(client_id):
+            return err
+        if direction not in ("left", "right"):
+            return {"error": f"unknown strafe direction {direction!r}"}
+        if self._pose_task is not None and not self._pose_task.done():
+            return {"error": "pose-running"}
+        self._pose_task = asyncio.ensure_future(self._deps.runner.run(f"crab_{direction}", cycles=HOLD_CYCLES))
+        self._pose_task.add_done_callback(_log_pose_result)
         return {"ok": True}
 
     async def stop(self) -> dict:
