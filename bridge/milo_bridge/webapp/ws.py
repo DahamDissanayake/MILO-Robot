@@ -56,6 +56,13 @@ async def _handle_text(app, ws, client_id: str, data: dict) -> None:
         await motion.stop()
         await ws.send_json({"t": "ack", "for": "stop"})
         return
+    if t == "mode":
+        res = await motion.mode(client_id, data.get("name", ""))
+        if "error" in res:
+            await ws.send_json({"t": "err", "for": "mode", "error": res["error"]})
+        else:
+            _broadcast_mode(app, res["mode"])
+        return
     if t == "audio":
         ws_state = app["ws_state"][ws]
         ws_state["audio_on"] = bool(data.get("on"))
@@ -66,6 +73,8 @@ async def _handle_text(app, ws, client_id: str, data: dict) -> None:
         "face": lambda: motion.face(client_id, data.get("name", "")),
         "servo": lambda: motion.servo(client_id, data.get("servo", ""), data.get("deg", 90)),
         "servo_batch": lambda: motion.servo_batch(client_id, data.get("angles", {})),
+        "reset": lambda: motion.reset(client_id),
+        "standby": lambda: motion.standby(client_id),
     }
     if t not in handlers:
         await ws.send_json({"t": "err", "for": t, "error": "unknown-type"})
@@ -84,6 +93,12 @@ def _broadcast_owner(app: web.Application) -> None:
         if not ws.closed:
             you = bool(deps.broker and deps.broker.is_web_controller(state["id"]))
             asyncio.ensure_future(_send_safe(ws, {"t": "control", "owner": owner, "you": you}))
+
+
+def _broadcast_mode(app: web.Application, name: str) -> None:
+    for ws, state in list(app["ws_state"].items()):
+        if not ws.closed:
+            asyncio.ensure_future(_send_safe(ws, {"t": "mode", "name": name}))
 
 
 async def _audio_out_pump(app, ws) -> None:

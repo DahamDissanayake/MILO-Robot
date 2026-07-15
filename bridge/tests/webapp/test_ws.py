@@ -163,3 +163,47 @@ async def test_servo_batch_dispatch():
         assert deps.servos.angles == {"R1": 90, "L4": 90}
     finally:
         await client.close()
+
+
+async def test_mode_broadcasts_to_all_clients():
+    deps = make_deps(broker=ControlBroker())
+    client, ws1 = await _ws(deps)
+    try:
+        ws2 = await client.ws_connect("/ws")
+        await ws1.send_json({"t": "control", "take": True})
+        await _recv_json_until(ws1, "control")
+        await ws1.send_json({"t": "mode", "name": "balanced"})
+        data1 = await _recv_json_until(ws1, "mode")
+        data2 = await _recv_json_until(ws2, "mode")
+        assert data1 == {"t": "mode", "name": "balanced"}
+        assert data2 == {"t": "mode", "name": "balanced"}
+        assert deps.gait.mode == "balanced"
+    finally:
+        await client.close()
+
+
+async def test_mode_denied_without_control():
+    deps = make_deps(broker=ControlBroker())
+    client, ws = await _ws(deps)
+    try:
+        await ws.send_json({"t": "mode", "name": "balanced"})
+        data = await _recv_json_until(ws, "err")
+        assert data["error"] == "not-controlling"
+    finally:
+        await client.close()
+
+
+async def test_reset_and_standby_dispatch():
+    deps = make_deps(broker=ControlBroker())
+    client, ws = await _ws(deps)
+    try:
+        await ws.send_json({"t": "control", "take": True})
+        await _recv_json_until(ws, "control")
+        await ws.send_json({"t": "reset"})
+        await _recv_json_until(ws, "ack")
+        assert deps.gait.reset_called is True
+        await ws.send_json({"t": "standby"})
+        await _recv_json_until(ws, "ack")
+        assert deps.gait.standby_called is True
+    finally:
+        await client.close()
