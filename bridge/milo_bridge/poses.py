@@ -214,6 +214,7 @@ class PoseRunner:
         self._display = display
         self._sleep = sleep
         self._abort = asyncio.Event()
+        self.is_running = False
 
     def abort(self) -> None:
         self._abort.set()
@@ -222,22 +223,26 @@ class PoseRunner:
         """Run a pose to completion. Returns False if aborted early."""
         pose = POSES[name]
         self._abort.clear()
-        if self._display is not None:
-            await self._display.set_face(pose.face, pose.face_mode)
+        self.is_running = True
+        try:
+            if self._display is not None:
+                await self._display.set_face(pose.face, pose.face_mode)
 
-        completed = await self._run_steps(pose.steps)
-        if completed and pose.cycle:
-            for _ in range(cycles):
-                if not await self._run_steps(pose.cycle):
-                    completed = False
-                    break
-        if pose.end_stand or pose.cycle or not completed:
-            # Recovery stand must run even after an abort (firmware behavior:
-            # releasing the button mid-walk always ends in runStandPose).
-            await self._servos.set_pose(STAND_ANGLES)
-            if self._display is not None and completed:
-                self._display.start_idle()
-        return completed
+            completed = await self._run_steps(pose.steps)
+            if completed and pose.cycle:
+                for _ in range(cycles):
+                    if not await self._run_steps(pose.cycle):
+                        completed = False
+                        break
+            if pose.end_stand or pose.cycle or not completed:
+                # Recovery stand must run even after an abort (firmware behavior:
+                # releasing the button mid-walk always ends in runStandPose).
+                await self._servos.set_pose(STAND_ANGLES)
+                if self._display is not None and completed:
+                    self._display.start_idle()
+            return completed
+        finally:
+            self.is_running = False
 
     async def _run_steps(self, steps: list[Step]) -> bool:
         for step in steps:

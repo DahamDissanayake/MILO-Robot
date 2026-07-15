@@ -99,3 +99,31 @@ def test_gaits_have_cycles_and_oneshots_do_not():
         assert POSES[name].cycle
     for name in ("wave", "dance", "bow", "rest", "stand"):
         assert not POSES[name].cycle
+
+
+def test_is_running_false_before_and_after_a_run():
+    servos, display = FakeServos(), FakeDisplay()
+    runner = PoseRunner(servos, display, sleep=no_sleep)
+    assert runner.is_running is False
+    completed = asyncio.run(runner.run("stand"))
+    assert completed
+    assert runner.is_running is False
+
+
+def test_is_running_true_while_a_cycle_is_mid_flight():
+    servos, display = FakeServos(), FakeDisplay()
+
+    async def yielding_sleep(_s):
+        await asyncio.sleep(0)
+
+    runner = PoseRunner(servos, display, sleep=yielding_sleep)
+
+    async def run():
+        task = asyncio.create_task(runner.run("walk", cycles=10_000))
+        await asyncio.sleep(0)
+        assert runner.is_running is True
+        runner.abort()
+        await task
+        assert runner.is_running is False
+
+    asyncio.run(run())
