@@ -315,3 +315,42 @@ def test_new_gait_command_clears_a_stale_holding_target():
     engine.set_mode("balanced")
     engine.tick()
     assert servos.angles == STAND_ANGLES  # falls back to STAND_ANGLES, not the stale REST target
+
+
+# --- manual servo mode -------------------------------------------------------
+
+def test_set_manual_stops_all_writes_and_clears_active_command():
+    servos = FakeServos()
+    engine = GaitEngine(servos, clock=lambda: 0.0)
+    engine.set_velocity_command(0.1, 0.0, 0.0)
+    engine.set_manual(True)
+    assert engine.tick() is None
+    assert servos.writes == 0
+
+
+def test_manual_mode_blocks_balanced_self_leveling_too():
+    servos = FakeServos()
+    imu = FakeImu(roll=20.0, pitch=0.0)
+    engine = GaitEngine(servos, imu=imu, clock=lambda: 0.0)
+    engine.set_mode("balanced")
+    engine.set_manual(True)
+    assert engine.tick() is None
+    assert servos.writes == 0
+
+
+def test_gait_resumes_with_a_fresh_phase_after_a_pose_defers_it():
+    now = {"t": 0.0}
+    servos = FakeServos()
+    runner = FakeRunner()
+    engine = GaitEngine(servos, runner=runner, clock=lambda: now["t"])
+    engine.set_velocity_command(0.1, 0.0, 0.0)
+    now["t"] = 5.0
+    runner.is_running = True
+    assert engine.tick() is None  # deferring while the pose runs
+    now["t"] = 5.5
+    assert engine.tick() is None  # still deferring
+    runner.is_running = False
+    now["t"] = 5.52
+    written = engine.tick()  # pose just finished; gait resumes
+    expected = CpgGait().angles_at(0.0, 0.1, 0.0, 0.0)  # phase restarted at t=0, not the stale elapsed time
+    assert written == expected

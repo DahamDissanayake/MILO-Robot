@@ -59,6 +59,8 @@ class GaitEngine:
         self._active = False
         self._mode = "raw"
         self._holding_target: dict[str, float] | None = None
+        self._manual_override = False
+        self._was_deferring = False
         self._t0 = clock()
 
     @property
@@ -99,10 +101,24 @@ class GaitEngine:
         for name, angle in angles.items():
             self._servos.set_angle(name, angle)
 
+    def set_manual(self, on: bool) -> None:
+        """Stop writing servos entirely while a human is testing them
+        directly (Tools > Servo Test) -- without this, balanced/angled
+        mode's self-leveling fights every slider drag."""
+        self._manual_override = on
+        if on:
+            self._command = (0.0, 0.0, 0.0)
+            self._active = False
+
     def tick(self) -> dict[str, float] | None:
         """One control step; returns the angles written (None while idle)."""
-        if self._runner is not None and self._runner.is_running:
-            return None  # a scripted pose owns the servos right now
+        deferring = self._manual_override or (self._runner is not None and self._runner.is_running)
+        if deferring:
+            self._was_deferring = True
+            return None  # manual override, or a scripted pose, owns the servos right now
+        if self._was_deferring and self._active:
+            self._t0 = self._clock()  # resume the CPG cycle cleanly, not mid-phase
+        self._was_deferring = False
         if not self._active:
             return self._hold_level() if self._mode in _BALANCE_MODES else None
         vx, vy, yaw = self._command
