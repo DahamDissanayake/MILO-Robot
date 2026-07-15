@@ -20,6 +20,7 @@ from .drivers.camera import CameraStreamer
 from .drivers.display import FaceDisplay
 from .drivers.imu import Mpu6050
 from .drivers.servos import ServoDriver
+from .drivers.smooth_servos import SmoothServos
 from .gait.engine import GaitEngine
 from .graph.api import GraphApi
 from .graph.store import GraphStore
@@ -48,8 +49,10 @@ async def main() -> None:
 
     # Required hardware.
     servos = ServoDriver.from_hardware(pulse_ranges=cfg.servo_pulse_ranges, stagger_ms=cfg.servo_stagger_ms)
+    motion_servos = SmoothServos(servos, stagger_ms=cfg.servo_stagger_ms)
+    motion_servos.start()
     display = FaceDisplay.from_hardware(ASSETS_DIR)
-    runner = PoseRunner(servos, display)
+    runner = PoseRunner(motion_servos, display)
 
     # Optional hardware/components.
     imu = _optional(Mpu6050.from_hardware, "IMU")
@@ -60,7 +63,7 @@ async def main() -> None:
     camera = _optional(lambda: CameraStreamer.from_hardware(fps=cfg.video_fps), "camera")
     audio = _optional(AudioIO, "audio")
 
-    gait = GaitEngine(servos, imu=imu, policy_path=POLICY_PATH)
+    gait = GaitEngine(motion_servos, imu=imu, policy_path=POLICY_PATH)
     log.info("gait backend: %s", gait.backend)
 
     graph = GraphStore(cfg.graph_db_path)
@@ -76,7 +79,7 @@ async def main() -> None:
     logging.getLogger().addHandler(log_buffer)
 
     sleep_controller = SleepController(
-        runner, display, loud_rms_threshold=cfg.loud_rms_threshold, servos=servos
+        runner, display, loud_rms_threshold=cfg.loud_rms_threshold, servos=motion_servos
     )
 
     broker = ControlBroker()
@@ -85,7 +88,7 @@ async def main() -> None:
     manager = None
 
     web_deps = WebDeps(
-        config=cfg, runner=runner, display=display, servos=servos,
+        config=cfg, runner=runner, display=display, servos=motion_servos,
         camera=camera, audio=audio, imu=imu, gait=gait,
         graph_api=graph_api, graph_store=graph,
         broker=broker, media_hub=hub, log_buffer=log_buffer,
@@ -100,7 +103,7 @@ async def main() -> None:
 
     manager = SessionManager(
         cfg,
-        servos=servos,
+        servos=motion_servos,
         display=display,
         runner=runner,
         audio=audio,
@@ -118,6 +121,7 @@ async def main() -> None:
     finally:
         gait_task.cancel()
         backup_task.cancel()
+        motion_servos.stop()
         if web_task is not None:
             web_task.cancel()
         graph.close()
