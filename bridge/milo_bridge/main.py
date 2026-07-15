@@ -47,7 +47,7 @@ async def main() -> None:
     log.info("milo-bridge starting as %s (%s)", cfg.robot_name, cfg.robot_id)
 
     # Required hardware.
-    servos = ServoDriver.from_hardware(trims=cfg.servo_trims, stagger_ms=cfg.servo_stagger_ms)
+    servos = ServoDriver.from_hardware(pulse_ranges=cfg.servo_pulse_ranges, stagger_ms=cfg.servo_stagger_ms)
     display = FaceDisplay.from_hardware(ASSETS_DIR)
     runner = PoseRunner(servos, display)
 

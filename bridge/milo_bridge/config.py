@@ -20,8 +20,10 @@ class BridgeConfig:
     robot_name: str = "milo"
     data_dir: str = str(DEFAULT_DIR)
 
-    # Servo tuning (per-channel trim degrees, firmware-style subtrim)
-    servo_trims: list[int] = field(default_factory=lambda: [0] * 8)
+    # Servo tuning (per-channel calibrated pulse range, microseconds)
+    servo_pulse_ranges: list[tuple[int, int]] = field(
+        default_factory=lambda: [(500, 2500)] * 8
+    )
     servo_stagger_ms: int = 20
 
     # Streaming
@@ -68,7 +70,9 @@ class BridgeConfig:
         path.parent.mkdir(parents=True, exist_ok=True)
         data = asdict(self)
         data["video_size"] = list(self.video_size)
+        data["servo_pulse_ranges"] = [list(r) for r in self.servo_pulse_ranges]
         path.write_text(json.dumps(data, indent=2), encoding="utf-8")
 
     def __post_init__(self) -> None:
         self.video_size = tuple(self.video_size)  # JSON round-trips tuples as lists
+        self.servo_pulse_ranges = [tuple(r) for r in self.servo_pulse_ranges]

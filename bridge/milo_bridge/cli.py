@@ -23,7 +23,7 @@ ASSETS_DIR = Path(__file__).resolve().parents[1] / "assets" / "faces"
 
 
 def _hardware(cfg: BridgeConfig) -> tuple[ServoDriver, FaceDisplay]:
-    servos = ServoDriver.from_hardware(trims=cfg.servo_trims, stagger_ms=cfg.servo_stagger_ms)
+    servos = ServoDriver.from_hardware(pulse_ranges=cfg.servo_pulse_ranges, stagger_ms=cfg.servo_stagger_ms)
     display = FaceDisplay.from_hardware(ASSETS_DIR)
     return servos, display
 
