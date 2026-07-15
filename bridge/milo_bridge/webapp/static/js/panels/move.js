@@ -102,13 +102,26 @@ export default {
     window.addEventListener("keyup", sku);
 
     // -- look up/down: held, not toggled. Press and hold to move to the
-    // tilted pose and stay there; release to return to stand. --
+    // tilted pose and stay there; release to return to stand. The look
+    // pose itself only takes ~400ms to play, so without manual mode the
+    // gait engine's own 50Hz tick would resume and overwrite it seconds
+    // into the hold -- manual:true (sent first, so its own abort() doesn't
+    // cut the pose off mid-flight) freezes the gait engine's writes for as
+    // long as the button stays down. --
     function setLookButtons(dir) {
       el.querySelector('[data-dpad="lookup"]').classList.toggle("active", dir === "up");
       el.querySelector('[data-dpad="lookdown"]').classList.toggle("active", dir === "down");
     }
-    function lookPress(dir) { bus.send({ t: "pose", name: `look_${dir}` }); setLookButtons(dir); }
-    function lookRelease() { bus.send({ t: "standby" }); setLookButtons(null); }
+    function lookPress(dir) {
+      bus.send({ t: "manual", on: true });
+      bus.send({ t: "pose", name: `look_${dir}` });
+      setLookButtons(dir);
+    }
+    function lookRelease() {
+      bus.send({ t: "standby" });
+      bus.send({ t: "manual", on: false });
+      setLookButtons(null);
+    }
 
     function bindLookButton(dir) {
       const btn = el.querySelector(`[data-dpad="look${dir}"]`);
