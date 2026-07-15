@@ -16,32 +16,34 @@ def test_zero_tilt_leaves_angles_unchanged():
     assert result == angles
 
 
-def test_roll_correction_opposes_left_and_right_hips():
+def test_roll_correction_opposes_left_and_right_hips_and_knees():
     angles = dict(GAIT_NEUTRAL)
     result = correct(angles, roll_deg=15.0, pitch_deg=0.0, mode="balanced")
-    left_delta = result["L1"] - angles["L1"]
-    right_delta = result["R1"] - angles["R1"]
-    assert left_delta != 0
-    assert right_delta != 0
-    assert (left_delta > 0) != (right_delta > 0)  # opposite directions
+    for left_joint, right_joint in (("L1", "R1"), ("L2", "R2")):
+        left_delta = result[left_joint] - angles[left_joint]
+        right_delta = result[right_joint] - angles[right_joint]
+        assert left_delta != 0
+        assert right_delta != 0
+        assert (left_delta > 0) != (right_delta > 0)  # opposite directions
 
 
-def test_pitch_correction_opposes_front_and_rear_hips():
+def test_pitch_correction_opposes_front_and_rear_joints():
     angles = dict(GAIT_NEUTRAL)
     result = correct(angles, roll_deg=0.0, pitch_deg=15.0, mode="balanced")
-    front_delta = result["L1"] - angles["L1"]  # FL
-    rear_delta = result["L3"] - angles["L3"]  # RL
-    assert front_delta != 0
-    assert rear_delta != 0
-    assert (front_delta > 0) != (rear_delta > 0)
+    for front_joint, rear_joint in (("L1", "L3"), ("L2", "L4")):  # FL vs RL, hip and knee
+        front_delta = result[front_joint] - angles[front_joint]
+        rear_delta = result[rear_joint] - angles[rear_joint]
+        assert front_delta != 0
+        assert rear_delta != 0
+        assert (front_delta > 0) != (rear_delta > 0)
 
 
 def test_correction_clamped_to_mode_max():
     angles = dict(GAIT_NEUTRAL)
     huge = correct(angles, roll_deg=500.0, pitch_deg=0.0, mode="balanced")
     max_c = PARAMS["balanced"].max_correction_deg
-    for hip in ("L1", "R1", "L3", "R3"):
-        assert abs(huge[hip] - angles[hip]) <= max_c + 1e-6
+    for joint in ("L1", "R1", "L3", "R3", "L2", "R2", "L4", "R4"):
+        assert abs(huge[joint] - angles[joint]) <= max_c + 1e-6
 
 
 def test_angled_mode_allows_larger_pitch_correction_than_balanced():
@@ -70,5 +72,5 @@ def test_combined_roll_and_pitch_correction_stays_within_mode_max():
     angles = dict(GAIT_NEUTRAL)
     result = correct(angles, roll_deg=999.0, pitch_deg=-999.0, mode="angled")
     max_c = PARAMS["angled"].max_correction_deg
-    for hip in ("L1", "R1", "L3", "R3"):
-        assert abs(result[hip] - angles[hip]) <= max_c + 1e-6
+    for joint in ("L1", "R1", "L3", "R3", "L2", "R2", "L4", "R4"):
+        assert abs(result[joint] - angles[joint]) <= max_c + 1e-6

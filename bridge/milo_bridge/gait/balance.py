@@ -30,8 +30,8 @@ class BalanceParams:
 
 
 PARAMS: dict[str, BalanceParams] = {
-    "balanced": BalanceParams(roll_kp=0.3, pitch_kp=0.3, max_correction_deg=12.0),
-    "angled": BalanceParams(roll_kp=0.25, pitch_kp=0.25, max_correction_deg=30.0),
+    "balanced": BalanceParams(roll_kp=0.6, pitch_kp=0.6, max_correction_deg=25.0),
+    "angled": BalanceParams(roll_kp=0.5, pitch_kp=0.5, max_correction_deg=45.0),
 }
 
 
@@ -43,11 +43,14 @@ def correct(angles: dict[str, float], roll_deg: float, pitch_deg: float, mode: s
     """Apply IMU-fed roll/pitch trim to ``angles`` (a full hip+knee angle
     dict as produced by CpgGait.angles_at / OnnxPolicy.step). Returns a new
     dict; ``angles`` is never mutated. ``mode="raw"`` (or any mode without
-    tuned params) returns ``angles`` unchanged. Each hip's combined
-    roll+pitch correction is clamped to ``max_correction_deg`` -- clamping
-    the two axes independently before summing them would let a hip's total
-    correction reach up to 2x the documented per-mode maximum when both
-    roll and pitch are extreme at once."""
+    tuned params) returns ``angles`` unchanged. Hip and knee move together
+    per leg (same signed delta) so the reaction reads as "stretch that
+    leg out," not a subtle hip rotation -- a hip-only nudge was too weak
+    to have real mechanical effect. Each leg's combined roll+pitch
+    correction is clamped to ``max_correction_deg`` once (not per-axis) --
+    clamping the two axes independently before summing them would let a
+    leg's total correction reach up to 2x the documented per-mode
+    maximum when both roll and pitch are extreme at once."""
     if mode not in PARAMS:
         return angles
     params = PARAMS[mode]
@@ -55,11 +58,13 @@ def correct(angles: dict[str, float], roll_deg: float, pitch_deg: float, mode: s
     pitch_term = params.pitch_kp * pitch_deg
 
     corrected = dict(angles)
-    for leg, (hip, *_rest) in LEGS.items():
+    for leg, (hip, knee, *_rest) in LEGS.items():
         if hip not in corrected:
             continue
         side = 1.0 if leg[1] == "L" else -1.0  # opposite sign per side
         front = 1.0 if leg[0] == "F" else -1.0  # opposite sign front vs rear
         delta = _clamp(side * roll_term + front * pitch_term, params.max_correction_deg)
-        corrected[hip] = max(0.0, min(180.0, corrected[hip] + delta))
+        for joint in (hip, knee):
+            if joint in corrected:
+                corrected[joint] = max(0.0, min(180.0, corrected[joint] + delta))
     return corrected
