@@ -64,3 +64,11 @@ def test_does_not_mutate_input_dict():
     original = dict(angles)
     correct(angles, roll_deg=10.0, pitch_deg=10.0, mode="balanced")
     assert angles == original
+
+
+def test_combined_roll_and_pitch_correction_stays_within_mode_max():
+    angles = dict(GAIT_NEUTRAL)
+    result = correct(angles, roll_deg=999.0, pitch_deg=-999.0, mode="angled")
+    max_c = PARAMS["angled"].max_correction_deg
+    for hip in ("L1", "R1", "L3", "R3"):
+        assert abs(result[hip] - angles[hip]) <= max_c + 1e-6
