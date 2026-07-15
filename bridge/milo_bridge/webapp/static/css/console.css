@@ -3,8 +3,8 @@
 
 #cockpit {
   display: grid;
-  grid-template-columns: 280px 1fr 320px;
-  grid-template-areas: "move camera side";
+  grid-template-columns: 320px 1fr 280px;
+  grid-template-areas: "side camera move";
   gap: 16px;
   padding: 16px;
   align-items: start;
