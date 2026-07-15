@@ -12,7 +12,12 @@ export default {
       `<div style="display:flex;gap:8px;margin-top:8px">
         <button class="btn" id="reset" style="flex:1">Reset (90°)</button>
         <button class="btn" id="standby" style="flex:1">Standby</button>
-      </div>`;
+      </div>
+      <div style="display:flex;gap:8px;margin-top:8px">
+        <button class="btn" id="release" style="flex:1">Release</button>
+        <button class="btn" id="hold" style="flex:1">Hold</button>
+      </div>
+      <button class="btn danger" id="restart" style="margin-top:8px;width:100%">Restart Bridge (I2C reset)</button>`;
     el.querySelectorAll("input[type=range]").forEach((sl) => {
       sl.oninput = () => {
         el.querySelector(`[data-val="${sl.dataset.servo}"]`).textContent = `${sl.value}°`;
@@ -27,5 +32,12 @@ export default {
       bus.send({ t: "reset" });
     };
     el.querySelector("#standby").onclick = () => bus.send({ t: "standby" });
+    el.querySelector("#release").onclick = () => bus.send({ t: "relax" });
+    el.querySelector("#hold").onclick = () => bus.send({ t: "hold" });
+    el.querySelector("#restart").onclick = () => {
+      if (confirm("Restart the bridge service? Every connected tab will briefly disconnect.")) {
+        bus.send({ t: "restart" });
+      }
+    };
   },
 };
