@@ -131,9 +131,10 @@ the rest are pure observation and work in every tab, all the time.
   Tools drawer) since it's used often enough to want one click, not two.
 - **Move** (needs control, cockpit right column) — a Raw / Balanced /
   Angled mode selector and status line above a fixed D-pad (arrow icons for
-  forward/back/turn, tilt icons to look up/down) stacked over its speed
-  slider / STOP, or WASD / arrow keys with A/D to turn and Q/E to look
-  up/down, driving the gait engine's velocity command. Raw is today's direct
+  forward/back/turn, Up/Down buttons to toggle a look-up/look-down body tilt)
+  stacked over its speed slider / STOP, or WASD / arrow keys with A/D to turn
+  and Q/E to toggle look up/down (a discrete pose, not held), driving the
+  gait engine's velocity command. Raw is today's direct
   control with no help; Balanced applies live IMU roll/pitch correction to
   stay level while walking and auto-returns to standby once a movement
   stops; Angled reuses the same correction with more authority for holding

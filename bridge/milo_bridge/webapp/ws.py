@@ -86,7 +86,6 @@ async def _handle_text(app, ws, client_id: str, data: dict) -> None:
         "relax": lambda: motion.relax(client_id),
         "hold": lambda: motion.hold(client_id),
         "turn": lambda: motion.turn(client_id, data.get("dir", "")),
-        "look": lambda: motion.look(client_id, data.get("dir", "")),
     }
     if t not in handlers:
         await ws.send_json({"t": "err", "for": t, "error": "unknown-type"})

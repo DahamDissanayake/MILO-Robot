@@ -236,7 +236,7 @@ async def test_relax_and_hold_dispatch():
         await client.close()
 
 
-async def test_turn_and_look_dispatch():
+async def test_turn_and_look_pose_dispatch():
     deps = make_deps(broker=ControlBroker())
     client, ws = await _ws(deps)
     try:
@@ -248,9 +248,12 @@ async def test_turn_and_look_dispatch():
         await ws.send_json({"t": "stop"})
         await _recv_json_until(ws, "ack")
         assert deps.runner.aborted is True
-        await ws.send_json({"t": "look", "dir": "up"})
+        await ws.send_json({"t": "pose", "name": "look_up"})
         await _recv_json_until(ws, "ack")
         assert deps.runner.ran == ["turn_left", "look_up"]
+        await ws.send_json({"t": "standby"})
+        await _recv_json_until(ws, "ack")
+        assert deps.gait.standby_called is True
     finally:
         await client.close()
 

@@ -158,13 +158,13 @@ POSES: dict[str, Pose] = {
     ),
     "look_up": Pose(
         "look_up", "idle", AnimMode.ONCE,
-        [Step(STAND_ANGLES, 150)],
-        cycle=[Step({"L1": 75, "L2": 105, "R1": 165, "R2": 15, "L3": 30, "L4": 150}, FRAME_DELAY_MS)],
+        [Step(STAND_ANGLES, 150), Step({"R2": 0, "L2": 180, "L4": 90, "R4": 90}, 250)],
+        end_stand=False,
     ),
     "look_down": Pose(
         "look_down", "idle", AnimMode.ONCE,
-        [Step(STAND_ANGLES, 150)],
-        cycle=[Step({"L1": 15, "L2": 165, "R1": 105, "R2": 75, "R3": 150, "R4": 30}, FRAME_DELAY_MS)],
+        [Step(STAND_ANGLES, 150), Step({"L1": 0, "R1": 180, "L3": 90, "R3": 90}, 250)],
+        end_stand=False,
     ),
     # --- cyclic gaits (diagonal trot, from the firmware) ---
     "walk": Pose(

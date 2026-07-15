@@ -95,9 +95,9 @@ def test_abort_interrupts_and_recovers_to_stand():
 
 
 def test_gaits_have_cycles_and_oneshots_do_not():
-    for name in ("walk", "walk_backward", "turn_left", "turn_right", "look_up", "look_down"):
+    for name in ("walk", "walk_backward", "turn_left", "turn_right"):
         assert POSES[name].cycle
-    for name in ("wave", "dance", "bow", "rest", "stand", "crab"):
+    for name in ("wave", "dance", "bow", "rest", "stand", "crab", "look_up", "look_down"):
         assert not POSES[name].cycle
 
 
@@ -135,7 +135,26 @@ def test_wake_up_ends_at_stand():
     assert servos.angles == STAND_ANGLES
 
 
-def test_look_up_and_down_are_cyclic_and_distinct():
+def test_look_up_holds_its_tilt_instead_of_returning_to_stand():
+    servos, _, completed = run_pose("look_up")
+    assert completed
+    assert servos.angles["R2"] == 0
+    assert servos.angles["L2"] == 180
+    assert servos.angles["L4"] == 90
+    assert servos.angles["R4"] == 90
+    assert servos.angles["R1"] == STAND_ANGLES["R1"]  # front hips untouched by look_up
+
+
+def test_look_down_holds_its_tilt_instead_of_returning_to_stand():
+    servos, _, completed = run_pose("look_down")
+    assert completed
+    assert servos.angles["L1"] == 0
+    assert servos.angles["R1"] == 180
+    assert servos.angles["L3"] == 90
+    assert servos.angles["R3"] == 90
+    assert servos.angles["R2"] == STAND_ANGLES["R2"]  # front knees untouched by look_down
+
+
+def test_look_up_and_down_are_distinct():
     up, down = POSES["look_up"], POSES["look_down"]
-    assert up.cycle and down.cycle
-    assert up.cycle != down.cycle  # genuinely different tilt directions, not accidentally identical
+    assert up.steps != down.steps
