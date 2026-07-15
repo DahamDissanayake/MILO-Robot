@@ -1,10 +1,16 @@
 const SEND_MS = 100;
+const MODES = ["raw", "balanced", "angled"];
+const MODE_LABEL = { raw: "Raw", balanced: "Balanced", angled: "Angled" };
 
 export default {
   id: "move", title: "Move", needsControl: true,
   mount(el, { bus }) {
     el.innerHTML = `
       <div style="display:flex;flex-direction:column;gap:14px;align-items:center">
+        <div style="display:flex;gap:6px;width:100%;max-width:220px" id="mode-row">
+          ${MODES.map((m) => `<button class="btn" data-mode="${m}" style="flex:1">${MODE_LABEL[m]}</button>`).join("")}
+        </div>
+        <div class="muted" id="mode-status">Mode: Raw</div>
         <div id="pad" style="width:100%;max-width:220px;aspect-ratio:1;border:1px solid var(--line);
              border-radius:8px;position:relative;touch-action:none">
           <div id="knob" style="position:absolute;width:26px;height:26px;border-radius:50%;
@@ -18,7 +24,18 @@ export default {
       </div>`;
     const pad = el.querySelector("#pad"), knob = el.querySelector("#knob");
     const speed = el.querySelector("#speed");
+    const modeStatus = el.querySelector("#mode-status");
     let vec = { vx: 0, vy: 0, yaw: 0 }, timer = null;
+
+    function setModeButtons(name) {
+      el.querySelectorAll("[data-mode]").forEach((b) => b.classList.toggle("active", b.dataset.mode === name));
+      modeStatus.textContent = name === "raw" ? "Mode: Raw" : `Mode: ${MODE_LABEL[name]} — enabled`;
+    }
+    setModeButtons("raw");
+    const offMode = bus.on("mode", (m) => setModeButtons(m.name));
+    el.querySelectorAll("[data-mode]").forEach((b) => {
+      b.onclick = () => bus.send({ t: "mode", name: b.dataset.mode });
+    });
 
     function sending(active) {
       if (active && !timer) timer = setInterval(() => bus.send({ t: "gait", ...scaled() }), SEND_MS);
@@ -65,6 +82,11 @@ export default {
     window.addEventListener("keyup", ku);
 
     el.querySelector("#mstop").onclick = () => bus.send({ t: "stop" });
-    return () => { sending(false); window.removeEventListener("keydown", kd); window.removeEventListener("keyup", ku); };
+    return () => {
+      sending(false);
+      offMode();
+      window.removeEventListener("keydown", kd);
+      window.removeEventListener("keyup", ku);
+    };
   },
 };
