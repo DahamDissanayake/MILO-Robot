@@ -1,8 +1,10 @@
 """milo-bridge service entrypoint.
 
 Composition root: build drivers, gait engine, knowledge graph, and sleep
-controller, boot to rest with the idle face, then hand control to the
-SessionManager (discovery -> pairing/auth -> streams -> dispatch).
+controller, show a startup hardware checklist, run the wake_up gesture,
+settle into stand with a hardware-status-aware idle face, then hand
+control to the SessionManager (discovery -> pairing/auth -> streams ->
+dispatch).
 
 Every peripheral degrades gracefully — a missing camera, policy file, PCA9685,
 or OLED logs a warning and falls back to a null stand-in instead of killing
