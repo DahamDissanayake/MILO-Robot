@@ -11,10 +11,14 @@ export default {
           ${MODES.map((m) => `<button class="btn" data-mode="${m}" style="flex:1">${MODE_LABEL[m]}</button>`).join("")}
         </div>
         <div class="muted" id="mode-status">Mode: Raw</div>
-        <div id="pad" style="width:100%;max-width:220px;aspect-ratio:1;border:1px solid var(--line);
-             border-radius:8px;position:relative;touch-action:none">
-          <div id="knob" style="position:absolute;width:26px;height:26px;border-radius:50%;
-               background:var(--ink);left:calc(50% - 13px);top:calc(50% - 13px)"></div>
+        <div style="display:grid;grid-template-columns:56px 56px 56px;gap:6px">
+          <div></div><button class="btn" data-dpad="up" style="font-size:20px">↑</button><div></div>
+          <button class="btn" data-dpad="left" style="font-size:20px">←</button><div></div><button class="btn" data-dpad="right" style="font-size:20px">→</button>
+          <div></div><button class="btn" data-dpad="down" style="font-size:20px">↓</button><div></div>
+        </div>
+        <div style="display:flex;gap:8px">
+          <button class="btn" data-dpad="turnleft" style="font-size:20px;width:56px">↺</button>
+          <button class="btn" data-dpad="turnright" style="font-size:20px;width:56px">↻</button>
         </div>
         <div style="display:flex;flex-direction:column;gap:10px;width:100%;max-width:220px">
           <label>Speed <input id="speed" type="range" min="10" max="100" value="60"></label>
@@ -22,10 +26,9 @@ export default {
           <button class="btn danger" id="mstop">STOP</button>
         </div>
       </div>`;
-    const pad = el.querySelector("#pad"), knob = el.querySelector("#knob");
     const speed = el.querySelector("#speed");
     const modeStatus = el.querySelector("#mode-status");
-    let vec = { vx: 0, vy: 0, yaw: 0 }, timer = null;
+    let vec = { vx: 0 }, timer = null;
 
     function setModeButtons(name) {
       el.querySelectorAll("[data-mode]").forEach((b) => b.classList.toggle("active", b.dataset.mode === name));
@@ -37,49 +40,68 @@ export default {
       b.onclick = () => bus.send({ t: "mode", name: b.dataset.mode });
     });
 
+    // -- continuous gait: forward/backward only (turning/strafing now use
+    // the scripted turn_left/turn_right/crab_left/crab_right gaits below) --
     function sending(active) {
       if (active && !timer) timer = setInterval(() => bus.send({ t: "gait", ...scaled() }), SEND_MS);
       if (!active && timer) { clearInterval(timer); timer = null; bus.send({ t: "gait", vx: 0, vy: 0, yaw: 0 }); }
     }
-    const scaled = () => {
-      const k = speed.value / 100;
-      return { vx: vec.vx * k, vy: vec.vy * k, yaw: vec.yaw * 2 * k };
-    };
+    const scaled = () => ({ vx: vec.vx * (speed.value / 100), vy: 0, yaw: 0 });
 
-    pad.addEventListener("pointerdown", (e) => {
-      pad.setPointerCapture(e.pointerId);
-      const rect = pad.getBoundingClientRect();
-      const move = (ev) => {
-        const x = Math.max(-1, Math.min(1, ((ev.clientX - rect.left) / rect.width) * 2 - 1));
-        const y = Math.max(-1, Math.min(1, ((ev.clientY - rect.top) / rect.height) * 2 - 1));
-        knob.style.left = `calc(${(x + 1) * 50}% - 13px)`;
-        knob.style.top = `calc(${(y + 1) * 50}% - 13px)`;
-        vec = { vx: -y, vy: x, yaw: 0 };
-        sending(true);
-      };
-      const up = () => {
-        pad.removeEventListener("pointermove", move);
-        knob.style.left = "calc(50% - 13px)"; knob.style.top = "calc(50% - 13px)";
-        vec = { vx: 0, vy: 0, yaw: 0 }; sending(false);
-      };
-      pad.addEventListener("pointermove", move);
-      pad.addEventListener("pointerup", up, { once: true });
-      move(e);
-    });
-
-    const keys = { w: [1,0,0], s: [-1,0,0], a: [0,-1,0], d: [0,1,0], q: [0,0,-1], e: [0,0,1],
-      ArrowUp: [1,0,0], ArrowDown: [-1,0,0], ArrowLeft: [0,0,-1], ArrowRight: [0,0,1] };
+    const gaitKeys = { w: 1, s: -1, ArrowUp: 1, ArrowDown: -1 };
     const down = new Set();
     const sync = () => {
-      let vx = 0, vy = 0, yaw = 0;
-      down.forEach((k) => { const [a,b,c] = keys[k]; vx += a; vy += b; yaw += c; });
-      vec = { vx: Math.sign(vx), vy: Math.sign(vy), yaw: Math.sign(yaw) };
+      let vx = 0;
+      down.forEach((k) => { vx += gaitKeys[k]; });
+      vec = { vx: Math.sign(vx) };
       sending(down.size > 0);
     };
-    const kd = (e) => { if (keys[e.key] && !e.repeat && e.target.tagName !== "INPUT") { down.add(e.key); sync(); } };
-    const ku = (e) => { if (keys[e.key]) { down.delete(e.key); sync(); } };
+    const kd = (e) => { if (gaitKeys[e.key] !== undefined && !e.repeat && e.target.tagName !== "INPUT") { down.add(e.key); sync(); } };
+    const ku = (e) => { if (gaitKeys[e.key] !== undefined) { down.delete(e.key); sync(); } };
     window.addEventListener("keydown", kd);
     window.addEventListener("keyup", ku);
+
+    function bindGaitButton(dir, key) {
+      const btn = el.querySelector(`[data-dpad="${dir}"]`);
+      const press = (e) => { e.preventDefault(); down.add(key); sync(); };
+      const release = () => { down.delete(key); sync(); };
+      btn.addEventListener("pointerdown", press);
+      btn.addEventListener("pointerup", release);
+      btn.addEventListener("pointerleave", release);
+      btn.addEventListener("pointercancel", release);
+    }
+    bindGaitButton("up", "w");
+    bindGaitButton("down", "s");
+
+    // -- turn/strafe: scripted gaits, held via a large cycle count on the
+    // server and stopped with the existing universal {t:"stop"} message --
+    function bindScripted(dir, msg) {
+      const btn = el.querySelector(`[data-dpad="${dir}"]`);
+      const press = (e) => { e.preventDefault(); bus.send(msg); };
+      const release = () => bus.send({ t: "stop" });
+      btn.addEventListener("pointerdown", press);
+      btn.addEventListener("pointerup", release);
+      btn.addEventListener("pointerleave", release);
+      btn.addEventListener("pointercancel", release);
+    }
+    bindScripted("left", { t: "strafe", dir: "left" });
+    bindScripted("right", { t: "strafe", dir: "right" });
+    bindScripted("turnleft", { t: "turn", dir: "left" });
+    bindScripted("turnright", { t: "turn", dir: "right" });
+
+    const turnKeys = { q: "left", e: "right", ArrowLeft: "left", ArrowRight: "right" };
+    const strafeKeys = { a: "left", d: "right" };
+    const scriptedDown = new Set();
+    const skd = (e) => {
+      if (e.repeat || e.target.tagName === "INPUT" || scriptedDown.has(e.key)) return;
+      if (turnKeys[e.key]) { scriptedDown.add(e.key); bus.send({ t: "turn", dir: turnKeys[e.key] }); }
+      else if (strafeKeys[e.key]) { scriptedDown.add(e.key); bus.send({ t: "strafe", dir: strafeKeys[e.key] }); }
+    };
+    const sku = (e) => {
+      if (turnKeys[e.key] || strafeKeys[e.key]) { scriptedDown.delete(e.key); bus.send({ t: "stop" }); }
+    };
+    window.addEventListener("keydown", skd);
+    window.addEventListener("keyup", sku);
 
     el.querySelector("#mstop").onclick = () => bus.send({ t: "stop" });
     return () => {
@@ -87,6 +109,8 @@ export default {
       offMode();
       window.removeEventListener("keydown", kd);
       window.removeEventListener("keyup", ku);
+      window.removeEventListener("keydown", skd);
+      window.removeEventListener("keyup", sku);
     };
   },
 };
