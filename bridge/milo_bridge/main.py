@@ -19,6 +19,7 @@ from .drivers.audio import AudioIO
 from .drivers.camera import CameraStreamer
 from .drivers.display import FaceDisplay
 from .drivers.imu import Mpu6050
+from .drivers.null_hardware import NullDisplay, NullServos
 from .drivers.servos import ServoDriver
 from .drivers.smooth_servos import SmoothServos
 from .gait.engine import GaitEngine
@@ -34,12 +35,12 @@ ASSETS_DIR = Path(__file__).resolve().parents[1] / "assets" / "faces"
 POLICY_PATH = Path.home() / ".milo" / "policy.onnx"
 
 
-def _optional(factory, what: str):
+def _optional(factory, what: str) -> tuple[object | None, bool]:
     try:
-        return factory()
+        return factory(), True
     except Exception as exc:
         log.warning("%s unavailable (%s: %s) — continuing without it", what, type(exc).__name__, exc)
-        return None
+        return None, False
 
 
 async def main() -> None:
@@ -47,21 +48,31 @@ async def main() -> None:
     cfg = BridgeConfig.load()
     log.info("milo-bridge starting as %s (%s)", cfg.robot_name, cfg.robot_id)
 
-    # Required hardware.
-    servos = ServoDriver.from_hardware(pulse_ranges=cfg.servo_pulse_ranges, stagger_ms=cfg.servo_stagger_ms)
+    # Hardware -- every peripheral degrades gracefully to a null stand-in
+    # on failure, so one missing/unplugged I2C device never takes the
+    # whole service (including the web dashboard) down with it.
+    servos, servos_ok = _optional(
+        lambda: ServoDriver.from_hardware(pulse_ranges=cfg.servo_pulse_ranges, stagger_ms=cfg.servo_stagger_ms),
+        "servos",
+    )
+    servos = servos or NullServos()
     motion_servos = SmoothServos(servos, stagger_ms=cfg.servo_stagger_ms)
     motion_servos.start()
-    display = FaceDisplay.from_hardware(ASSETS_DIR)
+    display, display_ok = _optional(lambda: FaceDisplay.from_hardware(ASSETS_DIR), "display")
+    display = display or NullDisplay()
     runner = PoseRunner(motion_servos, display)
 
-    # Optional hardware/components.
-    imu = _optional(Mpu6050.from_hardware, "IMU")
+    imu, imu_ok = _optional(Mpu6050.from_hardware, "IMU")
     if imu is not None:
         log.info("calibrating IMU gyro bias — keep the robot still")
         await asyncio.to_thread(imu.calibrate_gyro)
         log.info("IMU gyro calibration complete")
-    camera = _optional(lambda: CameraStreamer.from_hardware(fps=cfg.video_fps), "camera")
-    audio = _optional(AudioIO, "audio")
+    camera, camera_ok = _optional(lambda: CameraStreamer.from_hardware(fps=cfg.video_fps), "camera")
+    audio, audio_ok = _optional(AudioIO, "audio")
+    hardware_status = {
+        "servos": servos_ok, "display": display_ok, "imu": imu_ok,
+        "camera": camera_ok, "audio": audio_ok,
+    }
 
     gait = GaitEngine(motion_servos, imu=imu, runner=runner, policy_path=POLICY_PATH)
     log.info("gait backend: %s", gait.backend)
