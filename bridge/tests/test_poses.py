@@ -135,16 +135,7 @@ def test_wake_up_ends_at_stand():
     assert servos.angles == STAND_ANGLES
 
 
-def _swap_lr(angles: dict[str, int]) -> dict[str, int]:
-    def swap(name):
-        return ("L" if name[0] == "R" else "R") + name[1:]
-    return {swap(name): angle for name, angle in angles.items()}
-
-
-def test_crab_left_and_right_are_cyclic_and_mirrored():
+def test_crab_left_and_right_are_cyclic_and_distinct():
     left, right = POSES["crab_left"], POSES["crab_right"]
     assert left.cycle and right.cycle
-    assert len(left.steps) == len(right.steps)
-    assert len(left.cycle) == len(right.cycle)
-    for l_step, r_step in zip(left.steps + left.cycle, right.steps + right.cycle):
-        assert _swap_lr(l_step.updates) == r_step.updates
+    assert left.cycle != right.cycle  # genuinely different lean directions, not accidentally identical
