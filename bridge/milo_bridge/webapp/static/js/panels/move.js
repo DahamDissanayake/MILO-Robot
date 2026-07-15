@@ -22,7 +22,7 @@ export default {
         </div>
         <div style="display:flex;flex-direction:column;gap:10px;width:100%;max-width:220px">
           <label>Speed <input id="speed" type="range" min="10" max="100" value="60"></label>
-          <div class="muted">or WASD / arrows, A/D to turn, Q/E to toggle look up/down</div>
+          <div class="muted">or WASD / arrows, A/D to turn, hold Q/E to look up/down</div>
           <button class="btn danger" id="mstop">STOP</button>
         </div>
       </div>`;
@@ -41,8 +41,8 @@ export default {
     });
 
     // -- continuous gait: forward/backward only (turning uses the scripted
-    // turn_left/turn_right gait below; look up/down are discrete toggled
-    // poses, not part of this velocity-command path) --
+    // turn_left/turn_right gait below; look up/down are held poses, not
+    // part of this velocity-command path) --
     function sending(active) {
       if (active && !timer) timer = setInterval(() => bus.send({ t: "gait", ...scaled() }), SEND_MS);
       if (!active && timer) { clearInterval(timer); timer = null; bus.send({ t: "gait", vx: 0, vy: 0, yaw: 0 }); }
@@ -101,32 +101,38 @@ export default {
     window.addEventListener("keydown", skd);
     window.addEventListener("keyup", sku);
 
-    // -- look up/down: a discrete toggle, not a hold. Press once to move to
-    // the tilted pose and hold it there; press again to return to stand. --
-    let lookState = null; // null | "up" | "down"
-    function setLookButtons() {
-      el.querySelector('[data-dpad="lookup"]').classList.toggle("active", lookState === "up");
-      el.querySelector('[data-dpad="lookdown"]').classList.toggle("active", lookState === "down");
+    // -- look up/down: held, not toggled. Press and hold to move to the
+    // tilted pose and stay there; release to return to stand. --
+    function setLookButtons(dir) {
+      el.querySelector('[data-dpad="lookup"]').classList.toggle("active", dir === "up");
+      el.querySelector('[data-dpad="lookdown"]').classList.toggle("active", dir === "down");
     }
-    function toggleLook(dir) {
-      if (lookState === dir) {
-        bus.send({ t: "standby" });
-        lookState = null;
-      } else {
-        bus.send({ t: "pose", name: `look_${dir}` });
-        lookState = dir;
-      }
-      setLookButtons();
+    function lookPress(dir) { bus.send({ t: "pose", name: `look_${dir}` }); setLookButtons(dir); }
+    function lookRelease() { bus.send({ t: "standby" }); setLookButtons(null); }
+
+    function bindLookButton(dir) {
+      const btn = el.querySelector(`[data-dpad="look${dir}"]`);
+      const press = (e) => { e.preventDefault(); lookPress(dir); };
+      btn.addEventListener("pointerdown", press);
+      btn.addEventListener("pointerup", lookRelease);
+      btn.addEventListener("pointerleave", lookRelease);
+      btn.addEventListener("pointercancel", lookRelease);
     }
-    el.querySelector('[data-dpad="lookup"]').onclick = () => toggleLook("up");
-    el.querySelector('[data-dpad="lookdown"]').onclick = () => toggleLook("down");
+    bindLookButton("up");
+    bindLookButton("down");
 
     const lookKeys = { q: "up", e: "down" };
+    const lookKeyDown = new Set();
     const lkd = (e) => {
-      if (e.repeat || e.target.tagName === "INPUT" || !lookKeys[e.key]) return;
-      toggleLook(lookKeys[e.key]);
+      if (e.repeat || e.target.tagName === "INPUT" || !lookKeys[e.key] || lookKeyDown.has(e.key)) return;
+      lookKeyDown.add(e.key);
+      lookPress(lookKeys[e.key]);
+    };
+    const lku = (e) => {
+      if (lookKeys[e.key]) { lookKeyDown.delete(e.key); lookRelease(); }
     };
     window.addEventListener("keydown", lkd);
+    window.addEventListener("keyup", lku);
 
     el.querySelector("#mstop").onclick = () => bus.send({ t: "stop" });
     return () => {
@@ -137,6 +143,7 @@ export default {
       window.removeEventListener("keydown", skd);
       window.removeEventListener("keyup", sku);
       window.removeEventListener("keydown", lkd);
+      window.removeEventListener("keyup", lku);
     };
   },
 };
