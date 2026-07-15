@@ -1,8 +1,14 @@
 """The 50 Hz gait control loop.
 
-One interface for all callers — ``set_velocity_command(vx, vy, yaw_rate)`` —
-with two backends: the ONNX RL policy (primary) and the CPG trot (fallback).
-Zero command -> hold stand and stop writing servos (lets scripted poses run).
+One interface for all callers -- ``set_velocity_command(vx, vy, yaw_rate)``
+-- with two backends: the ONNX RL policy (primary) and the CPG trot
+(fallback). Zero command -> hold stand and stop writing servos (lets
+scripted poses run), except in balanced/angled mode, which keeps
+self-leveling at a standstill.
+
+This is also the robot's mode/reset/standby coordinator: both the web app
+and the brain call the same GaitEngine instance, so ``set_mode``/``reset``/
+``standby`` apply identically no matter who's driving.
 """
 
 from __future__ import annotations
@@ -14,13 +20,16 @@ from pathlib import Path
 
 import numpy as np
 
-from ..poses import STAND_ANGLES
+from ..poses import REST_ANGLES, STAND_ANGLES
+from . import balance
 from .cpg import CpgGait
 from .policy import SERVO_ORDER, OnnxPolicy
 
 log = logging.getLogger(__name__)
 
 RATE_HZ = 50
+MODES = ("raw", *balance.PARAMS)
+_BALANCE_MODES = tuple(balance.PARAMS)
 
 
 class GaitEngine:
@@ -28,12 +37,14 @@ class GaitEngine:
         self,
         servos,
         imu=None,
+        runner=None,
         policy_path: Path | str | None = None,
         rate_hz: int = RATE_HZ,
         clock=time.monotonic,
     ):
         self._servos = servos
         self._imu = imu
+        self._runner = runner
         self._cpg = CpgGait()
         self._policy: OnnxPolicy | None = None
         if policy_path is not None and Path(policy_path).exists():
@@ -46,11 +57,21 @@ class GaitEngine:
         self._clock = clock
         self._command = (0.0, 0.0, 0.0)
         self._active = False
+        self._mode = "raw"
         self._t0 = clock()
 
     @property
     def backend(self) -> str:
         return "policy" if self._policy is not None else "cpg"
+
+    @property
+    def mode(self) -> str:
+        return self._mode
+
+    def set_mode(self, name: str) -> None:
+        if name not in MODES:
+            raise ValueError(f"unknown mode {name!r}")
+        self._mode = name
 
     def set_velocity_command(self, vx: float, vy: float, yaw_rate: float) -> None:
         """vx/vy in m/s, yaw_rate in deg/s. (0,0,0) stops walking."""
@@ -59,14 +80,32 @@ class GaitEngine:
         self._active = any(abs(c) > 1e-6 for c in self._command)
         if self._active and not was_active:
             self._t0 = self._clock()  # restart the CPG cycle cleanly
+        elif was_active and not self._active and self._mode in _BALANCE_MODES:
+            self.standby()
+
+    def reset(self) -> None:
+        """Smoothly return every servo to the 90-degree rest angles."""
+        self._set_discrete_target(REST_ANGLES)
+
+    def standby(self) -> None:
+        """Smoothly return every servo to the stand pose."""
+        self._set_discrete_target(STAND_ANGLES)
+
+    def _set_discrete_target(self, angles: dict[str, float]) -> None:
+        self._active = False
+        for name, angle in angles.items():
+            self._servos.set_angle(name, angle)
 
     def tick(self) -> dict[str, float] | None:
         """One control step; returns the angles written (None while idle)."""
+        if self._runner is not None and self._runner.is_running:
+            return None  # a scripted pose owns the servos right now
         if not self._active:
-            return None
+            return self._hold_level() if self._mode in _BALANCE_MODES else None
         vx, vy, yaw = self._command
+        need_imu = self._policy is not None or self._mode in _BALANCE_MODES
+        state = self._imu.update() if (self._imu is not None and need_imu) else None
         if self._policy is not None:
-            state = self._imu.update() if self._imu is not None else None
             joints = np.array(
                 [self._servos.last_angle(n) or STAND_ANGLES[n] for n in SERVO_ORDER],
                 dtype=np.float32,
@@ -80,6 +119,17 @@ class GaitEngine:
             )
         else:
             angles = self._cpg.angles_at(self._clock() - self._t0, vx, vy, yaw)
+        if self._mode in _BALANCE_MODES and state is not None:
+            angles = balance.correct(angles, state.roll, state.pitch, self._mode)
+        for name, angle in angles.items():
+            self._servos.set_angle(name, angle)
+        return angles
+
+    def _hold_level(self) -> dict[str, float] | None:
+        if self._imu is None:
+            return None
+        state = self._imu.update()
+        angles = balance.correct(dict(STAND_ANGLES), state.roll, state.pitch, self._mode)
         for name, angle in angles.items():
             self._servos.set_angle(name, angle)
         return angles

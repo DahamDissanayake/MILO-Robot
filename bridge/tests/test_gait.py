@@ -3,6 +3,7 @@ import math
 import numpy as np
 import pytest
 
+from milo_bridge.drivers.imu import ImuState
 from milo_bridge.gait.cpg import GAIT_NEUTRAL, LEGS, CpgGait
 from milo_bridge.gait.engine import GaitEngine
 from milo_bridge.gait.policy import (
@@ -13,7 +14,7 @@ from milo_bridge.gait.policy import (
     action_to_angles,
     build_observation,
 )
-from milo_bridge.poses import STAND_ANGLES
+from milo_bridge.poses import REST_ANGLES, STAND_ANGLES
 
 
 class FakeServos:
@@ -165,3 +166,118 @@ def test_engine_walks_on_command_and_stops():
 def test_engine_missing_policy_file_falls_back(tmp_path):
     engine = GaitEngine(FakeServos(), policy_path=tmp_path / "nope.onnx")
     assert engine.backend == "cpg"
+
+
+# --- mode / reset / standby --------------------------------------------------
+
+class FakeImu:
+    def __init__(self, roll=0.0, pitch=0.0):
+        self.roll = roll
+        self.pitch = pitch
+
+    def update(self):
+        return ImuState(roll=self.roll, pitch=self.pitch, yaw=0.0, gyro=(0.0, 0.0, 0.0), accel=(0.0, 0.0, 1.0))
+
+
+class FakeRunner:
+    def __init__(self):
+        self.is_running = False
+
+
+def test_mode_defaults_to_raw_and_validates():
+    engine = GaitEngine(FakeServos())
+    assert engine.mode == "raw"
+    engine.set_mode("balanced")
+    assert engine.mode == "balanced"
+    with pytest.raises(ValueError):
+        engine.set_mode("sideways")
+
+
+def test_reset_writes_rest_angles_and_stops_active_gait():
+    servos = FakeServos()
+    engine = GaitEngine(servos, clock=lambda: 0.0)
+    engine.set_velocity_command(0.1, 0.0, 0.0)
+    engine.reset()
+    assert servos.angles == REST_ANGLES
+    assert engine.tick() is None  # gait command was cleared, not just paused
+
+
+def test_standby_writes_stand_angles():
+    servos = FakeServos()
+    engine = GaitEngine(servos, clock=lambda: 0.0)
+    engine.standby()
+    assert servos.angles == STAND_ANGLES
+
+
+def test_auto_standby_on_stop_in_balanced_mode_only():
+    servos_balanced = FakeServos()
+    engine_balanced = GaitEngine(servos_balanced, clock=lambda: 0.0)
+    engine_balanced.set_mode("balanced")
+    engine_balanced.set_velocity_command(0.1, 0.0, 0.0)
+    servos_balanced.angles = {}  # isolate the stop's effect from the walk-start write
+    engine_balanced.set_velocity_command(0.0, 0.0, 0.0)
+    assert servos_balanced.angles == STAND_ANGLES
+
+    servos_raw = FakeServos()
+    engine_raw = GaitEngine(servos_raw, clock=lambda: 0.0)
+    engine_raw.set_velocity_command(0.1, 0.0, 0.0)
+    servos_raw.angles = {}
+    engine_raw.set_velocity_command(0.0, 0.0, 0.0)
+    assert servos_raw.angles == {}  # raw mode: no auto-standby
+
+
+# --- deference to a running pose ----------------------------------------------
+
+def test_tick_defers_to_a_running_pose():
+    servos = FakeServos()
+    runner = FakeRunner()
+    engine = GaitEngine(servos, runner=runner, clock=lambda: 0.0)
+    engine.set_velocity_command(0.1, 0.0, 0.0)
+    runner.is_running = True
+    assert engine.tick() is None
+    assert servos.writes == 0
+
+
+# --- balance integration -------------------------------------------------------
+
+def test_balanced_mode_applies_imu_correction_while_walking():
+    now = {"t": 0.0}
+    servos = FakeServos()
+    imu = FakeImu(roll=20.0, pitch=0.0)
+    engine = GaitEngine(servos, imu=imu, clock=lambda: now["t"])
+    engine.set_mode("balanced")
+    engine.set_velocity_command(0.1, 0.0, 0.0)
+    now["t"] = 0.15
+    raw_cpg = CpgGait().angles_at(0.15, 0.1, 0.0, 0.0)
+    written = engine.tick()
+    assert written["L1"] != pytest.approx(raw_cpg["L1"])  # balance nudged it
+
+
+def test_raw_mode_ignores_imu_even_with_tilt():
+    now = {"t": 0.0}
+    servos = FakeServos()
+    imu = FakeImu(roll=20.0, pitch=0.0)
+    engine = GaitEngine(servos, imu=imu, clock=lambda: now["t"])
+    engine.set_velocity_command(0.1, 0.0, 0.0)
+    now["t"] = 0.15
+    written = engine.tick()
+    expected = CpgGait().angles_at(0.15, 0.1, 0.0, 0.0)
+    assert written == expected
+
+
+def test_balanced_mode_self_levels_at_standstill():
+    servos = FakeServos()
+    imu = FakeImu(roll=20.0, pitch=0.0)
+    engine = GaitEngine(servos, imu=imu, clock=lambda: 0.0)
+    engine.set_mode("balanced")
+    written = engine.tick()
+    assert written is not None
+    assert written["L1"] != pytest.approx(STAND_ANGLES["L1"])
+
+
+def test_raw_mode_idle_does_not_self_level():
+    servos = FakeServos()
+    imu = FakeImu(roll=20.0, pitch=0.0)
+    engine = GaitEngine(servos, imu=imu, clock=lambda: 0.0)
+    assert engine.tick() is None
+    assert servos.writes == 0

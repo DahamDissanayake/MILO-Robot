@@ -63,7 +63,7 @@ async def main() -> None:
     camera = _optional(lambda: CameraStreamer.from_hardware(fps=cfg.video_fps), "camera")
     audio = _optional(AudioIO, "audio")
 
-    gait = GaitEngine(motion_servos, imu=imu, policy_path=POLICY_PATH)
+    gait = GaitEngine(motion_servos, imu=imu, runner=runner, policy_path=POLICY_PATH)
     log.info("gait backend: %s", gait.backend)
 
     graph = GraphStore(cfg.graph_db_path)
