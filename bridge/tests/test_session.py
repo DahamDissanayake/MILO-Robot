@@ -3,7 +3,8 @@ import asyncio
 from milo_common import protocol
 from milo_common.protocol import Message
 
-from milo_bridge.net.session import RobotSession
+from milo_bridge.config import BridgeConfig
+from milo_bridge.net.session import SessionManager, RobotSession
 
 
 class FakeRunner:
@@ -191,3 +192,47 @@ def test_face_updates_are_not_gated_by_broker():
     session, deps = make_session(broker=FakeBroker(allow=False))
     asyncio.run(session.dispatch(msg(protocol.T_CMD, face="talk_happy")))
     assert deps["display"].faces == ["talk_happy"]
+
+
+class FakeDiscoveryEmpty:
+    def snapshot(self):
+        return []
+
+    def start(self):
+        pass
+
+    def stop(self):
+        pass
+
+
+class FakeSleepController:
+    def __init__(self):
+        self.asleep_calls = 0
+
+    async def ensure_asleep(self):
+        self.asleep_calls += 1
+
+    async def ensure_awake(self):
+        pass
+
+
+def test_boot_grace_period_delays_sleep_when_no_brain_found(tmp_path):
+    now = {"t": 0.0}
+    cfg = BridgeConfig(data_dir=str(tmp_path), reconnect_seconds=0.0)
+    sleep_controller = FakeSleepController()
+    manager = SessionManager(
+        cfg,
+        servos=None,
+        display=None,
+        runner=None,
+        sleep_controller=sleep_controller,
+        discovery=FakeDiscoveryEmpty(),
+        clock=lambda: now["t"],
+    )
+
+    asyncio.run(manager._tick())
+    assert sleep_controller.asleep_calls == 0  # still within the grace period
+
+    now["t"] = SessionManager.BOOT_GRACE_S + 1
+    asyncio.run(manager._tick())
+    assert sleep_controller.asleep_calls == 1  # grace period has elapsed

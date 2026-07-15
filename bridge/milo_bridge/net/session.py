@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import time
 
 from milo_common import protocol
 from milo_common.auth import PairedStore
@@ -123,6 +124,8 @@ class RobotSession:
 class SessionManager:
     """Discovery -> select -> connect -> session; failover and sleep in a loop."""
 
+    BOOT_GRACE_S = 8.0  # stay standing for a few seconds after boot before sleeping, even with no brain yet
+
     def __init__(
         self,
         cfg,
@@ -138,6 +141,7 @@ class SessionManager:
         sleep_controller=None,
         discovery: BrainDiscovery | None = None,
         connect=None,
+        clock=time.monotonic,
     ):
         self._cfg = cfg
         self._display = display
@@ -152,6 +156,8 @@ class SessionManager:
         self._store = PairedStore(cfg.paired_path)
         self._discovery = discovery or BrainDiscovery()
         self._connect = connect
+        self._clock = clock
+        self._booted_at = clock()
         self.link_state: str = "disconnected"
         if sleep_controller is None:
             from ..sleep import SleepController
@@ -176,7 +182,8 @@ class SessionManager:
     async def _tick(self) -> None:
         choice = select_brain(self._discovery.snapshot(), self._store)
         if choice is None:
-            await self._sleep.ensure_asleep()
+            if self._clock() - self._booted_at > self.BOOT_GRACE_S:
+                await self._sleep.ensure_asleep()
             await asyncio.sleep(self._cfg.reconnect_seconds)
             return
         record, _needs_pairing = choice
