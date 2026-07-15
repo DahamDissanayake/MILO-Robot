@@ -34,8 +34,12 @@ export default {
       el.querySelectorAll("[data-mode]").forEach((b) => b.classList.toggle("active", b.dataset.mode === name));
       modeStatus.textContent = name === "raw" ? "Mode: Raw" : `Mode: ${MODE_LABEL[name]} — enabled`;
     }
-    setModeButtons("raw");
+    // Balanced is the robot's actual default (set in GaitEngine), not "raw" --
+    // this is just the best guess until the first telemetry tick confirms the
+    // real mode, which also covers a tab opened after someone else changed it.
+    setModeButtons("balanced");
     const offMode = bus.on("mode", (m) => setModeButtons(m.name));
+    const offTelemetry = bus.on("telemetry", (m) => { if (m.gait_mode) setModeButtons(m.gait_mode); });
     el.querySelectorAll("[data-mode]").forEach((b) => {
       b.onclick = () => bus.send({ t: "mode", name: b.dataset.mode });
     });
@@ -151,6 +155,7 @@ export default {
     return () => {
       sending(false);
       offMode();
+      offTelemetry();
       window.removeEventListener("keydown", kd);
       window.removeEventListener("keyup", ku);
       window.removeEventListener("keydown", skd);

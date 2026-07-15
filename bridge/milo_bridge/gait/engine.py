@@ -64,7 +64,7 @@ class GaitEngine:
         self._clock = clock
         self._command = (0.0, 0.0, 0.0)
         self._active = False
-        self._mode = "raw"
+        self._mode = "balanced"
         self._holding_target: dict[str, float] | None = None
         self._manual_override = False
         self._was_deferring = False

@@ -134,13 +134,15 @@ the rest are pure observation and work in every tab, all the time.
   forward/back/turn, Up/Down buttons held to tilt into a look-up/look-down
   pose and released to return to stand) stacked over its speed slider /
   STOP, or WASD / arrow keys with A/D to turn and Q/E held to look up/down,
-  driving the gait engine's velocity command. Raw is today's direct
-  control with no help; Balanced applies live IMU roll/pitch correction to
-  stay level while walking and auto-returns to standby once a movement
-  stops; Angled reuses the same correction with more authority for holding
-  level on an incline. The status line reads "Mode: Raw" or "Mode:
-  Balanced — enabled" / "Mode: Angled — enabled", and every connected tab
-  sees the same mode live. A speed slider scales every axis together.
+  driving the gait engine's velocity command. **Balanced is the robot's
+  default mode** (applies live IMU roll/pitch correction to stay level
+  while walking and auto-returns to standby once a movement stops); Raw is
+  direct control with no help; Angled reuses Balanced's correction with more
+  authority for holding level on an incline. The status line reads "Mode:
+  Raw" or "Mode: Balanced — enabled" / "Mode: Angled — enabled", and every
+  connected tab sees the same mode live (a freshly opened tab shows
+  Balanced immediately, then syncs to the real mode on the first telemetry
+  tick in case someone changed it earlier). A speed slider scales every axis together.
   Commands are sent at a steady 100 ms cadence while a direction is held
   and immediately zeroed on release, and there is always a local **STOP**
   button on the panel in addition to the global one in the status bar.

@@ -75,5 +75,6 @@ def collect_telemetry(deps) -> dict:
         "link": deps.get_link_state(),
         "owner": deps.broker.owner if deps.broker else "none",
         "gait_backend": getattr(deps.gait, "backend", None),
+        "gait_mode": getattr(deps.gait, "mode", None),
         "imu": imu_snapshot(deps),
     }

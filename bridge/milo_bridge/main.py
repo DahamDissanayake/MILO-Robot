@@ -114,6 +114,13 @@ async def main() -> None:
 
     await display.show_status(hardware_status)
     await runner.run("wake_up")
+    # wake_up's own end_stand tail already snapped every servo to
+    # STAND_ANGLES, but that doesn't set GaitEngine's own holding_target --
+    # without this, balanced/angled mode's self-leveling would only fall
+    # back to STAND_ANGLES by coincidence (its own None-target default)
+    # rather than by an explicit guarantee. standby() makes the stand pose
+    # the robot's actual, recorded default gait state at boot.
+    gait.standby()
     # wake_up's own completion already called start_idle() with the default
     # "idle" base face (PoseRunner.run's end_stand tail) -- start_idle() is
     # idempotent-guarded while an idle loop is already running, so a plain

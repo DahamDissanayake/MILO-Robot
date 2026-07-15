@@ -156,14 +156,18 @@ POSES: dict[str, Pose] = {
             5,
         ),
     ),
+    # Second step's wait_ms must cover its largest joint move at SmoothServos'
+    # default 300deg/s slew (the 90deg L4/R4 or L3/R3 moves need 300ms) --
+    # 350ms gives that motion room to actually finish smoothly instead of
+    # being cut off by the pose "completing" mid-slew.
     "look_up": Pose(
         "look_up", "idle", AnimMode.ONCE,
-        [Step(STAND_ANGLES, 150), Step({"R2": 0, "L2": 180, "L4": 90, "R4": 90}, 250)],
+        [Step(STAND_ANGLES, 150), Step({"R2": 0, "L2": 180, "L4": 90, "R4": 90}, 350)],
         end_stand=False,
     ),
     "look_down": Pose(
         "look_down", "idle", AnimMode.ONCE,
-        [Step(STAND_ANGLES, 150), Step({"L1": 0, "R1": 180, "L3": 90, "R3": 90}, 250)],
+        [Step(STAND_ANGLES, 150), Step({"L1": 0, "R1": 180, "L3": 90, "R3": 90}, 350)],
         end_stand=False,
     ),
     # --- cyclic gaits (diagonal trot, from the firmware) ---

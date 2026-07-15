@@ -209,11 +209,11 @@ class FakeRunner:
         self.is_running = False
 
 
-def test_mode_defaults_to_raw_and_validates():
+def test_mode_defaults_to_balanced_and_validates():
     engine = GaitEngine(FakeServos())
-    assert engine.mode == "raw"
-    engine.set_mode("balanced")
     assert engine.mode == "balanced"
+    engine.set_mode("raw")
+    assert engine.mode == "raw"
     with pytest.raises(ValueError):
         engine.set_mode("sideways")
 
@@ -245,6 +245,7 @@ def test_auto_standby_on_stop_in_balanced_mode_only():
 
     servos_raw = FakeServos()
     engine_raw = GaitEngine(servos_raw, clock=lambda: 0.0)
+    engine_raw.set_mode("raw")  # default is now balanced; this half tests raw specifically
     engine_raw.set_velocity_command(0.1, 0.0, 0.0)
     servos_raw.angles = {}
     engine_raw.set_velocity_command(0.0, 0.0, 0.0)
@@ -283,6 +284,7 @@ def test_raw_mode_ignores_imu_even_with_tilt():
     servos = FakeServos()
     imu = FakeImu(roll=20.0, pitch=0.0)
     engine = GaitEngine(servos, imu=imu, clock=lambda: now["t"])
+    engine.set_mode("raw")  # default is now balanced; this test is raw-specific
     engine.set_velocity_command(0.1, 0.0, 0.0)
     now["t"] = 0.15
     written = engine.tick()
@@ -304,6 +306,7 @@ def test_raw_mode_idle_does_not_self_level():
     servos = FakeServos()
     imu = FakeImu(roll=20.0, pitch=0.0)
     engine = GaitEngine(servos, imu=imu, clock=lambda: 0.0)
+    engine.set_mode("raw")  # default is now balanced; this test is raw-specific
     assert engine.tick() is None
     assert servos.writes == 0
 
