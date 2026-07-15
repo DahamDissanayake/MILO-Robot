@@ -110,9 +110,10 @@ async def main() -> None:
     )
     web_task = asyncio.create_task(start_web(web_deps)) if cfg.web_enabled else None
 
-    await runner.run("rest")
-    display.start_idle()
-    log.info("resting with idle face; scanning for brains")
+    await display.show_status(hardware_status)
+    await runner.run("wake_up")
+    display.start_idle(base_face="idle" if all(hardware_status.values()) else "confused")
+    log.info("boot sequence complete; scanning for brains")
 
     manager = SessionManager(
         cfg,
