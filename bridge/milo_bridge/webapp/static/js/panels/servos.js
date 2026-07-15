@@ -9,22 +9,23 @@ export default {
         <input type="range" min="0" max="180" value="90" data-servo="${s}" style="flex:1">
         <span data-val="${s}" style="width:34px;text-align:right">90°</span>
       </div>`).join("") +
-      `<button class="btn" id="center" style="margin-top:8px">Center All (90°)</button>`;
+      `<div style="display:flex;gap:8px;margin-top:8px">
+        <button class="btn" id="reset" style="flex:1">Reset (90°)</button>
+        <button class="btn" id="standby" style="flex:1">Standby</button>
+      </div>`;
     el.querySelectorAll("input[type=range]").forEach((sl) => {
       sl.oninput = () => {
         el.querySelector(`[data-val="${sl.dataset.servo}"]`).textContent = `${sl.value}°`;
         bus.send({ t: "servo", servo: sl.dataset.servo, deg: Number(sl.value) });
       };
     });
-    el.querySelector("#center").onclick = () => {
-      const angles = {};
+    el.querySelector("#reset").onclick = () => {
       SERVOS.forEach((s) => {
-        const sl = el.querySelector(`[data-servo="${s}"]`);
-        sl.value = 90;
+        el.querySelector(`[data-servo="${s}"]`).value = 90;
         el.querySelector(`[data-val="${s}"]`).textContent = "90°";
-        angles[s] = 90;
       });
-      bus.send({ t: "servo_batch", angles });
+      bus.send({ t: "reset" });
     };
+    el.querySelector("#standby").onclick = () => bus.send({ t: "standby" });
   },
 };
