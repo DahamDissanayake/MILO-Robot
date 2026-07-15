@@ -80,7 +80,7 @@ class MotionService:
     async def face(self, client_id: str, name: str) -> dict:
         if err := self._denied(client_id):
             return err
-        if self._deps.display is None:
+        if not self._deps.hardware_status.get("display", True):
             return {"error": "display unavailable"}
         try:
             await self._deps.display.set_face(name)

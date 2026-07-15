@@ -104,6 +104,7 @@ async def main() -> None:
         camera=camera, audio=audio, imu=imu, gait=gait,
         graph_api=graph_api, graph_store=graph,
         broker=broker, media_hub=hub, log_buffer=log_buffer,
+        hardware_status=hardware_status,
         # manager is assigned below; guard the startup window before it exists
         get_link_state=lambda: manager.link_state if manager is not None else "disconnected",
     )

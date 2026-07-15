@@ -44,12 +44,15 @@ async def test_status_reports_real_imu_state_as_json_serializable_dict():
 
 
 async def test_status_flags_missing_hardware():
-    deps = make_deps(camera=None, audio=None, imu=None, display=None)
+    deps = make_deps(hardware_status={
+        "servos": True, "camera": False, "audio": False, "imu": False, "display": False,
+    })
     client = await _client(deps)
     try:
         data = await (await client.get("/api/status")).json()
-        assert data["hardware"] == {"camera": False, "audio": False, "imu": False, "display": False}
-        assert data["hardware"]["audio"] is False
+        assert data["hardware"] == {
+            "servos": True, "camera": False, "audio": False, "imu": False, "display": False,
+        }
     finally:
         await client.close()
 

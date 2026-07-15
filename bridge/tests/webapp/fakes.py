@@ -131,6 +131,7 @@ def make_deps(**overrides) -> WebDeps:
         broker=None,
         media_hub=None,
         log_buffer=None,
+        hardware_status={"servos": True, "display": True, "imu": True, "camera": True, "audio": True},
         get_link_state=lambda: "disconnected",
     )
     for k, v in overrides.items():

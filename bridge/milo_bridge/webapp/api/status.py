@@ -10,12 +10,7 @@ async def get_status(request: web.Request) -> web.Response:
     body.update(
         robot_id=deps.config.robot_id,
         robot_name=deps.config.robot_name,
-        hardware={
-            "camera": deps.camera is not None,
-            "audio": deps.audio is not None,
-            "imu": deps.imu is not None,
-            "display": deps.display is not None,
-        },
+        hardware=deps.hardware_status,
     )
     return web.json_response(body)
 

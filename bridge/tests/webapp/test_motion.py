@@ -60,7 +60,7 @@ async def test_face_requires_display():
     svc = MotionService(deps)
     assert await svc.face("c1", "cute") == {"ok": True}
     assert deps.display.faces == ["cute"]
-    deps.display = None
+    deps.hardware_status = {**deps.hardware_status, "display": False}
     assert "error" in await svc.face("c1", "cute")
 
 
