@@ -281,3 +281,37 @@ def test_raw_mode_idle_does_not_self_level():
     engine = GaitEngine(servos, imu=imu, clock=lambda: 0.0)
     assert engine.tick() is None
     assert servos.writes == 0
+
+
+def test_reset_in_balanced_mode_survives_the_next_tick():
+    servos = FakeServos()
+    imu = FakeImu(roll=0.0, pitch=0.0)
+    engine = GaitEngine(servos, imu=imu, clock=lambda: 0.0)
+    engine.set_mode("balanced")
+    engine.reset()
+    assert servos.angles == REST_ANGLES
+    engine.tick()  # simulates the next background tick
+    assert servos.angles == REST_ANGLES  # must NOT have snapped to STAND_ANGLES
+
+
+def test_standby_in_balanced_mode_survives_the_next_tick():
+    servos = FakeServos()
+    imu = FakeImu(roll=0.0, pitch=0.0)
+    engine = GaitEngine(servos, imu=imu, clock=lambda: 0.0)
+    engine.set_mode("balanced")
+    engine.standby()
+    assert servos.angles == STAND_ANGLES
+    engine.tick()
+    assert servos.angles == STAND_ANGLES
+
+
+def test_new_gait_command_clears_a_stale_holding_target():
+    servos = FakeServos()
+    imu = FakeImu(roll=0.0, pitch=0.0)
+    engine = GaitEngine(servos, imu=imu, clock=lambda: 0.0)
+    engine.reset()  # raw mode: one-shot REST write, sets _holding_target
+    engine.set_velocity_command(0.1, 0.0, 0.0)  # start walking -> must clear the stale target
+    engine.set_velocity_command(0.0, 0.0, 0.0)  # stop again, still raw mode (no auto-standby)
+    engine.set_mode("balanced")
+    engine.tick()
+    assert servos.angles == STAND_ANGLES  # falls back to STAND_ANGLES, not the stale REST target

@@ -58,6 +58,7 @@ class GaitEngine:
         self._command = (0.0, 0.0, 0.0)
         self._active = False
         self._mode = "raw"
+        self._holding_target: dict[str, float] | None = None
         self._t0 = clock()
 
     @property
@@ -80,6 +81,7 @@ class GaitEngine:
         self._active = any(abs(c) > 1e-6 for c in self._command)
         if self._active and not was_active:
             self._t0 = self._clock()  # restart the CPG cycle cleanly
+            self._holding_target = None
         elif was_active and not self._active and self._mode in _BALANCE_MODES:
             self.standby()
 
@@ -93,6 +95,7 @@ class GaitEngine:
 
     def _set_discrete_target(self, angles: dict[str, float]) -> None:
         self._active = False
+        self._holding_target = dict(angles)
         for name, angle in angles.items():
             self._servos.set_angle(name, angle)
 
@@ -129,7 +132,8 @@ class GaitEngine:
         if self._imu is None:
             return None
         state = self._imu.update()
-        angles = balance.correct(dict(STAND_ANGLES), state.roll, state.pitch, self._mode)
+        base = self._holding_target if self._holding_target is not None else STAND_ANGLES
+        angles = balance.correct(dict(base), state.roll, state.pitch, self._mode)
         for name, angle in angles.items():
             self._servos.set_angle(name, angle)
         return angles

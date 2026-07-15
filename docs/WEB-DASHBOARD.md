@@ -26,8 +26,8 @@ The page is a fixed "cockpit" console, not a rearrangeable grid: a status
 bar runs across the top (brand, connection state, current control owner,
 and the page-level action buttons), and a three-column cockpit below it
 keeps Camera a normal, capped size in the true center (with Poses & Emotes
-right below it) — flanked by Move on the left and Sensors + Communication
-stacked on the right — rather than letting the feed dominate the page. A
+right below it) — flanked by Communication + Sensors stacked on the left
+and Move on the right — rather than letting the feed dominate the page. A
 full-width Bridge Log sits right below the cockpit (always visible, not
 tucked away), and a full-width Memory Graph section follows that. Servo
 Test — used only during assembly/calibration — lives in a Tools drawer
@@ -129,14 +129,20 @@ the rest are pure observation and work in every tab, all the time.
   so the panel never needs updating when poses or faces are added — it
   just reflects what's on the robot. Lives in the main cockpit (not the
   Tools drawer) since it's used often enough to want one click, not two.
-- **Move** (needs control, cockpit left column) — an on-screen joystick
-  stacked above its speed slider / STOP, or WASD / arrow keys with Q/E to
-  turn, driving the gait engine's velocity command. A speed slider scales
-  every axis together. Commands are sent at a steady 100 ms cadence while
-  a direction is held and immediately zeroed on release, and there is
-  always a local **STOP** button on the panel in addition to the global
-  one in the status bar.
-- **Communication** (cockpit right column) — replaces the old separate
+- **Move** (needs control, cockpit right column) — a Raw / Balanced /
+  Angled mode selector and status line above an on-screen joystick stacked
+  over its speed slider / STOP, or WASD / arrow keys with Q/E to turn,
+  driving the gait engine's velocity command. Raw is today's direct
+  control with no help; Balanced applies live IMU roll/pitch correction to
+  stay level while walking and auto-returns to standby once a movement
+  stops; Angled reuses the same correction with more authority for holding
+  level on an incline. The status line reads "Mode: Raw" or "Mode:
+  Balanced — enabled" / "Mode: Angled — enabled", and every connected tab
+  sees the same mode live. A speed slider scales every axis together.
+  Commands are sent at a steady 100 ms cadence while a direction is held
+  and immediately zeroed on release, and there is always a local **STOP**
+  button on the panel in addition to the global one in the status bar.
+- **Communication** (cockpit left column) — replaces the old separate
   Ears and Voice cards. A headphones toggle turns live listening on or off
   and needs no control at all — anyone can listen in — and drives two
   separate vertical VU meters, one per channel (**L** / **R**), each
@@ -151,7 +157,7 @@ the rest are pure observation and work in every tab, all the time.
   through `espeak-ng` on the Pi — it must be installed with
   `sudo apt install espeak-ng`, or `/api/speak` reports `tts-unavailable`
   and the panel shows the error inline.
-- **Sensors** (observe-only, cockpit right column, below Communication) —
+- **Sensors** (observe-only, cockpit left column, below Communication) —
   six live tiles: Pitch / Roll, Gyro, SoC Temp, CPU, RAM, and a full-width
   Hardware tile listing camera / audio / imu / display each by name with
   an explicit **Connected** / **Not connected** label (colored green/red),
@@ -185,9 +191,10 @@ the rest are pure observation and work in every tab, all the time.
   status bar underneath it, so the in-drawer **✕ Close** button is the
   only way to close it there. It contains:
   - **Servo Test** (needs control) — one slider per servo channel
-    (R1–R4, L1–L4), each sending a live `deg` update as you drag, plus a
-    **Center All (90°)** button for quickly returning every joint to
-    neutral during assembly or calibration work.
+    (R1–R4, L1–L4), each sending a live `deg` update as you drag, plus
+    **Reset (90°)** and **Standby** buttons for quickly returning every
+    joint to neutral or to the stand pose during assembly or calibration
+    work.
 
 The layout itself is fixed — nothing can be dragged, resized, or hidden —
 and the Tools drawer is what replaces the old per-card hide/show and its
@@ -394,9 +401,9 @@ curl -X POST http://localhost:8080/api/graph \
       control.
 - [ ] Desktop: the Camera panel is a normal, capped size in the true
       center column (not a dominant full-width screen) with Poses & Emotes
-      right below it, Move is in its own left column, and Communication +
-      Sensors are stacked in the right column. The Camera panel streams
-      frames continuously.
+      right below it, Communication + Sensors are stacked in the left
+      column, and Move is in its own right column. The Camera panel
+      streams frames continuously.
 - [ ] The Bridge Log panel — its own full-width section below the cockpit,
       not inside the Tools drawer — shows new lines arriving live and
       scrolls within its own bounded height rather than growing the page.
