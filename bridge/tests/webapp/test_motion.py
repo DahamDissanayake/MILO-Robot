@@ -319,28 +319,36 @@ async def test_turn_shares_the_single_flight_guard_with_pose():
     assert res == {"error": "pose-running"}
 
 
-async def test_strafe_requires_control():
+async def test_look_requires_control():
     deps = make_deps(broker=ControlBroker())
     svc = MotionService(deps)
-    res = await svc.strafe("nobody", "left")
+    res = await svc.look("nobody", "up")
     assert res == {"error": "not-controlling"}
     assert deps.runner.ran == []
 
 
-async def test_strafe_runs_the_matching_crab_pose():
+async def test_look_runs_the_matching_pose_with_a_large_cycle_count():
     deps = _controlled_deps()
     svc = MotionService(deps)
-    assert await svc.strafe("c1", "right") == {"ok": True}
+    assert await svc.look("c1", "down") == {"ok": True}
     await asyncio.sleep(0)
-    assert deps.runner.ran == ["crab_right"]
+    assert deps.runner.ran == ["look_down"]
 
 
-async def test_strafe_rejects_unknown_direction():
+async def test_look_rejects_unknown_direction():
     deps = _controlled_deps()
     svc = MotionService(deps)
-    res = await svc.strafe("c1", "sideways")
+    res = await svc.look("c1", "sideways")
     assert "error" in res
     assert deps.runner.ran == []
+
+
+async def test_look_shares_the_single_flight_guard_with_pose():
+    deps = _controlled_deps()
+    svc = MotionService(deps)
+    assert await svc.look("c1", "up") == {"ok": True}
+    res = await svc.look("c1", "down")
+    assert res == {"error": "pose-running"}
 
 
 async def test_manual_requires_control():

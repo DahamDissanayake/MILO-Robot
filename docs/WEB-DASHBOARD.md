@@ -130,9 +130,10 @@ the rest are pure observation and work in every tab, all the time.
   just reflects what's on the robot. Lives in the main cockpit (not the
   Tools drawer) since it's used often enough to want one click, not two.
 - **Move** (needs control, cockpit right column) — a Raw / Balanced /
-  Angled mode selector and status line above an on-screen joystick stacked
-  over its speed slider / STOP, or WASD / arrow keys with Q/E to turn,
-  driving the gait engine's velocity command. Raw is today's direct
+  Angled mode selector and status line above a fixed D-pad (arrow icons for
+  forward/back/turn, tilt icons to look up/down) stacked over its speed
+  slider / STOP, or WASD / arrow keys with A/D to turn and Q/E to look
+  up/down, driving the gait engine's velocity command. Raw is today's direct
   control with no help; Balanced applies live IMU roll/pitch correction to
   stay level while walking and auto-returns to standby once a movement
   stops; Angled reuses the same correction with more authority for holding

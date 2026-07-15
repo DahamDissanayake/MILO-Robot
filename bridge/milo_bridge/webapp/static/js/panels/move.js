@@ -17,12 +17,12 @@ export default {
           <div></div><button class="btn" data-dpad="down" style="font-size:20px">↓</button><div></div>
         </div>
         <div style="display:flex;gap:8px">
-          <button class="btn" data-dpad="turnleft" style="font-size:20px;width:56px">↺</button>
-          <button class="btn" data-dpad="turnright" style="font-size:20px;width:56px">↻</button>
+          <button class="btn" data-dpad="lookup" style="font-size:20px;width:56px">⤴</button>
+          <button class="btn" data-dpad="lookdown" style="font-size:20px;width:56px">⤵</button>
         </div>
         <div style="display:flex;flex-direction:column;gap:10px;width:100%;max-width:220px">
           <label>Speed <input id="speed" type="range" min="10" max="100" value="60"></label>
-          <div class="muted">or WASD / arrows, Q/E to turn</div>
+          <div class="muted">or WASD / arrows, A/D to turn, Q/E to look up/down</div>
           <button class="btn danger" id="mstop">STOP</button>
         </div>
       </div>`;
@@ -40,8 +40,8 @@ export default {
       b.onclick = () => bus.send({ t: "mode", name: b.dataset.mode });
     });
 
-    // -- continuous gait: forward/backward only (turning/strafing now use
-    // the scripted turn_left/turn_right/crab_left/crab_right gaits below) --
+    // -- continuous gait: forward/backward only (turning/looking now use
+    // the scripted turn_left/turn_right/look_up/look_down gaits below) --
     function sending(active) {
       if (active && !timer) timer = setInterval(() => bus.send({ t: "gait", ...scaled() }), SEND_MS);
       if (!active && timer) { clearInterval(timer); timer = null; bus.send({ t: "gait", vx: 0, vy: 0, yaw: 0 }); }
@@ -73,7 +73,7 @@ export default {
     bindGaitButton("up", "w");
     bindGaitButton("down", "s");
 
-    // -- turn/strafe: scripted gaits, held via a large cycle count on the
+    // -- turn/look: scripted gaits, held via a large cycle count on the
     // server and stopped with the existing universal {t:"stop"} message --
     function bindScripted(dir, msg) {
       const btn = el.querySelector(`[data-dpad="${dir}"]`);
@@ -84,21 +84,21 @@ export default {
       btn.addEventListener("pointerleave", release);
       btn.addEventListener("pointercancel", release);
     }
-    bindScripted("left", { t: "strafe", dir: "left" });
-    bindScripted("right", { t: "strafe", dir: "right" });
-    bindScripted("turnleft", { t: "turn", dir: "left" });
-    bindScripted("turnright", { t: "turn", dir: "right" });
+    bindScripted("left", { t: "turn", dir: "left" });
+    bindScripted("right", { t: "turn", dir: "right" });
+    bindScripted("lookup", { t: "look", dir: "up" });
+    bindScripted("lookdown", { t: "look", dir: "down" });
 
-    const turnKeys = { q: "left", e: "right", ArrowLeft: "left", ArrowRight: "right" };
-    const strafeKeys = { a: "left", d: "right" };
+    const turnKeys = { a: "left", d: "right", ArrowLeft: "left", ArrowRight: "right" };
+    const lookKeys = { q: "up", e: "down" };
     const scriptedDown = new Set();
     const skd = (e) => {
       if (e.repeat || e.target.tagName === "INPUT" || scriptedDown.has(e.key)) return;
       if (turnKeys[e.key]) { scriptedDown.add(e.key); bus.send({ t: "turn", dir: turnKeys[e.key] }); }
-      else if (strafeKeys[e.key]) { scriptedDown.add(e.key); bus.send({ t: "strafe", dir: strafeKeys[e.key] }); }
+      else if (lookKeys[e.key]) { scriptedDown.add(e.key); bus.send({ t: "look", dir: lookKeys[e.key] }); }
     };
     const sku = (e) => {
-      if (turnKeys[e.key] || strafeKeys[e.key]) { scriptedDown.delete(e.key); bus.send({ t: "stop" }); }
+      if (turnKeys[e.key] || lookKeys[e.key]) { scriptedDown.delete(e.key); bus.send({ t: "stop" }); }
     };
     window.addEventListener("keydown", skd);
     window.addEventListener("keyup", sku);

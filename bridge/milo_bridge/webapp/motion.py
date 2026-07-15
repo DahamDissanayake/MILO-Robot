@@ -194,14 +194,14 @@ class MotionService:
         self._pose_task.add_done_callback(_log_pose_result)
         return {"ok": True}
 
-    async def strafe(self, client_id: str, direction: str) -> dict:
+    async def look(self, client_id: str, direction: str) -> dict:
         if err := self._denied(client_id):
             return err
-        if direction not in ("left", "right"):
-            return {"error": f"unknown strafe direction {direction!r}"}
+        if direction not in ("up", "down"):
+            return {"error": f"unknown look direction {direction!r}"}
         if self._pose_task is not None and not self._pose_task.done():
             return {"error": "pose-running"}
-        self._pose_task = asyncio.ensure_future(self._deps.runner.run(f"crab_{direction}", cycles=HOLD_CYCLES))
+        self._pose_task = asyncio.ensure_future(self._deps.runner.run(f"look_{direction}", cycles=HOLD_CYCLES))
         self._pose_task.add_done_callback(_log_pose_result)
         return {"ok": True}
 

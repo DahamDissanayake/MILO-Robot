@@ -95,7 +95,7 @@ def test_abort_interrupts_and_recovers_to_stand():
 
 
 def test_gaits_have_cycles_and_oneshots_do_not():
-    for name in ("walk", "walk_backward", "turn_left", "turn_right", "crab_left", "crab_right"):
+    for name in ("walk", "walk_backward", "turn_left", "turn_right", "look_up", "look_down"):
         assert POSES[name].cycle
     for name in ("wave", "dance", "bow", "rest", "stand", "crab"):
         assert not POSES[name].cycle
@@ -135,7 +135,7 @@ def test_wake_up_ends_at_stand():
     assert servos.angles == STAND_ANGLES
 
 
-def test_crab_left_and_right_are_cyclic_and_distinct():
-    left, right = POSES["crab_left"], POSES["crab_right"]
-    assert left.cycle and right.cycle
-    assert left.cycle != right.cycle  # genuinely different lean directions, not accidentally identical
+def test_look_up_and_down_are_cyclic_and_distinct():
+    up, down = POSES["look_up"], POSES["look_down"]
+    assert up.cycle and down.cycle
+    assert up.cycle != down.cycle  # genuinely different tilt directions, not accidentally identical
