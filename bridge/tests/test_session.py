@@ -205,39 +205,15 @@ class FakeDiscoveryEmpty:
         pass
 
 
-class FakeSleepController:
-    def __init__(self):
-        self.asleep_calls = 0
-
-    async def ensure_asleep(self):
-        self.asleep_calls += 1
-
-    async def ensure_awake(self):
-        pass
-
-
-def test_boot_grace_period_delays_sleep_when_no_brain_found(tmp_path):
-    now = {"t": 0.0}
+def test_tick_reconnects_and_does_not_crash_with_no_brain_found(tmp_path):
+    # Sleep/wake is no longer this class's concern (moved to ControlBroker's
+    # on_change hook in main()) -- this just confirms the no-brain branch
+    # still cleanly waits and returns without a paired sleep_controller.
     cfg = BridgeConfig(data_dir=str(tmp_path), reconnect_seconds=0.0)
-    sleep_controller = FakeSleepController()
     manager = SessionManager(
         cfg,
-        servos=None,
         display=None,
         runner=None,
-        sleep_controller=sleep_controller,
         discovery=FakeDiscoveryEmpty(),
-        clock=lambda: now["t"],
     )
-
     asyncio.run(manager._tick())
-    assert sleep_controller.asleep_calls == 0  # still within the grace period
-
-    # Boundary check: at exactly t=BOOT_GRACE_S, sleep must NOT fire (> is strict, not >=)
-    now["t"] = SessionManager.BOOT_GRACE_S
-    asyncio.run(manager._tick())
-    assert sleep_controller.asleep_calls == 0  # grace period boundary is exclusive
-
-    now["t"] = SessionManager.BOOT_GRACE_S + 1
-    asyncio.run(manager._tick())
-    assert sleep_controller.asleep_calls == 1  # grace period has elapsed

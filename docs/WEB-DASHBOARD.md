@@ -231,6 +231,13 @@ simple:
   else, so the two control paths can never fight over the servos.
   Releasing control (or the tab disconnecting) hands motion rights straight
   back to the brain.
+- **Taking control wakes the robot; losing it puts the robot back to sleep**
+  if no brain has taken over either. `ControlBroker`'s `on_change` hook (see
+  `milo_bridge/main.py`) is the single trigger for `sleep.py`'s wake/asleep
+  transition — it fires for a brain connecting/disconnecting exactly the
+  same way it does for a web client taking/releasing/losing control, so
+  there's one rule: awake whenever anyone (brain or web) holds control,
+  asleep the instant nobody does.
 - **Control expires on silence.** Every connected tab sends a `{"t":"hb"}`
   heartbeat every 5 seconds; the broker checks for staleness every second
   and releases control automatically if 10 seconds pass with no heartbeat

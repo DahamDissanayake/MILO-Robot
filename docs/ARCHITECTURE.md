@@ -23,7 +23,7 @@ Milo upgrades the [Sesame quadruped robot](https://github.com/dorianborian/sesam
 | Intelligence | Remote HTTP commands | Detachable **Milo Brain** desktop app on any LAN GPU machine |
 | Face display | SSD1306 OLED, 37 bitmap faces | Same display + same face art, driven from Python |
 
-**Design principle — *Body + Memory on the robot, Compute on the brains*.** The Pi runs `milo-bridge` (drivers, gait inference, knowledge graph, discovery/auth, sleep mode). Any machine running the **Milo Brain** app advertises itself over mDNS; Milo pairs once via a PIN shown on its OLED, then streams camera/mic audio up and receives speech/face/movement commands back. Milo's identity (who it knows, what it remembers) always lives on the Pi — brains are stateless, interchangeable compute. No brain reachable → Milo sleeps.
+**Design principle — *Body + Memory on the robot, Compute on the brains*.** The Pi runs `milo-bridge` (drivers, gait inference, knowledge graph, discovery/auth, sleep mode). Any machine running the **Milo Brain** app advertises itself over mDNS; Milo pairs once via a PIN shown on its OLED, then streams camera/mic audio up and receives speech/face/movement commands back. Milo's identity (who it knows, what it remembers) always lives on the Pi — brains are stateless, interchangeable compute. No brain reachable and no one driving from the web dashboard → Milo sleeps (see §3.4).
 
 ---
 
@@ -177,7 +177,7 @@ Binary frames immediately follow their JSON header frame; the header carries `se
 
 - Brains advertise mDNS `_milo-brain._tcp.local.` with TXT records `name`, `gpu`, `tier` (small/large), `busy` (0/1).
 - `net/discovery.py` browses continuously, filters to *paired* brains, ranks by (not-busy, priority, latency), connects to the best; on drop it fails over within 10 s.
-- No paired brain reachable (or all busy) → `sleep.py`: rest pose, sleepy face, camera/mic streams stopped, discovery keeps scanning. A loud sound (cheap RMS threshold on a mic tap) makes Milo perk up and rescan. Brain appears → stand pose, excited face, streams resume.
+- Sleep/wake is driven by `ControlBroker.on_change` (`main.py`'s `_make_control_change_handler`), not brain state alone: **no paired brain reachable AND no web dashboard client holding control** → `sleep.py`: rest pose, sleepy face, camera/mic streams stopped, discovery keeps scanning. A loud sound (cheap RMS threshold on a mic tap) makes Milo perk up and rescan. A brain connects, or a web client takes control → stand pose, excited face, streams resume — either one wakes Milo, and losing both puts it back to sleep.
 
 ### 3.5 Cognition loop (runs on the brain)
 

@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
-import time
 
 from milo_common import protocol
 from milo_common.auth import PairedStore
@@ -122,15 +121,19 @@ class RobotSession:
 
 
 class SessionManager:
-    """Discovery -> select -> connect -> session; failover and sleep in a loop."""
+    """Discovery -> select -> connect -> session; failover in a loop.
 
-    BOOT_GRACE_S = 8.0  # stay standing for a few seconds after boot before sleeping, even with no brain yet
+    Sleep/wake is not this class's concern -- ControlBroker's on_change hook
+    (wired in main()) drives SleepController from the single, unified
+    "is anyone in control" signal (brain connected OR web client holding
+    control), so this class only needs to keep the broker's brain-connected
+    flag accurate via set_brain_connected().
+    """
 
     def __init__(
         self,
         cfg,
         *,
-        servos,
         display,
         runner,
         audio=None,
@@ -138,10 +141,8 @@ class SessionManager:
         gait=None,
         media_hub=None,
         broker=None,
-        sleep_controller=None,
         discovery: BrainDiscovery | None = None,
         connect=None,
-        clock=time.monotonic,
     ):
         self._cfg = cfg
         self._display = display
@@ -156,16 +157,7 @@ class SessionManager:
         self._store = PairedStore(cfg.paired_path)
         self._discovery = discovery or BrainDiscovery()
         self._connect = connect
-        self._clock = clock
-        self._booted_at = clock()
         self.link_state: str = "disconnected"
-        if sleep_controller is None:
-            from ..sleep import SleepController
-
-            sleep_controller = SleepController(
-                runner, display, loud_rms_threshold=cfg.loud_rms_threshold, servos=servos
-            )
-        self._sleep = sleep_controller
 
     async def run_forever(self) -> None:
         if self._connect is None:
@@ -182,8 +174,6 @@ class SessionManager:
     async def _tick(self) -> None:
         choice = select_brain(self._discovery.snapshot(), self._store)
         if choice is None:
-            if self._clock() - self._booted_at > self.BOOT_GRACE_S:
-                await self._sleep.ensure_asleep()
             await asyncio.sleep(self._cfg.reconnect_seconds)
             return
         record, _needs_pairing = choice
@@ -198,7 +188,6 @@ class SessionManager:
                     show_pin=self._show_pin,
                 )
                 log.info("connected to brain %s (%s)", peer.name, peer.id)
-                await self._sleep.ensure_awake()
                 if self._broker is not None:
                     self._broker.set_brain_connected(True)
                 self.link_state = "connected"

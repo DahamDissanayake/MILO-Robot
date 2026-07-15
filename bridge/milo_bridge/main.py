@@ -6,6 +6,13 @@ controller, show a startup hardware checklist, play the boot tilt gesture
 stand with a hardware-status-aware idle face, then hand control to the
 SessionManager (discovery -> pairing/auth -> streams -> dispatch).
 
+Sleep/wake is driven entirely by ControlBroker.on_change (see
+_make_control_change_handler): asleep whenever neither a brain nor a web
+client holds control, awake the instant either one does. Since nobody has
+taken control yet immediately after boot in the near-universal case, the
+robot goes to sleep right after the boot gesture rather than waiting for
+some brain that may never connect.
+
 Every peripheral degrades gracefully — a missing camera, policy file, PCA9685,
 or OLED logs a warning and falls back to a null stand-in instead of killing
 the service.
@@ -44,6 +51,21 @@ def _optional(factory, what: str) -> tuple[object | None, bool]:
     except Exception as exc:
         log.warning("%s unavailable (%s: %s) — continuing without it", what, type(exc).__name__, exc)
         return None, False
+
+
+def _make_control_change_handler(sleep_controller):
+    """ControlBroker.on_change callback: the single, unified trigger for
+    sleep/wake. Fires whenever owner actually changes ("none" <-> "brain"/
+    "web") -- covers a brain connecting/disconnecting and a web client
+    taking/releasing/losing control identically, since both update the same
+    broker. ensure_awake()/ensure_asleep() are each idempotent-guarded, so a
+    handler running concurrently with an in-flight one is harmless."""
+    def on_control_change(owner: str) -> None:
+        if owner == "none":
+            asyncio.ensure_future(sleep_controller.ensure_asleep())
+        else:
+            asyncio.ensure_future(sleep_controller.ensure_awake())
+    return on_control_change
 
 
 async def main() -> None:
@@ -96,7 +118,7 @@ async def main() -> None:
         runner, display, loud_rms_threshold=cfg.loud_rms_threshold, servos=motion_servos
     )
 
-    broker = ControlBroker()
+    broker = ControlBroker(on_change=_make_control_change_handler(sleep_controller))
     hub = MediaHub(camera=camera, audio=audio, on_audio_level=sleep_controller.handle_audio_level)
 
     manager = None
@@ -128,11 +150,17 @@ async def main() -> None:
     # already running from an earlier boot path.
     display.stop_idle()
     display.start_idle(base_face="idle" if all(hardware_status.values()) else "confused")
+    # No brain and no web client has taken control yet at this instant in the
+    # near-universal case, so go to sleep immediately rather than waiting for
+    # some future event -- broker.on_change only fires on a *transition*, and
+    # owner has been "none" since construction, so nothing would otherwise
+    # trigger this first sleep.
+    if broker.owner == "none":
+        await sleep_controller.ensure_asleep()
     log.info("boot sequence complete; scanning for brains")
 
     manager = SessionManager(
         cfg,
-        servos=motion_servos,
         display=display,
         runner=runner,
         audio=audio,
@@ -140,7 +168,6 @@ async def main() -> None:
         gait=gait,
         media_hub=hub,
         broker=broker,
-        sleep_controller=sleep_controller,
     )
 
     gait_task = asyncio.create_task(gait.run())
