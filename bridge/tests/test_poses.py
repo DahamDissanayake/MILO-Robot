@@ -95,9 +95,9 @@ def test_abort_interrupts_and_recovers_to_stand():
 
 
 def test_gaits_have_cycles_and_oneshots_do_not():
-    for name in ("walk", "walk_backward", "turn_left", "turn_right"):
+    for name in ("walk", "walk_backward", "turn_left", "turn_right", "crab_left", "crab_right"):
         assert POSES[name].cycle
-    for name in ("wave", "dance", "bow", "rest", "stand"):
+    for name in ("wave", "dance", "bow", "rest", "stand", "crab"):
         assert not POSES[name].cycle
 
 
@@ -133,3 +133,18 @@ def test_wake_up_ends_at_stand():
     servos, _, completed = run_pose("wake_up")
     assert completed
     assert servos.angles == STAND_ANGLES
+
+
+def _swap_lr(angles: dict[str, int]) -> dict[str, int]:
+    def swap(name):
+        return ("L" if name[0] == "R" else "R") + name[1:]
+    return {swap(name): angle for name, angle in angles.items()}
+
+
+def test_crab_left_and_right_are_cyclic_and_mirrored():
+    left, right = POSES["crab_left"], POSES["crab_right"]
+    assert left.cycle and right.cycle
+    assert len(left.steps) == len(right.steps)
+    assert len(left.cycle) == len(right.cycle)
+    for l_step, r_step in zip(left.steps + left.cycle, right.steps + right.cycle):
+        assert _swap_lr(l_step.updates) == r_step.updates

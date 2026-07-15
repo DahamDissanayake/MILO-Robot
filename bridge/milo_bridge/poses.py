@@ -160,6 +160,22 @@ POSES: dict[str, Pose] = {
             5,
         ),
     ),
+    "crab_left": Pose(
+        "crab_left", "crab", AnimMode.ONCE,
+        [Step({"R1": 90, "R2": 90, "L1": 90, "L2": 90, "R4": 0, "R3": 180, "L3": 45, "L4": 135}, FRAME_DELAY_MS)],
+        cycle=[
+            Step({"R4": 45, "R3": 135, "L3": 0, "L4": 180}, FRAME_DELAY_MS),
+            Step({"R4": 0, "R3": 180, "L3": 45, "L4": 135}, FRAME_DELAY_MS),
+        ],
+    ),
+    "crab_right": Pose(
+        "crab_right", "crab", AnimMode.ONCE,
+        [Step({"R1": 90, "R2": 90, "L1": 90, "L2": 90, "R4": 135, "R3": 45, "L3": 180, "L4": 0}, FRAME_DELAY_MS)],
+        cycle=[
+            Step({"R4": 180, "R3": 0, "L3": 135, "L4": 45}, FRAME_DELAY_MS),
+            Step({"R4": 135, "R3": 45, "L3": 180, "L4": 0}, FRAME_DELAY_MS),
+        ],
+    ),
     # --- cyclic gaits (diagonal trot, from the firmware) ---
     "walk": Pose(
         "walk", "walk", AnimMode.ONCE,
