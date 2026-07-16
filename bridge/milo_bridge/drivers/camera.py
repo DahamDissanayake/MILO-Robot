@@ -9,33 +9,80 @@ from __future__ import annotations
 import asyncio
 from collections.abc import AsyncIterator, Callable
 
-WIDTH, HEIGHT = 640, 480
+# Both presets are scaled from the same pinned full-FOV raw stream (see
+# from_hardware) -- "hd" is the sensor's native 2x2-binned resolution (no
+# extra ISP downscale beyond the binning itself), "sd" is that same full
+# frame scaled down further for lower bandwidth. Neither crops the sensor.
+RESOLUTIONS: dict[str, tuple[int, int]] = {
+    "sd": (640, 480),
+    "hd": (1640, 1232),
+}
+DEFAULT_RESOLUTION = "sd"
+# IMX219's native 2x2-binned full-FOV sensor mode. Pinning `raw` to this
+# size stops picamera2's automatic mode selection from ever landing on a
+# cropped sensor window when `main` asks for something smaller -- the ISP
+# then always scales `main` down from the complete sensor image instead.
+FULL_FOV_RAW_SIZE = (1640, 1232)
 DEFAULT_FPS = 15
 
 
 class CameraStreamer:
-    def __init__(self, frame_source: Callable[[], bytes], fps: int = DEFAULT_FPS):
+    def __init__(
+        self,
+        frame_source: Callable[[], bytes] | None,
+        fps: int = DEFAULT_FPS,
+        resolution: str = DEFAULT_RESOLUTION,
+    ):
         self._frame_source = frame_source
         self.fps = fps
+        self.resolution = resolution
+        self._pending_resolution: str | None = None
+
+    def set_resolution(self, name: str) -> None:
+        if name not in RESOLUTIONS:
+            raise ValueError(f"unknown resolution {name!r}")
+        self._pending_resolution = name
+        # `.resolution` reflects the current/requested value immediately;
+        # `_pending_resolution` separately drives the actual picamera2
+        # reconfiguration, which must happen on the capture thread inside
+        # grab()/frames() rather than here.
+        self.resolution = name
 
     @classmethod
-    def from_hardware(cls, fps: int = DEFAULT_FPS) -> "CameraStreamer":
+    def from_hardware(cls, fps: int = DEFAULT_FPS, resolution: str = DEFAULT_RESOLUTION) -> "CameraStreamer":
         import io
 
         from picamera2 import Picamera2  # type: ignore
 
         cam = Picamera2()
-        cam.configure(
-            cam.create_video_configuration(main={"size": (WIDTH, HEIGHT), "format": "RGB888"})
-        )
-        cam.start()
+
+        def _configure(name: str) -> None:
+            w, h = RESOLUTIONS[name]
+            cam.stop()
+            cam.configure(cam.create_video_configuration(
+                main={"size": (w, h), "format": "RGB888"},
+                raw={"size": FULL_FOV_RAW_SIZE},
+            ))
+            cam.start()
+
+        _configure(resolution)
+
+        # Two-phase construction: build the streamer first so `grab` can
+        # close over it (to read/clear `_pending_resolution` and update
+        # `.resolution`), then attach the real frame_source.
+        streamer = cls(frame_source=None, fps=fps, resolution=resolution)
 
         def grab() -> bytes:
+            if streamer._pending_resolution is not None:
+                name, streamer._pending_resolution = streamer._pending_resolution, None
+                _configure(name)
+                streamer.resolution = name
             buf = io.BytesIO()
             cam.capture_file(buf, format="jpeg")
             return buf.getvalue()
 
-        return cls(grab, fps=fps)
+        streamer._frame_source = grab
+        return streamer
 
     async def frames(self) -> AsyncIterator[bytes]:
         """Yields JPEG frames, paced to ``fps``; capture runs in a worker thread."""
