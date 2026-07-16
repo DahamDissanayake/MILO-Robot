@@ -98,7 +98,7 @@
 .cam-overlay-row .btn { flex: 1; }
 .cam-dpad { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; }
 
-/* small segmented button row (SD/HD, Quality/Realtime, ...) */
+/* small segmented button row (SD/HD, mode buttons, ...) */
 .seg-row { display: flex; gap: 2px; }
 
 /* emote popover: bounded and scrollable so a long pose/face list stays
