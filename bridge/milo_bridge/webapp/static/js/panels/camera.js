@@ -1,13 +1,35 @@
+import { createPilotController } from "../pilot.js";
+import { mountEmotePopover } from "./poses.js";
+
 export default {
   id: "camera", title: "Camera",
   mount(el, { bus }) {
     el.innerHTML = `
       <div style="display:flex;flex-direction:column;gap:8px;height:100%">
-        <img id="cam" src="/stream/camera" alt="camera offline"
-             onerror="this.dataset.err=1">
+        <div id="cam-wrap" class="cam-wrap">
+          <img id="cam" src="/stream/camera" alt="camera offline" onerror="this.dataset.err=1">
+          <div id="cam-overlay" class="cam-overlay">
+            <div class="cam-overlay-row">
+              <button class="btn" id="ov-control">Take Control</button>
+              <button class="btn danger" id="ov-stop">STOP</button>
+              <div id="ov-emote-mount"></div>
+              <button class="btn ghost" id="ov-exit">✕ Exit Fullscreen</button>
+            </div>
+            <div class="cam-dpad">
+              <div></div><button class="btn" data-dpad="up" style="font-size:20px">↑</button><div></div>
+              <button class="btn" data-dpad="left" style="font-size:20px">←</button><div></div><button class="btn" data-dpad="right" style="font-size:20px">→</button>
+              <div></div><button class="btn" data-dpad="down" style="font-size:20px">↓</button><div></div>
+            </div>
+            <div class="cam-look-row">
+              <button class="btn" data-dpad="lookup">Look Up</button>
+              <button class="btn" data-dpad="lookdown">Look Down</button>
+            </div>
+          </div>
+        </div>
         <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
           <button class="btn" id="snap">Snapshot</button>
           <button class="btn" id="rec">Record</button>
+          <button class="btn" id="fullscreen">Fullscreen</button>
           <div style="display:flex;gap:2px;margin-left:auto" id="res-row">
             <button class="btn" data-res="sd">SD</button>
             <button class="btn" data-res="hd">HD</button>
@@ -15,6 +37,31 @@ export default {
         </div>
       </div>`;
     const img = el.querySelector("#cam");
+    const camWrap = el.querySelector("#cam-wrap");
+    const overlay = el.querySelector("#cam-overlay");
+
+    const pilot = createPilotController(bus, () => 70);
+    pilot.bindGaitButton(overlay.querySelector('[data-dpad="up"]'), "ov-up", 1);
+    pilot.bindGaitButton(overlay.querySelector('[data-dpad="down"]'), "ov-down", -1);
+    pilot.bindTurnButton(overlay.querySelector('[data-dpad="left"]'), "left");
+    pilot.bindTurnButton(overlay.querySelector('[data-dpad="right"]'), "right");
+    pilot.bindLookButton(overlay.querySelector('[data-dpad="lookup"]'), "up");
+    pilot.bindLookButton(overlay.querySelector('[data-dpad="lookdown"]'), "down");
+
+    const ovControl = overlay.querySelector("#ov-control");
+    ovControl.onclick = () => bus.send({ t: "control", take: !bus.controlled });
+    const offControl = bus.on("control", (m) => {
+      ovControl.textContent = m.you ? "Release Control" : "Take Control";
+      ovControl.classList.toggle("active", m.you);
+      overlay.classList.toggle("locked", !m.you);
+    });
+    overlay.querySelector("#ov-stop").onclick = () => bus.send({ t: "stop" });
+    overlay.querySelector("#ov-exit").onclick = () => document.exitFullscreen();
+
+    mountEmotePopover(overlay.querySelector("#ov-emote-mount"), { bus });
+
+    el.querySelector("#fullscreen").onclick = () => camWrap.requestFullscreen();
+
     el.querySelector("#snap").onclick = () => {
       const c = document.createElement("canvas");
       c.width = img.naturalWidth || 640; c.height = img.naturalHeight || 480;
@@ -70,6 +117,8 @@ export default {
 
     return () => {
       offTelemetry();
+      offControl();
+      pilot.stop();
       if (recorder && recorder.state === "recording") stopRecording();
     };
   },
