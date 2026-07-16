@@ -94,8 +94,12 @@
 .cam-overlay .comm-row { flex-direction: column; gap: 10px; }
 .cam-overlay .vu-group { align-self: flex-start; }
 .cam-overlay-left.locked .cam-pilot-control { opacity: 0.4; pointer-events: none; }
-.cam-overlay-row { display: flex; gap: 6px; }
-.cam-overlay-row .btn { flex: 1; }
+.cam-overlay-row { display: flex; flex-wrap: wrap; gap: 6px; }
+/* flex items default to a content-based min-width, which stops them
+   shrinking to fit a narrow row (e.g. the 3-button Raw/Balanced/Angled row
+   in the fullscreen dock) -- min-width: 0 lets them actually shrink per
+   their flex-basis, wrapping to a second line if they still don't fit. */
+.cam-overlay-row .btn { flex: 1 1 auto; min-width: 0; }
 .cam-dpad { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; }
 
 /* small segmented button row (SD/HD, mode buttons, ...) */
@@ -113,7 +117,11 @@
 .comm-row { display: flex; gap: 14px; align-items: stretch; }
 .comm-controls { flex: 1; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
 .comm-say { display: flex; gap: 6px; }
-.comm-say input { flex: 1; }
+/* text inputs have a browser-default intrinsic min-width (~170-200px) that
+   flex-shrink alone doesn't override -- min-width: 0 lets it actually
+   shrink to fit narrow containers (e.g. the fullscreen overlay's dock)
+   instead of overflowing and pushing the Say button out of view. */
+.comm-say input { flex: 1; min-width: 0; }
 .vu-group { display: flex; gap: 10px; flex-shrink: 0; align-self: center; }
 .vu-col { display: flex; flex-direction: column; align-items: center; gap: 4px; }
 .vu-label { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; }
