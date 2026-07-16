@@ -284,3 +284,40 @@ async def test_manual_denied_without_control():
         assert data["error"] == "not-controlling"
     finally:
         await client.close()
+
+
+async def test_camera_resolution_accepted_without_control():
+    """No control gate on camera_resolution -- observation is never
+    brokered in this codebase, only motion is."""
+    deps = make_deps(broker=ControlBroker())
+    client, ws = await _ws(deps)
+    try:
+        await ws.send_json({"t": "camera_resolution", "value": "hd"})
+        await _recv_json_until(ws, "ack")
+        assert deps.camera.resolution == "hd"
+    finally:
+        await client.close()
+
+
+async def test_camera_resolution_rejects_unknown_value():
+    deps = make_deps(broker=ControlBroker())
+    client, ws = await _ws(deps)
+    try:
+        await ws.send_json({"t": "camera_resolution", "value": "4k"})
+        data = await _recv_json_until(ws, "err")
+        assert data["for"] == "camera_resolution"
+        assert deps.camera.resolution == "sd"
+    finally:
+        await client.close()
+
+
+async def test_camera_resolution_errors_when_camera_unavailable():
+    deps = make_deps(broker=ControlBroker(), camera=None)
+    client, ws = await _ws(deps)
+    try:
+        await ws.send_json({"t": "camera_resolution", "value": "hd"})
+        data = await _recv_json_until(ws, "err")
+        assert data["for"] == "camera_resolution"
+        assert data["error"] == "camera unavailable"
+    finally:
+        await client.close()

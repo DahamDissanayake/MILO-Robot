@@ -56,6 +56,18 @@ async def _handle_text(app, ws, client_id: str, data: dict) -> None:
         await motion.stop()
         await ws.send_json({"t": "ack", "for": "stop"})
         return
+    if t == "camera_resolution":
+        camera = deps.camera
+        if camera is None:
+            await ws.send_json({"t": "err", "for": "camera_resolution", "error": "camera unavailable"})
+            return
+        try:
+            camera.set_resolution(data.get("value", ""))
+        except ValueError as exc:
+            await ws.send_json({"t": "err", "for": "camera_resolution", "error": str(exc)})
+            return
+        await ws.send_json({"t": "ack", "for": "camera_resolution"})
+        return
     if t == "mode":
         res = await motion.mode(client_id, data.get("name", ""))
         if "error" in res:
