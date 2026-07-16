@@ -39,46 +39,63 @@
   background: #000; display: flex; align-items: center; justify-content: center;
 }
 .cam-wrap:fullscreen #cam {
-  /* Scale to fill as much of the screen as possible while keeping the
-     camera's real aspect ratio -- never distorted/stretched. SD and HD
-     share the same 4:3 ratio, so this looks identical either way; SD just
-     renders at a lower source resolution, scaled up. */
-  max-width: 100vw; max-height: 100vh; width: auto; height: auto; aspect-ratio: auto; object-fit: contain;
+  /* Fill the available screen space while keeping the camera's real 4:3
+     aspect ratio -- never distorted/stretched (object-fit: contain, not
+     fill). SD and HD share the same ratio, so both scale up to the same
+     displayed size; SD just renders that size from a lower-res source. */
+  width: 100%; height: 100%; aspect-ratio: auto; object-fit: contain;
 }
 
-/* Floating piloting panel, bottom-right corner of the fullscreen video --
-   deliberately NOT spread across the screen or centered, so it never blocks
-   the view of the robot. Its own dark glass panel regardless of the site's
-   light/dark theme, since it sits over live video (unknown brightness), not
-   the page background. */
+/* Floating piloting/control dock, anchored to the bottom-right corner of
+   the fullscreen video -- deliberately NOT spread across or centered on the
+   screen, so it never blocks the view of the robot. Anchored top+bottom so
+   its height is whatever fits between them, scrollable if the content (now
+   piloting + camera + communication + sensors) runs long. Its own dark
+   glass panel regardless of the site's light/dark theme, since it sits over
+   live video (unknown brightness), not the page background. */
 .cam-overlay {
-  position: absolute; right: 18px; bottom: 18px; display: none;
-  flex-direction: column; gap: 8px; width: 200px; padding: 12px;
-  background: rgba(15, 15, 15, 0.78); border: 1px solid rgba(255, 255, 255, 0.16);
+  position: absolute; top: 18px; right: 18px; bottom: 18px; display: none;
+  flex-direction: column; gap: 8px; width: 220px; padding: 12px;
+  background: rgba(15, 15, 15, 0.82); border: 1px solid rgba(255, 255, 255, 0.16);
   border-radius: 12px; backdrop-filter: blur(6px);
+  overflow-y: auto; overflow-x: hidden;
 }
 .cam-wrap:fullscreen .cam-overlay { display: flex; }
-.cam-overlay, .cam-overlay .muted { color: #f2f2f2; }
+.cam-overlay-divider { border-top: 1px solid rgba(255, 255, 255, 0.14); margin: 2px 0; }
+.cam-overlay, .cam-overlay .muted, .cam-overlay .label, .cam-overlay .vu-label,
+.cam-overlay .hw-name { color: #f2f2f2; }
 .cam-overlay .btn {
   background: rgba(255, 255, 255, 0.08); border-color: rgba(255, 255, 255, 0.28); color: #f2f2f2;
 }
 .cam-overlay .btn:hover { background: rgba(255, 255, 255, 0.2); }
 .cam-overlay .btn.active { background: #f2f2f2; color: #111; }
 .cam-overlay .btn.danger { border-color: var(--danger); color: #ff8a80; }
-.cam-overlay .emote-popover { background: rgba(15, 15, 15, 0.9); border-color: rgba(255, 255, 255, 0.16); }
-.cam-overlay.locked .cam-dpad,
-.cam-overlay.locked .cam-overlay-row:has([data-dpad]) { opacity: 0.4; pointer-events: none; }
+.cam-overlay input:not([type="range"]) {
+  background: rgba(255, 255, 255, 0.08); border-color: rgba(255, 255, 255, 0.28); color: #f2f2f2;
+}
+.cam-overlay .vu-vertical { background: rgba(255, 255, 255, 0.08); border-color: rgba(255, 255, 255, 0.28); }
+.cam-overlay .emote-popover { background: rgba(15, 15, 15, 0.92); border-color: rgba(255, 255, 255, 0.16); }
+.cam-overlay .sensor-tile { border-color: rgba(255, 255, 255, 0.16); }
+/* the Communication panel's row layout (controls beside VU meters) is too
+   wide for this narrow dock -- stack them instead */
+.cam-overlay .comm-row { flex-direction: column; gap: 10px; }
+.cam-overlay .vu-group { align-self: flex-start; }
+.cam-overlay.locked .cam-pilot-control { opacity: 0.4; pointer-events: none; }
 .cam-overlay-row { display: flex; gap: 6px; }
 .cam-overlay-row .btn { flex: 1; }
 .cam-dpad { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; }
-.emote-popover {
-  background: var(--surface); border: 1px solid var(--line); border-radius: 8px;
-  padding: 10px; margin-top: 6px;
-}
 
 /* small segmented button row (SD/HD, Quality/Realtime, ...) */
 .seg-row { display: flex; gap: 2px; }
 .comm-listen-row { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+
+/* emote popover: bounded and scrollable so a long pose/face list stays
+   inside its own box instead of pushing content off-screen (matters most
+   inside the fullscreen overlay's fixed-height dock). */
+.emote-popover {
+  background: var(--surface); border: 1px solid var(--line); border-radius: 8px;
+  padding: 10px; margin-top: 6px; max-height: 220px; overflow-y: auto;
+}
 
 /* communication panel */
 .comm-row { display: flex; gap: 14px; align-items: stretch; }

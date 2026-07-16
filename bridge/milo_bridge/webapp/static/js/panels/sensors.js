@@ -5,25 +5,57 @@
 const HISTORY_LEN = 120;
 const GYRO_HOT_DPS = 90; // deg/s magnitude before the IMU plate glows
 
+// Self-contained IMU 3D-plate widget (with its own Reset to Flat button),
+// exported so both the Sensors panel (default export) and the camera
+// fullscreen overlay can mount the exact same gyro widget wired to the
+// same "imu" bus messages, without duplicating that wiring. `el` is
+// expected to already carry whatever tile/sizing classes the caller wants
+// (e.g. "sensor-tile imu-tile") — this only fills its contents.
+export function mountImuPlate(el, { bus }) {
+  el.innerHTML = `
+    <div class="imu-tile-head">
+      <div class="label">IMU</div>
+      <button class="btn ghost imu-reset-btn">Reset to Flat</button>
+    </div>
+    <div class="imu-plate-wrap"><div class="imu-plate">
+      <div class="imu-face top"></div>
+      <div class="imu-face front"></div>
+      <div class="imu-face back"></div>
+      <div class="imu-face left"></div>
+      <div class="imu-face right"></div>
+    </div></div>
+    <div class="muted imu-reset-note"></div>`;
+
+  const plate = el.querySelector(".imu-plate");
+  const offImu = bus.on("imu", (m) => {
+    plate.style.setProperty("--pitch", (m.pitch ?? 0).toFixed(2));
+    plate.style.setProperty("--roll", (m.roll ?? 0).toFixed(2));
+    plate.style.setProperty("--ax", (m.accel?.[0] ?? 0).toFixed(3));
+    plate.style.setProperty("--ay", (m.accel?.[1] ?? 0).toFixed(3));
+    const mag = Math.hypot(...(m.gyro ?? [0, 0, 0]));
+    plate.classList.toggle("hot", mag >= GYRO_HOT_DPS);
+  });
+
+  const resetBtn = el.querySelector(".imu-reset-btn");
+  const resetNote = el.querySelector(".imu-reset-note");
+  resetBtn.onclick = async () => {
+    resetBtn.disabled = true;
+    const r = await fetch("/api/imu/zero", { method: "POST" })
+      .then((r) => r.json()).catch(() => ({ error: "network" }));
+    resetBtn.disabled = false;
+    resetNote.textContent = r.error ? `✗ ${r.error}` : "✓ zeroed";
+    setTimeout(() => { resetNote.textContent = ""; }, 1500);
+  };
+
+  return () => offImu();
+}
+
 export default {
   id: "sensors", title: "Sensors",
   mount(el, { bus }) {
     el.innerHTML = `
       <div class="sensor-tiles">
-        <div class="sensor-tile imu-tile">
-          <div class="imu-tile-head">
-            <div class="label">IMU</div>
-            <button class="btn ghost imu-reset-btn" id="imu-reset-btn">Reset to Flat</button>
-          </div>
-          <div class="imu-plate-wrap"><div class="imu-plate" id="plate-imu">
-            <div class="imu-face top"></div>
-            <div class="imu-face front"></div>
-            <div class="imu-face back"></div>
-            <div class="imu-face left"></div>
-            <div class="imu-face right"></div>
-          </div></div>
-          <div class="muted imu-reset-note" id="imu-reset-note"></div>
-        </div>
+        <div class="sensor-tile imu-tile" id="imu-slot"></div>
         <div class="sensor-tile"><div class="label">SoC Temp</div><div class="value" id="tile-temp">—</div></div>
         <div class="sensor-tile"><div class="label">CPU</div><div class="value" id="tile-cpu">—</div></div>
         <div class="sensor-tile"><div class="label">RAM</div><div class="value" id="tile-ram">—</div></div>
@@ -34,6 +66,8 @@ export default {
         <div class="spark-label">System — CPU % / RAM % / Temp °C</div>
         <canvas id="spark-system" width="360" height="50"></canvas>
       </div>`;
+
+    const offImu = mountImuPlate(el.querySelector("#imu-slot"), { bus });
 
     const systemHist = [];
     const cvS = el.querySelector("#spark-system"), gS = cvS.getContext("2d");
@@ -57,16 +91,6 @@ export default {
       }
     }
 
-    const plate = el.querySelector("#plate-imu");
-    const offImu = bus.on("imu", (m) => {
-      plate.style.setProperty("--pitch", (m.pitch ?? 0).toFixed(2));
-      plate.style.setProperty("--roll", (m.roll ?? 0).toFixed(2));
-      plate.style.setProperty("--ax", (m.accel?.[0] ?? 0).toFixed(3));
-      plate.style.setProperty("--ay", (m.accel?.[1] ?? 0).toFixed(3));
-      const mag = Math.hypot(...(m.gyro ?? [0, 0, 0]));
-      plate.classList.toggle("hot", mag >= GYRO_HOT_DPS);
-    });
-
     const offT = bus.on("telemetry", (m) => {
       el.querySelector("#tile-temp").textContent = m.temp_c == null ? "n/a" : `${m.temp_c.toFixed(1)}°C`;
       el.querySelector("#tile-cpu").textContent = m.cpu_percent == null ? "n/a" : `${m.cpu_percent}%`;
@@ -85,17 +109,6 @@ export default {
             <span class="hw-state" style="color:${ok ? "var(--ok)" : "var(--danger)"}">${ok ? "Connected" : "Not connected"}</span>
           </div>`).join("");
     });
-
-    const resetBtn = el.querySelector("#imu-reset-btn");
-    const resetNote = el.querySelector("#imu-reset-note");
-    resetBtn.onclick = async () => {
-      resetBtn.disabled = true;
-      const r = await fetch("/api/imu/zero", { method: "POST" })
-        .then((r) => r.json()).catch(() => ({ error: "network" }));
-      resetBtn.disabled = false;
-      resetNote.textContent = r.error ? `✗ ${r.error}` : "✓ zeroed";
-      setTimeout(() => { resetNote.textContent = ""; }, 1500);
-    };
 
     const details = el.querySelector("#sensor-details");
     const detailsBtn = el.querySelector("#sensor-details-btn");
