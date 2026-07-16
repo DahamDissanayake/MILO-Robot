@@ -13,6 +13,10 @@ export default {
         <button class="btn" id="reset" style="flex:1">Reset (90°)</button>
         <button class="btn" id="standby" style="flex:1">Standby</button>
       </div>
+      <div style="display:flex;gap:8px;margin-top:8px">
+        <button class="btn" id="relax" style="flex:1">Relax (cut PWM)</button>
+        <button class="btn" id="hold" style="flex:1">Hold (re-engage)</button>
+      </div>
       <button class="btn" id="manual" style="margin-top:8px;width:100%">Manual Servo Mode: Off</button>
       <button class="btn danger" id="restart" style="margin-top:8px;width:100%">Restart Bridge (I2C reset)</button>`;
     el.querySelectorAll("input[type=range]").forEach((sl) => {
@@ -29,6 +33,8 @@ export default {
       bus.send({ t: "reset" });
     };
     el.querySelector("#standby").onclick = () => bus.send({ t: "standby" });
+    el.querySelector("#relax").onclick = () => bus.send({ t: "relax" });
+    el.querySelector("#hold").onclick = () => bus.send({ t: "hold" });
 
     const manualBtn = el.querySelector("#manual");
     function setManualButton(on) {
