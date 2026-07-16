@@ -1,4 +1,5 @@
-const SEND_MS = 100;
+import { createPilotController } from "../pilot.js";
+
 const MODES = ["raw", "balanced", "angled"];
 const MODE_LABEL = { raw: "Raw", balanced: "Balanced", angled: "Angled" };
 
@@ -28,7 +29,7 @@ export default {
       </div>`;
     const speed = el.querySelector("#speed");
     const modeStatus = el.querySelector("#mode-status");
-    let vec = { vx: 0 }, timer = null;
+    const pilot = createPilotController(bus, () => speed.value);
 
     function setModeButtons(name) {
       el.querySelectorAll("[data-mode]").forEach((b) => b.classList.toggle("active", b.dataset.mode === name));
@@ -47,113 +48,71 @@ export default {
     // -- continuous gait: forward/backward only (turning uses the scripted
     // turn_left/turn_right gait below; look up/down are held poses, not
     // part of this velocity-command path) --
-    function sending(active) {
-      if (active && !timer) timer = setInterval(() => bus.send({ t: "gait", ...scaled() }), SEND_MS);
-      if (!active && timer) { clearInterval(timer); timer = null; bus.send({ t: "gait", vx: 0, vy: 0, yaw: 0 }); }
-    }
-    const scaled = () => ({ vx: vec.vx * (speed.value / 100), vy: 0, yaw: 0 });
+    pilot.bindGaitButton(el.querySelector('[data-dpad="up"]'), "btn-up", 1);
+    pilot.bindGaitButton(el.querySelector('[data-dpad="down"]'), "btn-down", -1);
 
     const gaitKeys = { w: 1, s: -1, ArrowUp: 1, ArrowDown: -1 };
-    const down = new Set();
-    const sync = () => {
-      let vx = 0;
-      down.forEach((k) => { vx += gaitKeys[k]; });
-      vec = { vx: Math.sign(vx) };
-      sending(down.size > 0);
-    };
-    const kd = (e) => { if (gaitKeys[e.key] !== undefined && !e.repeat && e.target.tagName !== "INPUT") { down.add(e.key); sync(); } };
-    const ku = (e) => { if (gaitKeys[e.key] !== undefined) { down.delete(e.key); sync(); } };
+    const kd = (e) => { if (gaitKeys[e.key] !== undefined && !e.repeat && e.target.tagName !== "INPUT") pilot.gaitPress(e.key, gaitKeys[e.key]); };
+    const ku = (e) => { if (gaitKeys[e.key] !== undefined) pilot.gaitRelease(e.key); };
     window.addEventListener("keydown", kd);
     window.addEventListener("keyup", ku);
 
-    function bindGaitButton(dir, key) {
-      const btn = el.querySelector(`[data-dpad="${dir}"]`);
-      const press = (e) => { e.preventDefault(); down.add(key); sync(); };
-      const release = () => { down.delete(key); sync(); };
-      btn.addEventListener("pointerdown", press);
-      btn.addEventListener("pointerup", release);
-      btn.addEventListener("pointerleave", release);
-      btn.addEventListener("pointercancel", release);
-    }
-    bindGaitButton("up", "w");
-    bindGaitButton("down", "s");
-
     // -- turn: scripted gait, held via a large cycle count on the server
     // and stopped with the existing universal {t:"stop"} message --
-    function bindScripted(dir, msg) {
-      const btn = el.querySelector(`[data-dpad="${dir}"]`);
-      const press = (e) => { e.preventDefault(); bus.send(msg); };
-      const release = () => bus.send({ t: "stop" });
-      btn.addEventListener("pointerdown", press);
-      btn.addEventListener("pointerup", release);
-      btn.addEventListener("pointerleave", release);
-      btn.addEventListener("pointercancel", release);
-    }
-    bindScripted("left", { t: "turn", dir: "left" });
-    bindScripted("right", { t: "turn", dir: "right" });
+    pilot.bindTurnButton(el.querySelector('[data-dpad="left"]'), "left");
+    pilot.bindTurnButton(el.querySelector('[data-dpad="right"]'), "right");
 
     const turnKeys = { a: "left", d: "right", ArrowLeft: "left", ArrowRight: "right" };
     const scriptedDown = new Set();
     const skd = (e) => {
       if (e.repeat || e.target.tagName === "INPUT" || scriptedDown.has(e.key) || !turnKeys[e.key]) return;
       scriptedDown.add(e.key);
-      bus.send({ t: "turn", dir: turnKeys[e.key] });
+      pilot.turnPress(turnKeys[e.key]);
     };
     const sku = (e) => {
-      if (turnKeys[e.key]) { scriptedDown.delete(e.key); bus.send({ t: "stop" }); }
+      if (turnKeys[e.key]) { scriptedDown.delete(e.key); pilot.turnRelease(); }
     };
     window.addEventListener("keydown", skd);
     window.addEventListener("keyup", sku);
 
     // -- look up/down: held, not toggled. Press and hold to move to the
-    // tilted pose and stay there; release to return to stand. The look
-    // pose itself only takes ~400ms to play, so without manual mode the
-    // gait engine's own 50Hz tick would resume and overwrite it seconds
-    // into the hold -- manual:true (sent first, so its own abort() doesn't
-    // cut the pose off mid-flight) freezes the gait engine's writes for as
-    // long as the button stays down. --
+    // tilted pose and stay there; release to return to stand. pilot.js
+    // owns the actual bus messages -- this block only owns the .active
+    // highlight, which is specific to this panel's own buttons. --
     function setLookButtons(dir) {
       el.querySelector('[data-dpad="lookup"]').classList.toggle("active", dir === "up");
       el.querySelector('[data-dpad="lookdown"]').classList.toggle("active", dir === "down");
     }
-    function lookPress(dir) {
-      bus.send({ t: "manual", on: true });
-      bus.send({ t: "pose", name: `look_${dir}` });
-      setLookButtons(dir);
-    }
-    function lookRelease() {
-      bus.send({ t: "standby" });
-      bus.send({ t: "manual", on: false });
-      setLookButtons(null);
-    }
-
-    function bindLookButton(dir) {
-      const btn = el.querySelector(`[data-dpad="look${dir}"]`);
-      const press = (e) => { e.preventDefault(); lookPress(dir); };
-      btn.addEventListener("pointerdown", press);
-      btn.addEventListener("pointerup", lookRelease);
-      btn.addEventListener("pointerleave", lookRelease);
-      btn.addEventListener("pointercancel", lookRelease);
-    }
-    bindLookButton("up");
-    bindLookButton("down");
+    pilot.bindLookButton(el.querySelector('[data-dpad="lookup"]'), "up");
+    pilot.bindLookButton(el.querySelector('[data-dpad="lookdown"]'), "down");
+    ["lookup", "lookdown"].forEach((id) => {
+      const btn = el.querySelector(`[data-dpad="${id}"]`);
+      const dir = id === "lookup" ? "up" : "down";
+      const on = () => setLookButtons(dir);
+      const off = () => setLookButtons(null);
+      btn.addEventListener("pointerdown", on);
+      btn.addEventListener("pointerup", off);
+      btn.addEventListener("pointerleave", off);
+      btn.addEventListener("pointercancel", off);
+    });
 
     const lookKeys = { q: "up", e: "down" };
     const lookKeyDown = new Set();
     const lkd = (e) => {
       if (e.repeat || e.target.tagName === "INPUT" || !lookKeys[e.key] || lookKeyDown.has(e.key)) return;
       lookKeyDown.add(e.key);
-      lookPress(lookKeys[e.key]);
+      pilot.lookPress(lookKeys[e.key]);
+      setLookButtons(lookKeys[e.key]);
     };
     const lku = (e) => {
-      if (lookKeys[e.key]) { lookKeyDown.delete(e.key); lookRelease(); }
+      if (lookKeys[e.key]) { lookKeyDown.delete(e.key); pilot.lookRelease(); setLookButtons(null); }
     };
     window.addEventListener("keydown", lkd);
     window.addEventListener("keyup", lku);
 
     el.querySelector("#mstop").onclick = () => bus.send({ t: "stop" });
     return () => {
-      sending(false);
+      pilot.stop();
       offMode();
       offTelemetry();
       window.removeEventListener("keydown", kd);
