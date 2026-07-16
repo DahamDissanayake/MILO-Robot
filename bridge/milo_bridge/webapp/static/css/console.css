@@ -39,24 +39,45 @@
   background: #000; display: flex; align-items: center; justify-content: center;
 }
 .cam-wrap:fullscreen #cam {
-  max-width: 100vw; max-height: 100vh; width: auto; height: auto; aspect-ratio: auto;
+  /* Fill the screen edge-to-edge rather than letterboxing -- stretching a
+     low-res (SD) stream to fill is an accepted tradeoff so the picture
+     always uses the full screen regardless of which resolution is active. */
+  width: 100vw; height: 100vh; aspect-ratio: auto; object-fit: fill;
 }
+
+/* Floating piloting panel, bottom-right corner of the fullscreen video --
+   deliberately NOT spread across the screen or centered, so it never blocks
+   the view of the robot. Its own dark glass panel regardless of the site's
+   light/dark theme, since it sits over live video (unknown brightness), not
+   the page background. */
 .cam-overlay {
-  position: absolute; inset: 0; display: none; flex-direction: column;
-  justify-content: space-between; align-items: center; padding: 20px;
-  pointer-events: none;
+  position: absolute; right: 18px; bottom: 18px; display: none;
+  flex-direction: column; gap: 8px; width: 200px; padding: 12px;
+  background: rgba(15, 15, 15, 0.78); border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 12px; backdrop-filter: blur(6px);
 }
 .cam-wrap:fullscreen .cam-overlay { display: flex; }
-.cam-overlay > * { pointer-events: auto; }
+.cam-overlay, .cam-overlay .muted { color: #f2f2f2; }
+.cam-overlay .btn {
+  background: rgba(255, 255, 255, 0.08); border-color: rgba(255, 255, 255, 0.28); color: #f2f2f2;
+}
+.cam-overlay .btn:hover { background: rgba(255, 255, 255, 0.2); }
+.cam-overlay .btn.active { background: #f2f2f2; color: #111; }
+.cam-overlay .btn.danger { border-color: var(--danger); color: #ff8a80; }
+.cam-overlay .emote-popover { background: rgba(15, 15, 15, 0.9); border-color: rgba(255, 255, 255, 0.16); }
 .cam-overlay.locked .cam-dpad,
-.cam-overlay.locked .cam-look-row { opacity: 0.4; pointer-events: none; }
-.cam-overlay-row { display: flex; gap: 8px; align-items: center; }
-.cam-dpad { display: grid; grid-template-columns: 56px 56px 56px; gap: 6px; }
-.cam-look-row { display: flex; gap: 8px; }
+.cam-overlay.locked .cam-overlay-row:has([data-dpad]) { opacity: 0.4; pointer-events: none; }
+.cam-overlay-row { display: flex; gap: 6px; }
+.cam-overlay-row .btn { flex: 1; }
+.cam-dpad { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; }
 .emote-popover {
   background: var(--surface); border: 1px solid var(--line); border-radius: 8px;
   padding: 10px; margin-top: 6px;
 }
+
+/* small segmented button row (SD/HD, Quality/Realtime, ...) */
+.seg-row { display: flex; gap: 2px; }
+.comm-listen-row { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
 
 /* communication panel */
 .comm-row { display: flex; gap: 14px; align-items: stretch; }

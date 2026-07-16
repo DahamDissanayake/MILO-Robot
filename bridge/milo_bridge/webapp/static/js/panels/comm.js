@@ -1,26 +1,30 @@
 // Communication panel: merges the old Ears (listen) and Voice (speak) cards.
 // Listening (headphones + VU meter) needs no control; push-to-talk and Say
 // are individually locked until this tab holds control.
+import { ICON_HEADPHONES, ICON_MIC } from "../icons.js";
+
 const SAMPLE_RATE = 16000;   // must match the robot's capture/playback rate
 const CHANNELS = 2;
 const HOT_THRESHOLD = 0.5;   // level (0-1) above which the VU bar turns red
+
+// Two listening presets, switchable live from the UI (see #audio-mode-row):
+//
 // Server sends 20ms chunks; scheduling each one as its own AudioBufferSourceNode
 // makes playback exquisitely sensitive to network/GC jitter (any late chunk is
 // an audible drop). Coalescing a few chunks into one larger buffer before
-// scheduling cuts the node-creation rate 4x, and a wider lookahead margin
-// gives the pipeline (network + server queue) more room to catch up without
-// an audible gap. Both trade a bit of latency for smoothness -- fine for
+// scheduling cuts the node-creation rate, and a wider lookahead margin gives
+// the pipeline (network + server queue) more room to catch up without an
+// audible gap -- "quality" trades latency for that smoothness, fine for
 // "listen to the room", not meant for interactive back-and-forth voice.
-const COALESCE_CHUNKS = 4;   // ~80ms per scheduled buffer
-const LOOKAHEAD_S = 0.15;
-// playHead only ever moves forward; nothing about scheduling ahead of time
-// brings it back down. If frames ever arrive faster than real-time (a burst
-// after a brief stall, a slow start right when the connection opens), the
-// backlog compounds and never resyncs -- latency creeps upward for the rest
-// of the session. Cap it: once the scheduled backlog exceeds this, snap back
-// to "now + lookahead" instead of letting it grow, accepting a brief glitch
-// in exchange for bounded, LAN-appropriate latency.
-const MAX_LATENCY_S = 0.35;
+// "realtime" shrinks all three toward zero for much lower latency, accepting
+// that a network hiccup is now more likely to produce an audible gap instead
+// of being silently absorbed. Purely client-side -- the server's own queue
+// depth (media_hub.py's AUDIO_QUEUE_SIZE) is a separate, shared latency floor
+// this toggle doesn't touch.
+const AUDIO_MODES = {
+  quality: { coalesce: 4, lookahead: 0.15, maxLatency: 0.35 },
+  realtime: { coalesce: 1, lookahead: 0.03, maxLatency: 0.08 },
+};
 
 export default {
   id: "comm", title: "Communication",
@@ -28,8 +32,14 @@ export default {
     el.innerHTML = `
       <div class="comm-row">
         <div class="comm-controls">
-          <button class="btn" id="headphones">🎧 Listen</button>
-          <button class="btn" id="ptt">🎙 Hold to Talk</button>
+          <div class="comm-listen-row">
+            <button class="btn" id="headphones">${ICON_HEADPHONES}Listen</button>
+            <div class="seg-row" id="audio-mode-row">
+              <button class="btn" data-audio-mode="quality">Quality</button>
+              <button class="btn" data-audio-mode="realtime">Realtime</button>
+            </div>
+          </div>
+          <button class="btn" id="ptt">${ICON_MIC}Hold to Talk</button>
           <div class="comm-say">
             <input id="say" placeholder="Type something to say…">
             <button class="btn" id="speak">Say</button>
@@ -48,6 +58,16 @@ export default {
     const vuR = el.querySelector("#vu-r");
     let playCtx = null, playHead = 0, listening = false;
     let pending = [], pendingSamples = 0;
+    let audioMode = "quality";
+
+    const modeRow = el.querySelector("#audio-mode-row");
+    function setAudioModeButtons(name) {
+      modeRow.querySelectorAll("[data-audio-mode]").forEach((b) => b.classList.toggle("active", b.dataset.audioMode === name));
+    }
+    setAudioModeButtons(audioMode);
+    modeRow.querySelectorAll("[data-audio-mode]").forEach((b) => {
+      b.onclick = () => { audioMode = b.dataset.audioMode; setAudioModeButtons(audioMode); };
+    });
 
     function setLevel(bar, level) {
       bar.style.setProperty("--level", Math.min(1, level).toFixed(3));
@@ -69,10 +89,11 @@ export default {
       }
       const src = playCtx.createBufferSource();
       src.buffer = buf; src.connect(playCtx.destination);
-      if (playHead - playCtx.currentTime > MAX_LATENCY_S) {
-        playHead = playCtx.currentTime + LOOKAHEAD_S; // resync: drop the backlog, bound latency
+      const { lookahead, maxLatency } = AUDIO_MODES[audioMode];
+      if (playHead - playCtx.currentTime > maxLatency) {
+        playHead = playCtx.currentTime + lookahead; // resync: drop the backlog, bound latency
       } else {
-        playHead = Math.max(playHead, playCtx.currentTime + LOOKAHEAD_S);
+        playHead = Math.max(playHead, playCtx.currentTime + lookahead);
       }
       src.start(playHead);
       playHead += buf.duration;
@@ -93,12 +114,12 @@ export default {
       const pcm = new Int16Array(bytes.buffer, 0, bytes.byteLength >> 1);
       pending.push(pcm);
       pendingSamples += pcm.length;
-      if (pending.length >= COALESCE_CHUNKS) flushPending();
+      if (pending.length >= AUDIO_MODES[audioMode].coalesce) flushPending();
     });
 
     headphones.onclick = () => {
       listening = !listening;
-      headphones.textContent = listening ? "🎧 Mute" : "🎧 Listen";
+      headphones.innerHTML = listening ? `${ICON_HEADPHONES}Mute` : `${ICON_HEADPHONES}Listen`;
       headphones.classList.toggle("active", listening);
       if (listening && !playCtx) playCtx = new AudioContext({ sampleRate: SAMPLE_RATE });
       if (listening) {
