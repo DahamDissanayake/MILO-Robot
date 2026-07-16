@@ -14,8 +14,8 @@
 - No server-side video recording/storage — recording is entirely client-side.
 - No control-gating on camera resolution switching — observation is never brokered in this codebase (only motion is), matching the existing camera panel's lack of `needsControl`.
 - No new JS test infrastructure — verify frontend changes manually via `webdev.py`.
-- Backend tests run from the `bridge/` directory: `python -m pytest tests/ -q` (or a narrower path/`-k` filter per task).
-- Every commit is a real git commit on the current branch (`main`), one per task, following this repo's existing commit style (no AI co-author trailer — short, present-tense, prefixed `feat:`/`fix:`/`test:`/`docs:` as appropriate to match recent history).
+- Backend single-file/`-k`-filtered test commands in this plan run from the `bridge/` directory (e.g. `python -m pytest tests/test_camera.py -v`). **Full-suite runs and `test_static_integrity.py` are CWD-sensitive** (pre-existing: that test resolves paths like `Path("bridge/milo_bridge/webapp/static")` relative to CWD) and must be run from the **repo root** instead, as `python -m pytest bridge/tests/ -q` — every "full suite" step below is written that way; do not shortcut it to `tests/ -q` from inside `bridge/`, which spuriously fails 4 unrelated tests.
+- Every commit is a real git commit on the current branch, one per task, following this repo's existing commit style (no AI co-author trailer — short, present-tense, prefixed `feat:`/`fix:`/`test:`/`docs:` as appropriate to match recent history).
 
 ---
 
@@ -191,7 +191,7 @@ Expected: 4 passed.
 
 - [ ] **Step 5: Run the full backend suite to check for regressions**
 
-Run: `python -m pytest tests/ -q`
+Run (from the repo root, not `bridge/` — see Global Constraints): `python -m pytest bridge/tests/ -q`
 Expected: all pass (same count as before plus the 4 new tests).
 
 - [ ] **Step 6: Commit**
@@ -418,7 +418,7 @@ Expected: all pass, including the 3 new tests.
 
 - [ ] **Step 5: Run the full backend suite**
 
-Run: `python -m pytest tests/ -q`
+Run (from the repo root, not `bridge/` — see Global Constraints): `python -m pytest bridge/tests/ -q`
 Expected: all pass.
 
 - [ ] **Step 6: Commit**
@@ -687,7 +687,7 @@ export default {
 
 `move.js` doesn't change its imports of anything `registry.js`-visible, but `pilot.js` is a new file referenced only from `move.js`/`camera.js`, not `registry.js` — confirm this doesn't break the existing static-integrity guard:
 
-Run (from `bridge/`): `python -m pytest tests/webapp/test_static_integrity.py -v`
+Run (from the repo root, not `bridge/` — this test resolves paths relative to CWD, see Global Constraints): `python -m pytest bridge/tests/webapp/test_static_integrity.py -v`
 Expected: all pass (this test only walks `index.html` and `registry.js`'s own imports, not transitive imports, so `pilot.js` isn't required to appear there).
 
 - [ ] **Step 3: Manual verification**
@@ -1095,7 +1095,7 @@ Open `http://localhost:8080`, take control. Click "Fullscreen" — the video exp
 
 - [ ] **Step 4: Run the full backend suite once more (final regression check)**
 
-Run (from `bridge/`): `python -m pytest tests/ -q`
+Run (from the repo root, not `bridge/` — see Global Constraints): `python -m pytest bridge/tests/ -q`
 Expected: all pass.
 
 - [ ] **Step 5: Commit**
@@ -1113,7 +1113,7 @@ git commit -m "feat(webapp): add fullscreen piloting overlay to camera panel"
 
 - [ ] **Step 1: Full backend test suite**
 
-Run (from `bridge/`): `python -m pytest tests/ -q`
+Run (from the repo root, not `bridge/` — see Global Constraints): `python -m pytest bridge/tests/ -q`
 Expected: all pass (Task 1's 4 new tests, Task 3's updated test, Task 4's 3 new tests, plus every pre-existing test).
 
 - [ ] **Step 2: Full manual walkthrough**
