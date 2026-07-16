@@ -99,13 +99,19 @@ class FakeAudio:
 
 
 class FakeCamera:
-    def __init__(self, frames=(b"jpeg-a", b"jpeg-b")):
+    def __init__(self, frames=(b"jpeg-a", b"jpeg-b"), resolution="sd"):
         self._frames = list(frames)
+        self.resolution = resolution
 
     async def frames(self):
         for f in self._frames:
             yield f
             await asyncio.sleep(0)
+
+    def set_resolution(self, name):
+        if name not in ("sd", "hd"):
+            raise ValueError(f"unknown resolution {name!r}")
+        self.resolution = name
 
 
 class FakeImu:
