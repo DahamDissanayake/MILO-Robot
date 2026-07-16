@@ -76,5 +76,6 @@ def collect_telemetry(deps) -> dict:
         "owner": deps.broker.owner if deps.broker else "none",
         "gait_backend": getattr(deps.gait, "backend", None),
         "gait_mode": getattr(deps.gait, "mode", None),
+        "camera_resolution": getattr(deps.camera, "resolution", None),
         "imu": imu_snapshot(deps),
     }

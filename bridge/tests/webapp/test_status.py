@@ -18,6 +18,7 @@ async def test_status_reports_identity_and_hardware():
         assert data["link"] == "disconnected"
         assert data["gait_backend"] == "cpg"
         assert data["gait_mode"] == "raw"
+        assert data["camera_resolution"] == "sd"
     finally:
         await client.close()
 
