@@ -44,6 +44,7 @@ export default {
         a.download = `milo-${Date.now()}.webm`;
         a.click();
         URL.revokeObjectURL(a.href);
+        recBtn.disabled = false;
       };
       recorder.start();
       recBtn.textContent = "⏺ Stop & Save";
@@ -53,6 +54,7 @@ export default {
       recorder?.stop();
       recBtn.textContent = "Record";
       recBtn.classList.remove("active");
+      recBtn.disabled = true;
     }
     recBtn.onclick = () => (recorder && recorder.state === "recording" ? stopRecording() : startRecording());
 
