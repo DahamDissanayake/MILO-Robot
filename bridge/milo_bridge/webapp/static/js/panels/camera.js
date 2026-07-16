@@ -7,6 +7,7 @@ export default {
              onerror="this.dataset.err=1">
         <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
           <button class="btn" id="snap">Snapshot</button>
+          <button class="btn" id="rec">Record</button>
           <div style="display:flex;gap:2px;margin-left:auto" id="res-row">
             <button class="btn" data-res="sd">SD</button>
             <button class="btn" data-res="hd">HD</button>
@@ -24,6 +25,37 @@ export default {
       a.click();
     };
 
+    const recBtn = el.querySelector("#rec");
+    let recorder = null, recChunks = [], recTimer = null;
+    function startRecording() {
+      const canvas = document.createElement("canvas");
+      canvas.width = img.naturalWidth || 640;
+      canvas.height = img.naturalHeight || 480;
+      const ctx = canvas.getContext("2d");
+      recTimer = setInterval(() => ctx.drawImage(img, 0, 0, canvas.width, canvas.height), 66);
+      recChunks = [];
+      recorder = new MediaRecorder(canvas.captureStream(15), { mimeType: "video/webm" });
+      recorder.ondataavailable = (e) => { if (e.data.size > 0) recChunks.push(e.data); };
+      recorder.onstop = () => {
+        clearInterval(recTimer);
+        const blob = new Blob(recChunks, { type: "video/webm" });
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(blob);
+        a.download = `milo-${Date.now()}.webm`;
+        a.click();
+        URL.revokeObjectURL(a.href);
+      };
+      recorder.start();
+      recBtn.textContent = "⏺ Stop & Save";
+      recBtn.classList.add("active");
+    }
+    function stopRecording() {
+      recorder?.stop();
+      recBtn.textContent = "Record";
+      recBtn.classList.remove("active");
+    }
+    recBtn.onclick = () => (recorder && recorder.state === "recording" ? stopRecording() : startRecording());
+
     const resRow = el.querySelector("#res-row");
     function setResButtons(name) {
       resRow.querySelectorAll("[data-res]").forEach((b) => b.classList.toggle("active", b.dataset.res === name));
@@ -36,6 +68,7 @@ export default {
 
     return () => {
       offTelemetry();
+      if (recorder && recorder.state === "recording") stopRecording();
     };
   },
 };
