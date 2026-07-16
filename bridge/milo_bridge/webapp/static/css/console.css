@@ -42,24 +42,35 @@
   /* Fill the available screen space while keeping the camera's real 4:3
      aspect ratio -- never distorted/stretched (object-fit: contain, not
      fill). SD and HD share the same ratio, so both scale up to the same
-     displayed size; SD just renders that size from a lower-res source. */
-  width: 100%; height: 100%; aspect-ratio: auto; object-fit: contain;
+     displayed size; SD just renders that size from a lower-res source.
+     max-width/max-height/margin must be explicitly reset here: CSS cascades
+     per-property, not per-rule, so the base #cam rule's max-width: 560px
+     and margin: 0 auto otherwise survive into fullscreen unchanged and cap
+     the display at a small box regardless of viewport size -- this was the
+     actual cause of a previous "HD looks the same small size as SD" report,
+     not a resolution-dependent bug at all. */
+  width: 100vw; height: 100vh; max-width: none; max-height: none; margin: 0;
+  aspect-ratio: auto; object-fit: contain;
 }
 
-/* Floating piloting/control dock, anchored to the bottom-right corner of
-   the fullscreen video -- deliberately NOT spread across or centered on the
-   screen, so it never blocks the view of the robot. Anchored top+bottom so
-   its height is whatever fits between them, scrollable if the content (now
-   piloting + camera + communication + sensors) runs long. Its own dark
-   glass panel regardless of the site's light/dark theme, since it sits over
-   live video (unknown brightness), not the page background. */
+/* Two floating control docks, left and right, anchored to the fullscreen
+   video's corners -- deliberately not merged into one panel or centered, so
+   controls are visually balanced and neither dock blocks most of the view.
+   Left holds piloting + camera capture; right holds safety/status controls
+   (see camera.js for the exact split). Both anchored top+bottom so their
+   height is whatever fits between them, scrollable if content runs long.
+   Their own dark glass panel regardless of the site's light/dark theme,
+   since they sit over live video (unknown brightness), not the page
+   background. */
 .cam-overlay {
-  position: absolute; top: 18px; right: 18px; bottom: 18px; display: none;
-  flex-direction: column; gap: 8px; width: 220px; padding: 12px;
+  position: absolute; top: 18px; bottom: 18px; display: none;
+  flex-direction: column; gap: 8px; width: 200px; padding: 12px;
   background: rgba(15, 15, 15, 0.82); border: 1px solid rgba(255, 255, 255, 0.16);
   border-radius: 12px; backdrop-filter: blur(6px);
   overflow-y: auto; overflow-x: hidden;
 }
+.cam-overlay-left { left: 18px; }
+.cam-overlay-right { right: 18px; }
 .cam-wrap:fullscreen .cam-overlay { display: flex; }
 .cam-overlay-divider { border-top: 1px solid rgba(255, 255, 255, 0.14); margin: 2px 0; }
 .cam-overlay, .cam-overlay .muted, .cam-overlay .label, .cam-overlay .vu-label,
@@ -70,6 +81,8 @@
 .cam-overlay .btn:hover { background: rgba(255, 255, 255, 0.2); }
 .cam-overlay .btn.active { background: #f2f2f2; color: #111; }
 .cam-overlay .btn.danger { border-color: var(--danger); color: #ff8a80; }
+.cam-overlay .btn.ghost { background: transparent; border-color: rgba(255, 255, 255, 0.4); }
+.cam-overlay .btn.ghost:hover { background: rgba(255, 255, 255, 0.12); }
 .cam-overlay input:not([type="range"]) {
   background: rgba(255, 255, 255, 0.08); border-color: rgba(255, 255, 255, 0.28); color: #f2f2f2;
 }
@@ -80,14 +93,13 @@
    wide for this narrow dock -- stack them instead */
 .cam-overlay .comm-row { flex-direction: column; gap: 10px; }
 .cam-overlay .vu-group { align-self: flex-start; }
-.cam-overlay.locked .cam-pilot-control { opacity: 0.4; pointer-events: none; }
+.cam-overlay-left.locked .cam-pilot-control { opacity: 0.4; pointer-events: none; }
 .cam-overlay-row { display: flex; gap: 6px; }
 .cam-overlay-row .btn { flex: 1; }
 .cam-dpad { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; }
 
 /* small segmented button row (SD/HD, Quality/Realtime, ...) */
 .seg-row { display: flex; gap: 2px; }
-.comm-listen-row { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
 
 /* emote popover: bounded and scrollable so a long pose/face list stays
    inside its own box instead of pushing content off-screen (matters most
