@@ -39,10 +39,11 @@
   background: #000; display: flex; align-items: center; justify-content: center;
 }
 .cam-wrap:fullscreen #cam {
-  /* Fill the screen edge-to-edge rather than letterboxing -- stretching a
-     low-res (SD) stream to fill is an accepted tradeoff so the picture
-     always uses the full screen regardless of which resolution is active. */
-  width: 100vw; height: 100vh; aspect-ratio: auto; object-fit: fill;
+  /* Scale to fill as much of the screen as possible while keeping the
+     camera's real aspect ratio -- never distorted/stretched. SD and HD
+     share the same 4:3 ratio, so this looks identical either way; SD just
+     renders at a lower source resolution, scaled up. */
+  max-width: 100vw; max-height: 100vh; width: auto; height: auto; aspect-ratio: auto; object-fit: contain;
 }
 
 /* Floating piloting panel, bottom-right corner of the fullscreen video --
