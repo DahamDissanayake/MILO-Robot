@@ -10,38 +10,44 @@
 // "listening" pipelines running at once would double-schedule and echo the
 // same incoming audio. The session is the single source of truth; each
 // mounted UI just renders it and calls into it.
+//
+// getAudioSession() exposes that same session without mounting any UI --
+// used by the camera panel's Record feature to tap the robot's incoming
+// audio into a video recording without needing its own second listening
+// pipeline.
 import { ICON_HEADPHONES, ICON_MIC } from "../icons.js";
 
 const SAMPLE_RATE = 16000;   // must match the robot's capture/playback rate
 const CHANNELS = 2;
 const HOT_THRESHOLD = 0.5;   // level (0-1) above which the VU bar turns red
 
-// Two listening presets, switchable live from the UI:
 // Server sends 20ms chunks; scheduling each one as its own AudioBufferSourceNode
 // makes playback exquisitely sensitive to network/GC jitter (any late chunk is
 // an audible drop). Coalescing a few chunks into one larger buffer before
 // scheduling cuts the node-creation rate, and a wider lookahead margin gives
 // the pipeline (network + server queue) more room to catch up without an
-// audible gap -- "quality" trades latency for that smoothness, fine for
-// "listen to the room", not meant for interactive back-and-forth voice.
-// "realtime" shrinks all three toward zero for much lower latency, accepting
-// that a network hiccup is now more likely to produce an audible gap instead
-// of being silently absorbed. Purely client-side -- the server's own queue
-// depth (media_hub.py's AUDIO_QUEUE_SIZE) is a separate, shared latency floor
-// this toggle doesn't touch.
-const AUDIO_MODES = {
-  quality: { coalesce: 4, lookahead: 0.15, maxLatency: 0.35 },
-  realtime: { coalesce: 1, lookahead: 0.03, maxLatency: 0.08 },
-};
+// audible gap. Fine for "listen to the room", not meant for interactive
+// back-and-forth voice.
+const COALESCE_CHUNKS = 4;   // ~80ms per scheduled buffer
+const LOOKAHEAD_S = 0.15;
+// playHead only ever moves forward; nothing about scheduling ahead of time
+// brings it back down. If frames ever arrive faster than real-time (a burst
+// after a brief stall, a slow start right when the connection opens), the
+// backlog compounds and never resyncs -- latency creeps upward for the rest
+// of the session. Cap it: once the scheduled backlog exceeds this, snap back
+// to "now + lookahead" instead of letting it grow, accepting a brief glitch
+// in exchange for bounded, LAN-appropriate latency.
+const MAX_LATENCY_S = 0.35;
 
 let session = null;
 
 function getSession(bus) {
   if (session) return session;
   const s = {
-    playCtx: null, playHead: 0, listening: false, audioMode: "quality",
+    playCtx: null, playHead: 0, listening: false,
     pending: [], pendingSamples: 0,
-    uiCallbacks: new Set(),   // notified on listening/audioMode change
+    recordTap: null,          // lazily-created MediaStreamAudioDestinationNode
+    uiCallbacks: new Set(),   // notified on listening change
     levelCallbacks: new Set(), // notified with [levelL, levelR] per chunk
   };
 
@@ -60,12 +66,16 @@ function getSession(bus) {
     }
     s.levelCallbacks.forEach((fn) => fn(levels));
     const src = s.playCtx.createBufferSource();
-    src.buffer = buf; src.connect(s.playCtx.destination);
-    const { lookahead, maxLatency } = AUDIO_MODES[s.audioMode];
-    if (s.playHead - s.playCtx.currentTime > maxLatency) {
-      s.playHead = s.playCtx.currentTime + lookahead; // resync: drop the backlog, bound latency
+    src.buffer = buf;
+    src.connect(s.playCtx.destination);
+    // AudioBufferSourceNodes are one-shot and garbage-collected once they
+    // finish playing, so connecting each one to the recording tap (when a
+    // recording is active) never accumulates -- nothing to disconnect.
+    if (s.recordTap) src.connect(s.recordTap);
+    if (s.playHead - s.playCtx.currentTime > MAX_LATENCY_S) {
+      s.playHead = s.playCtx.currentTime + LOOKAHEAD_S; // resync: drop the backlog, bound latency
     } else {
-      s.playHead = Math.max(s.playHead, s.playCtx.currentTime + lookahead);
+      s.playHead = Math.max(s.playHead, s.playCtx.currentTime + LOOKAHEAD_S);
     }
     src.start(s.playHead);
     s.playHead += buf.duration;
@@ -86,7 +96,7 @@ function getSession(bus) {
     const pcm = new Int16Array(bytes.buffer, 0, bytes.byteLength >> 1);
     s.pending.push(pcm);
     s.pendingSamples += pcm.length;
-    if (s.pending.length >= AUDIO_MODES[s.audioMode].coalesce) flushPending();
+    if (s.pending.length >= COALESCE_CHUNKS) flushPending();
   });
 
   s.setListening = (on) => {
@@ -101,10 +111,23 @@ function getSession(bus) {
     bus.send({ t: "audio", on });
     s.uiCallbacks.forEach((fn) => fn());
   };
-  s.setAudioMode = (mode) => { s.audioMode = mode; s.uiCallbacks.forEach((fn) => fn()); };
+
+  // Lazily creates (once) and returns a MediaStream that mirrors whatever
+  // audio is currently being scheduled for playback -- used by the camera
+  // panel's Record feature to combine the robot's incoming audio with its
+  // video canvas into one recorded MediaStream.
+  s.getAudioTap = () => {
+    if (!s.playCtx) s.playCtx = new AudioContext({ sampleRate: SAMPLE_RATE });
+    if (!s.recordTap) s.recordTap = s.playCtx.createMediaStreamDestination();
+    return s.recordTap.stream;
+  };
 
   session = s;
   return s;
+}
+
+export function getAudioSession(bus) {
+  return getSession(bus);
 }
 
 export function mountCommunication(el, { bus }) {
@@ -112,13 +135,7 @@ export function mountCommunication(el, { bus }) {
   el.innerHTML = `
     <div class="comm-row">
       <div class="comm-controls">
-        <div class="comm-listen-row">
-          <button class="btn" id="headphones">${ICON_HEADPHONES}Listen</button>
-          <div class="seg-row" id="audio-mode-row">
-            <button class="btn" data-audio-mode="quality">Quality</button>
-            <button class="btn" data-audio-mode="realtime">Realtime</button>
-          </div>
-        </div>
+        <button class="btn" id="headphones">${ICON_HEADPHONES}Listen</button>
         <button class="btn" id="ptt">${ICON_MIC}Hold to Talk</button>
         <div class="comm-say">
           <input id="say" placeholder="Type something to say…">
@@ -137,7 +154,6 @@ export function mountCommunication(el, { bus }) {
   const headphones = el.querySelector("#headphones");
   const vuL = el.querySelector("#vu-l");
   const vuR = el.querySelector("#vu-r");
-  const modeRow = el.querySelector("#audio-mode-row");
 
   function setLevel(bar, level) {
     bar.style.setProperty("--level", Math.min(1, level).toFixed(3));
@@ -149,15 +165,11 @@ export function mountCommunication(el, { bus }) {
   function render() {
     headphones.innerHTML = s.listening ? `${ICON_HEADPHONES}Mute` : `${ICON_HEADPHONES}Listen`;
     headphones.classList.toggle("active", s.listening);
-    modeRow.querySelectorAll("[data-audio-mode]").forEach((b) => b.classList.toggle("active", b.dataset.audioMode === s.audioMode));
   }
   render();
   s.uiCallbacks.add(render);
 
   headphones.onclick = () => s.setListening(!s.listening);
-  modeRow.querySelectorAll("[data-audio-mode]").forEach((b) => {
-    b.onclick = () => s.setAudioMode(b.dataset.audioMode);
-  });
 
   // -- push-to-talk + Say: need control -------------------------------------
   const note = el.querySelector("#comm-note");
