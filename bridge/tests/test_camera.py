@@ -26,20 +26,26 @@ def test_set_resolution_rejects_unknown_name():
 async def test_frames_applies_pending_resolution_before_next_grab():
     """Mimics from_hardware()'s grab() contract: a resolution switch must be
     picked up by the *next* frame_source call, on the same (worker) thread
-    as the grab itself, not applied out-of-band."""
-    calls = []
+    as the grab itself, not applied out-of-band. set_resolution() also
+    updates .resolution optimistically (see test_set_resolution_updates_state),
+    so this test asserts on _pending_resolution instead -- the flag that
+    actually drives hardware reconfiguration -- to prove grab() is the thing
+    consuming it, not some other path."""
+    pending_seen_at_grab_time = []
 
     def frame_source():
+        pending_seen_at_grab_time.append(streamer._pending_resolution)
         if streamer._pending_resolution is not None:
             name, streamer._pending_resolution = streamer._pending_resolution, None
             streamer.resolution = name
-        calls.append(streamer.resolution)
         return b"frame"
 
     streamer = CameraStreamer(frame_source, fps=1000)
     streamer.set_resolution("hd")
+    assert streamer._pending_resolution == "hd"  # not yet consumed
     gen = streamer.frames()
     frame = await gen.__anext__()
     assert frame == b"frame"
-    assert calls == ["hd"]
+    assert pending_seen_at_grab_time == ["hd"]  # was still pending when grab() ran
+    assert streamer._pending_resolution is None  # consumed by grab()
     await gen.aclose()

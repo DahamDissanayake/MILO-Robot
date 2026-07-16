@@ -15,18 +15,18 @@ function fillButtons(box, names, type, bus) {
 // keeping its own copy of this fetch-and-render logic.
 export function mountEmotePopover(el, { bus }) {
   el.innerHTML = `
-    <button class="btn" id="emote-toggle">🎭 Emotes</button>
-    <div id="emote-popover" class="emote-popover">
-      <div class="muted">Poses</div><div id="pose-btns" style="display:flex;flex-wrap:wrap;gap:6px;margin:6px 0 12px"></div>
-      <div class="muted">Faces</div><div id="face-btns" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px"></div>
+    <button class="btn emote-toggle">🎭 Emotes</button>
+    <div class="emote-popover">
+      <div class="muted">Poses</div><div class="pose-btns" style="display:flex;flex-wrap:wrap;gap:6px;margin:6px 0 12px"></div>
+      <div class="muted">Faces</div><div class="face-btns" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px"></div>
     </div>`;
-  const popover = el.querySelector("#emote-popover");
+  const popover = el.querySelector(".emote-popover");
   popover.style.display = "none";
-  el.querySelector("#emote-toggle").onclick = () => {
+  el.querySelector(".emote-toggle").onclick = () => {
     popover.style.display = popover.style.display === "none" ? "block" : "none";
   };
-  fetch("/api/poses").then((r) => r.json()).then((d) => fillButtons(el.querySelector("#pose-btns"), d.poses, "pose", bus));
-  fetch("/api/faces").then((r) => r.json()).then((d) => fillButtons(el.querySelector("#face-btns"), d.faces, "face", bus));
+  fetch("/api/poses").then((r) => r.json()).then((d) => fillButtons(el.querySelector(".pose-btns"), d.poses, "pose", bus));
+  fetch("/api/faces").then((r) => r.json()).then((d) => fillButtons(el.querySelector(".face-btns"), d.faces, "face", bus));
 }
 
 export default {

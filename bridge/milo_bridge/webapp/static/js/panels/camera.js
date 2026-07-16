@@ -55,6 +55,7 @@ export default {
       ovControl.classList.toggle("active", m.you);
       overlay.classList.toggle("locked", !m.you);
     });
+    overlay.classList.toggle("locked", !bus.controlled);
     overlay.querySelector("#ov-stop").onclick = () => bus.send({ t: "stop" });
     overlay.querySelector("#ov-exit").onclick = () => document.exitFullscreen();
 

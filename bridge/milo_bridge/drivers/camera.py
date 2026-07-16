@@ -39,6 +39,14 @@ class CameraStreamer:
         self._pending_resolution: str | None = None
 
     def set_resolution(self, name: str) -> None:
+        # Resolution is a single shared-device setting, not a per-viewer
+        # preference: this CameraStreamer wraps one physical camera whose
+        # frames are fanned out (MediaHub's Fanout(camera.frames)) to every
+        # connected web client AND the brain's own vision pipeline
+        # (net/streams.py's pump_video) simultaneously. Switching it here
+        # changes what every one of those consumers receives next, not just
+        # the caller that requested the switch, and briefly stalls the
+        # shared capture thread while picamera2 reconfigures.
         if name not in RESOLUTIONS:
             raise ValueError(f"unknown resolution {name!r}")
         self._pending_resolution = name
