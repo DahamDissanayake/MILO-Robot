@@ -836,7 +836,7 @@ def test_empty_model_list_shows_a_message_instead_of_crashing():
             app.run_worker(app.run_picker())
             await pilot.pause()
             label = app.screen.query_one("Label")
-            return str(label.renderable)
+            return str(label.content)
 
     assert "No models found" in asyncio.run(scenario())
 
@@ -1076,10 +1076,10 @@ def test_refresh_from_renders_all_four_panels():
             screen = app.query_one(DashboardScreen)
             screen.refresh_from(server, cfg, tracker)
 
-            identity = str(screen.query_one(IdentityPanel).renderable)
-            connection = str(screen.query_one(ConnectionPanel).renderable)
-            model = str(screen.query_one(ModelPanel).renderable)
-            pairing = str(screen.query_one(PairingPanel).renderable)
+            identity = str(screen.query_one(IdentityPanel).content)
+            connection = str(screen.query_one(ConnectionPanel).content)
+            model = str(screen.query_one(ModelPanel).content)
+            pairing = str(screen.query_one(PairingPanel).content)
 
             assert "my-laptop" in identity and "brain-abc" in identity and "RTX 4050" in identity
             assert "8765" in connection and "192.168.1.14" in connection and "milo-1" in connection
@@ -1097,8 +1097,8 @@ def test_refresh_from_shows_no_robot_connected():
         async with app.run_test():
             screen = app.query_one(DashboardScreen)
             screen.refresh_from(server, cfg, TokenRateTracker())
-            connection = str(screen.query_one(ConnectionPanel).renderable)
-            pairing = str(screen.query_one(PairingPanel).renderable)
+            connection = str(screen.query_one(ConnectionPanel).content)
+            pairing = str(screen.query_one(PairingPanel).content)
             assert "no robot connected" in connection
             assert "OFF" in pairing
 
