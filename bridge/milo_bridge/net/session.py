@@ -11,7 +11,6 @@ from milo_common.auth import PairedStore
 from milo_common.handshake import HandshakeError, robot_handshake
 from milo_common.protocol import MiloSocket
 
-from ..drivers.display import AnimMode
 from . import streams
 from .discovery import BrainDiscovery, select_brain
 
@@ -25,25 +24,18 @@ class RobotSession:
         self,
         sock: MiloSocket,
         *,
-        runner,
         display,
         media_hub=None,
-        broker=None,
         audio=None,
         graph_api=None,
-        gait=None,
     ):
         self._sock = sock
-        self._runner = runner
         self._display = display
         self._hub = media_hub
-        self._broker = broker
         # `audio` here is the local speaker only (T_TTS playback below);
         # outbound mic/camera capture streaming is owned by the media hub.
         self._audio = audio
         self._graph_api = graph_api
-        self._gait = gait
-        self._pose_task: asyncio.Task | None = None
 
     async def run(self) -> None:
         pumps: list[asyncio.Task] = []
@@ -66,49 +58,10 @@ class RobotSession:
         if msg.t == protocol.T_TTS:
             if self._audio is not None and msg.payload:
                 self._audio.play_pcm(msg.payload)
-        elif msg.t == protocol.T_CMD:
-            await self._handle_cmd(msg)
         elif msg.t == protocol.T_GRAPH:
             await self._handle_graph(msg)
         else:
             log.debug("ignoring message type %r", msg.t)
-
-    async def _handle_cmd(self, msg: protocol.Message) -> None:
-        face = msg.get("face")
-        if face:
-            await self._display.set_face(face, AnimMode.LOOP if face.startswith("talk_") else AnimMode.ONCE)
-        move = msg.get("move") or {}
-        if move.get("stop"):
-            # STOP is always allowed, regardless of who holds control (see
-            # ControlBroker docstring) — never gated below.
-            self._runner.abort()
-            if self._gait is not None:
-                self._gait.set_velocity_command(0.0, 0.0, 0.0)
-        elif self._broker is not None and not self._broker.allow_brain_motion():
-            log.info("dropping brain motion cmd while web client controls: %s", msg)
-        elif "velocity" in move and self._gait is not None:
-            vx, vy, yaw = move["velocity"]
-            self._gait.set_velocity_command(vx, vy, yaw)
-        elif "turn" in move:
-            await self._turn(float(move["turn"]))
-        elif "pose" in move:
-            self._start_pose(move["pose"])
-
-    async def _turn(self, bearing_deg: float) -> None:
-        """Turn toward a bearing (negative = left). Prefers the gait engine."""
-        if abs(bearing_deg) < 10:
-            return
-        if self._gait is not None:
-            yaw_rate = -30.0 if bearing_deg < 0 else 30.0
-            self._gait.set_velocity_command(0.0, 0.0, yaw_rate)
-        else:
-            self._start_pose("turn_left" if bearing_deg < 0 else "turn_right", cycles=1)
-
-    def _start_pose(self, name: str, cycles: int | None = None) -> None:
-        if self._pose_task is not None and not self._pose_task.done():
-            self._runner.abort()
-        kwargs = {} if cycles is None else {"cycles": cycles}
-        self._pose_task = asyncio.create_task(self._runner.run(name, **kwargs))
 
     async def _handle_graph(self, msg: protocol.Message) -> None:
         if self._graph_api is None:
@@ -194,13 +147,10 @@ class SessionManager:
                 try:
                     session = RobotSession(
                         sock,
-                        runner=self._runner,
                         display=self._display,
                         media_hub=self._media_hub,
-                        broker=self._broker,
                         audio=self._audio,
                         graph_api=self._graph_api,
-                        gait=self._gait,
                     )
                     await session.run()
                 finally:
