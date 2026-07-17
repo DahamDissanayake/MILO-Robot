@@ -1,9 +1,10 @@
 """The cognition loop (spec §6): utterance + identity + memory -> reply.
 
 For every utterance the agent builds context from Milo's graph (who is
-speaking, what Milo knows about them, recent events), asks the LLM for a
-structured response, and returns reply text + face + movement intent + facts
-to write back. Also owns the unknown-person naming flow.
+speaking, what Milo knows about them, recent events), then lets the LLM call
+MCP tools (movement, face, speech) as it sees fit and finally reply with a
+small JSON object carrying reply text + new facts to write back. Also owns
+the unknown-person naming flow.
 
 The LLM client and graph client are injected; tests use fakes.
 """
@@ -24,23 +25,22 @@ VALID_FACES = {
 
 MAX_TOOL_ROUNDS = 4
 
-SYSTEM_PROMPT = """You are Milo, a small four-legged robot with a camera, microphones and an OLED face.
+SYSTEM_PROMPT = f"""You are Milo, a small four-legged robot with a camera, microphones and an OLED face.
 You are curious, warm and a little playful. Keep replies to 1-3 short spoken sentences.
 
 You have tools to move (walk, run_pose, turn, set_mode, reset, standby, relax,
 hold, stop), check your own state (get_imu_state, get_status), change your
-face (set_face -- one of: happy sad angry surprised sleepy love excited
-confused thinking idle), and speak something unprompted (speak). Use them
-when it fits the moment; check get_imu_state before an ambitious movement if
-you're unsure about balance.
+face (set_face -- one of: {", ".join(sorted(VALID_FACES))}), and speak
+something unprompted (speak). Use them when it fits the moment; check
+get_imu_state before an ambitious movement if you're unsure about balance.
 
 You know things from your on-board memory graph; context about the speaker
 follows. Once you're done (with or without using any tools), reply ONLY with
 JSON matching this schema:
-{
+{{
   "reply": "what you say out loud",
   "facts": ["short new facts about the speaker worth remembering, empty if none"]
-}"""
+}}"""
 
 
 @dataclass(frozen=True)

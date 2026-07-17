@@ -4,12 +4,21 @@ import json
 import httpx
 
 from milo_brain.llm.agent import (
+    SYSTEM_PROMPT,
+    VALID_FACES,
     CognitionAgent,
     OllamaClient,
     extract_name,
     parse_llm_json,
     sanitize,
 )
+
+
+def test_system_prompt_face_list_is_derived_from_valid_faces():
+    """SYSTEM_PROMPT's face list must be built from VALID_FACES, not hand
+    duplicated -- otherwise the two can silently drift apart."""
+    for face in VALID_FACES:
+        assert face in SYSTEM_PROMPT
 
 
 class _FakeResponse:

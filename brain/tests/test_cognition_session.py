@@ -175,7 +175,7 @@ def test_off_center_speech_calls_turn_via_mcp():
                 await robot_sock.send(protocol.T_AUDIO, payload=frame, ts=t)
                 t += 0.02
             for _ in range(300):
-                if any(name == "turn" for name, _ in mcp.calls):
+                if any(name == "run_pose" for name, _ in mcp.calls):
                     break
                 await asyncio.sleep(0.02)
         finally:
@@ -184,9 +184,12 @@ def test_off_center_speech_calls_turn_via_mcp():
         return mcp.calls
 
     calls = asyncio.run(main())
-    turn_calls = [kwargs for name, kwargs in calls if name == "turn"]
-    assert turn_calls, f"no turn call made: {calls}"
-    assert turn_calls[0]["direction"] in ("left", "right")
+    turn_calls = [kwargs for name, kwargs in calls if name == "run_pose"]
+    assert turn_calls, f"no run_pose call made: {calls}"
+    assert turn_calls[0]["name"] in ("turn_left", "turn_right")
+    assert "turn" not in [name for name, _ in calls], (
+        "reflex must not call the open-ended turn tool -- it never calls stop()"
+    )
 
 
 def test_graph_client_correlates_concurrent_calls():
@@ -227,3 +230,50 @@ def test_graph_client_times_out_cleanly():
         assert client._pending == {}
 
     asyncio.run(main())
+
+
+def test_factory_handle_closes_mcp_client_when_connect_fails(tmp_path, monkeypatch):
+    """A MiloMcpClient whose connect() raises partway through must still be
+    close()'d -- otherwise its AsyncExitStack (partially opened transport)
+    leaks. handle() must guard connect() with the same try/finally that
+    guards session.run()."""
+    import milo_brain.mcp_client as mcp_client_mod
+    from milo_common.auth import PairedStore
+    from milo_brain.config import BrainConfig
+    from milo_brain.session import CognitionSessionFactory
+
+    class FakeFailingMcpClient:
+        instances: list["FakeFailingMcpClient"] = []
+
+        def __init__(self, base_url, token, peer_id):
+            self.closed = False
+            FakeFailingMcpClient.instances.append(self)
+
+        async def connect(self):
+            raise RuntimeError("transport opened but initialize() failed")
+
+        async def close(self):
+            self.closed = True
+
+    monkeypatch.setattr(mcp_client_mod, "MiloMcpClient", FakeFailingMcpClient)
+
+    cfg = BrainConfig(data_dir=str(tmp_path))
+    store = PairedStore(cfg.paired_path)
+    store.add("milo-1", token=b"\x01" * 16, name="milo")
+
+    factory = CognitionSessionFactory.__new__(CognitionSessionFactory)
+    factory._cfg = cfg
+    factory._store = store
+    # asr/vision/tts/llm are never touched on the connect-failure path
+    # (it raises before agent/session construction), so leave them unset.
+
+    peer = Peer(id="milo-1", name="milo", mcp_url="http://127.0.0.1:9/mcp")
+
+    async def main():
+        with pytest.raises(RuntimeError, match="initialize"):
+            await factory.handle(sock=None, peer=peer)
+
+    asyncio.run(main())
+
+    assert len(FakeFailingMcpClient.instances) == 1
+    assert FakeFailingMcpClient.instances[0].closed is True

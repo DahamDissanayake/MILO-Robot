@@ -129,7 +129,7 @@ class RobotCognitionSession:
         bearing = direction_mod.estimate_bearing(segment.stereo)
         direction = direction_mod.classify(bearing)
         if direction != "center" and self._mcp is not None:
-            await self._mcp.call_tool("turn", direction=direction)
+            await self._mcp.call_tool("run_pose", name=f"turn_{direction}")
 
         transcript = await asyncio.to_thread(self._asr.transcribe, segment.mono)
         log.info("heard (%.2f): %s", transcript.confidence, transcript.text)
@@ -189,21 +189,22 @@ class CognitionSessionFactory:
             token = self._store.token_for(peer.id)
             if token is not None:
                 mcp = MiloMcpClient(peer.mcp_url, token=token.hex(), peer_id=self._cfg.brain_id)
-                await mcp.connect()
-        agent = CognitionAgent(self._llm, graph, mcp)
-        session = RobotCognitionSession(
-            sock,
-            peer,
-            vad=VadSegmenter(),
-            asr=self._asr,
-            vision=self._vision,
-            tts=self._tts,
-            agent=agent,
-            graph=graph,
-            mcp=mcp,
-            face_match_threshold=self._cfg.face_match_threshold,
-        )
         try:
+            if mcp is not None:
+                await mcp.connect()
+            agent = CognitionAgent(self._llm, graph, mcp)
+            session = RobotCognitionSession(
+                sock,
+                peer,
+                vad=VadSegmenter(),
+                asr=self._asr,
+                vision=self._vision,
+                tts=self._tts,
+                agent=agent,
+                graph=graph,
+                mcp=mcp,
+                face_match_threshold=self._cfg.face_match_threshold,
+            )
             await session.run()
         finally:
             if mcp is not None:
