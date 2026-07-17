@@ -137,7 +137,7 @@ Target chain:
 **Goal:** all 8 servos proven working and centered at 90 degrees BEFORE any horn or joint is attached. This ordering matters: there is no way to center a servo correctly after the leg is screwed on.
 
 - [ ] Temporarily wire Pi to PCA9685: 3V3 -> VCC, SDA (GPIO 2), SCL (GPIO 3), common GND; Buck 2 -> V+.
-- [ ] Plug all 8 servos into channels 0–7 and run the sweep:
+- [ ] Plug all 8 servos into channels 0–3 and 8–11 and run the sweep:
 
 ```bash
 # on the Pi
@@ -167,10 +167,10 @@ Servo positions and PCA9685 channels (locked in software, do not deviate):
 | 1 | R2 | front-right knee |
 | 2 | L1 | front-left hip |
 | 3 | L2 | front-left knee |
-| 4 | R4 | rear-right knee |
-| 5 | R3 | rear-right hip |
-| 6 | L3 | rear-left hip |
-| 7 | L4 | rear-left knee |
+| 8 | R4 | rear-right knee |
+| 9 | R3 | rear-right hip |
+| 10 | L3 | rear-left hip |
+| 11 | L4 | rear-left knee |
 
 - [ ] Install one servo into each printed joint using M2 x 5 mm self-threading screws. Do not overtighten into plastic; snug is enough.
 - [ ] Attach servo horns with M2.5 machine screws, matching the reference stance photos in the Sesame build guide (`reference-configuration.png` / `sesame-angle-guide.png`). Servos are still centered at 90 from Phase 5 — the horn position at attachment defines the leg's zero.

@@ -17,7 +17,7 @@
 - Robot memory (knowledge graph, person embeddings) lives **only** on the Pi; brains are stateless compute.
 - All robot↔brain traffic authenticates with the pairing token (HMAC challenge–response); unpaired machines are refused.
 - Gait engine exposes one interface — `set_velocity_command(vx, vy, yaw)` — with two backends: ONNX RL policy (primary) and CPG trot (fallback).
-- Servo channel map matches the Sesame firmware naming: R1=0, R2=1, L1=2, L2=3, R4=4, R3=5, L3=6, L4=7.
+- Servo channel map: R1=0, R2=1, L1=2, L2=3 (matches the Sesame firmware naming); R4=8, R3=9, L3=10, L4=11 (rear legs rewired off the front bank).
 - I2C addresses: PCA9685 `0x40`, SSD1306 `0x3C`, MPU6050 `0x68`.
 - Camera stream: MJPEG 640×480 @ 15 fps. Mic stream: stereo 16-bit PCM @ 16 kHz.
 - This standalone repo holds all Milo code (`common/`, `bridge/`, `brain/`, `training/`); the original ESP32 firmware/CAD stays untouched in [sesame-robot](https://github.com/dorianborian/sesame-robot) as the Sesame baseline (reference copies in `hardware/reference-sesame/`).

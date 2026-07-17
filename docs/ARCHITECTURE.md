@@ -376,7 +376,7 @@ Target 10–15 cm mic separation — this baseline gives GCC-PHAT its bearing si
 
 Device-tree config (`/boot/firmware/config.txt`): `dtparam=i2s=on` + `dtoverlay=googlevoicehat-soundcard` (simultaneous capture/playback). Fallback if it misbehaves: separate `i2s-mems-mic`-style capture + `max98357a` overlays.
 
-### 5.5 Servo channel map (PCA9685) — matches Sesame firmware naming
+### 5.5 Servo channel map (PCA9685) — front legs match Sesame firmware naming, rear legs rewired
 
 | Channel | Servo | Position |
 |---|---|---|
@@ -384,18 +384,18 @@ Device-tree config (`/boot/firmware/config.txt`): `dtparam=i2s=on` + `dtoverlay=
 | 1 | R2 | front-right knee |
 | 2 | L1 | front-left hip |
 | 3 | L2 | front-left knee |
-| 4 | R4 | rear-right knee |
-| 5 | R3 | rear-right hip |
-| 6 | L3 | rear-left hip |
-| 7 | L4 | rear-left knee |
+| 8 | R4 | rear-right knee |
+| 9 | R3 | rear-right hip |
+| 10 | L3 | rear-left hip |
+| 11 | L4 | rear-left knee |
 
 ```
         FRONT (camera + OLED head)
    L1 ──hip──┐         ┌──hip── R1     ch2/ch0
    L2 ──knee─┤  BODY   ├─knee── R2     ch3/ch1
              │ Pi+IMU  │
-   L3 ──hip──┤ battery ├──hip── R3     ch6/ch5
-   L4 ──knee─┘         └─knee── R4     ch7/ch4
+   L3 ──hip──┤ battery ├──hip── R3     ch10/ch9
+   L4 ──knee─┘         └─knee── R4     ch11/ch8
         BACK
 ```
 

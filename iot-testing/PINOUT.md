@@ -69,7 +69,7 @@ Mic A: L/R pin → GND (LEFT channel), mounted LEFT side of head.
 Mic B: L/R pin → 3V3 (RIGHT channel), mounted RIGHT side of head.
 Target 10–15 cm mic separation.
 
-## Servo channel map (PCA9685) — matches Sesame firmware naming
+## Servo channel map (PCA9685) — front legs match Sesame firmware naming, rear legs rewired
 
 | Channel | Servo | Position |
 |---|---|---|
@@ -77,7 +77,7 @@ Target 10–15 cm mic separation.
 | 1 | R2 | front-right knee |
 | 2 | L1 | front-left hip |
 | 3 | L2 | front-left knee |
-| 4 | R4 | rear-right knee |
-| 5 | R3 | rear-right hip |
-| 6 | L3 | rear-left hip |
-| 7 | L4 | rear-left knee |
+| 8 | R4 | rear-right knee |
+| 9 | R3 | rear-right hip |
+| 10 | L3 | rear-left hip |
+| 11 | L4 | rear-left knee |

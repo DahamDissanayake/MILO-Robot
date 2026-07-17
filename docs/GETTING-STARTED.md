@@ -215,7 +215,7 @@ The master reference is [ARCHITECTURE.md §5](ARCHITECTURE.md#5-wiring-diagram).
 
 Checklist:
 
-1. ☐ **Servos → PCA9685 channels**, exactly this map (it's baked into the software): `R1=0, R2=1, L1=2, L2=3, R4=4, R3=5, L3=6, L4=7`. Brown/black = GND, red = V+, orange/yellow = signal.
+1. ☐ **Servos → PCA9685 channels**, exactly this map (it's baked into the software): `R1=0, R2=1, L1=2, L2=3, R4=8, R3=9, L3=10, L4=11`. Brown/black = GND, red = V+, orange/yellow = signal.
 2. ☐ **PCA9685**: VCC ← Pi 3V3, V+ ← Buck 2, SDA/SCL ← I2C bus, GND ← common.
 3. ☐ **Mics**: Mic A **L/R pin → GND** (left channel), mounted **left** side of the head; Mic B **L/R → 3V3** (right), **right** side. Aim for **10–15 cm between them** — this baseline is what makes sound direction work.
 4. ☐ **MPU6050**: mounted **rigidly** near the body center — screws or hard standoffs into the frame. Foam tape = a floppy IMU = garbage gait feedback. This is the one component where mounting quality really matters.
@@ -409,5 +409,5 @@ Then run the acceptance rituals:
 - **Repo test suite** (any machine, no hardware): `python -m pytest common/tests bridge/tests brain/tests training/tests`
 - **Robot CLI:** `python -m milo_bridge.cli pose <name> | face <name> | sweep | paired`
 - **Service logs:** `journalctl -u milo-bridge -f`
-- **Locked constants** (change nothing without changing everything): servo map `R1=0 R2=1 L1=2 L2=3 R4=4 R3=5 L3=6 L4=7`; I2C `0x40` PCA9685 / `0x3C` OLED / `0x68` MPU6050; streams MJPEG 640×480@15 + stereo PCM 16 kHz.
+- **Locked constants** (change nothing without changing everything): servo map `R1=0 R2=1 L1=2 L2=3 R4=8 R3=9 L3=10 L4=11`; I2C `0x40` PCA9685 / `0x3C` OLED / `0x68` MPU6050; streams MJPEG 640×480@15 + stereo PCM 16 kHz.
 - **Credits:** body, mechanics, face art, and pose library from the [Sesame Robot Project](https://github.com/dorianborian/sesame-robot) by Dorian Todd (Apache 2.0).

@@ -198,7 +198,7 @@ Leave **GAIN** unconnected (default 9 dB) and **SD** unconnected (default enable
 
 No soldering here: each MG90S lead is a 3-pin female plug that pushes straight onto the PCA9685 channel headers. Each channel header has three pins stacked: GND (bottom row), V+ (middle row), signal (top row).
 
-**Finding channel 0 on the 16-channel board:** the channel numbers are printed on the silkscreen along the header rows, in four blocks of four (`0 1 2 3 | 4 5 6 7 | 8 9 10 11 | 12 13 14 15`). Hold the board with the servo headers along the bottom edge facing you and the I2C pins (VCC/GND/SDA/SCL) on the left — channel 0 is then the leftmost 3-pin column, channel 15 the rightmost. Milo uses only channels 0–7 (the eight leftmost columns); 8–15 stay empty. To confirm electrically, plug one servo into the presumed channel 0 and run `python bridge/tools/servo_sweep.py` — it drives channels in order and announces each, so whichever announcement moves the servo is that column's true number.
+**Finding channel 0 on the 16-channel board:** the channel numbers are printed on the silkscreen along the header rows, in four blocks of four (`0 1 2 3 | 4 5 6 7 | 8 9 10 11 | 12 13 14 15`). Hold the board with the servo headers along the bottom edge facing you and the I2C pins (VCC/GND/SDA/SCL) on the left — channel 0 is then the leftmost 3-pin column, channel 15 the rightmost. Milo uses channels 0–3 (front legs) and 8–11 (rear legs) — the first and third blocks of four; the second block (4–7) and the last (12–15) stay empty. To confirm electrically, plug one servo into the presumed channel 0 and run `python bridge/tools/servo_sweep.py` — it drives channels in order and announces each, so whichever announcement moves the servo is that column's true number.
 
 Plug orientation per servo lead: **brown or black = GND, red = V+ (center), orange or yellow = signal.** Red is always the middle pin, so a plug rotated 180 degrees puts GND on signal — the servo just won't move, but fix it before blaming software.
 
@@ -208,10 +208,10 @@ Plug orientation per servo lead: **brown or black = GND, red = V+ (center), oran
 | 1 | R2 | front-right knee |
 | 2 | L1 | front-left hip |
 | 3 | L2 | front-left knee |
-| 4 | R4 | rear-right knee |
-| 5 | R3 | rear-right hip |
-| 6 | L3 | rear-left hip |
-| 7 | L4 | rear-left knee |
+| 8 | R4 | rear-right knee |
+| 9 | R3 | rear-right hip |
+| 10 | L3 | rear-left hip |
+| 11 | L4 | rear-left knee |
 
 This map is baked into the software. If the wrong leg moves during the sweep test, move the plug, never edit the code.
 
@@ -249,7 +249,7 @@ Open each socket's latch by pulling it out gently, seat the ribbon fully and squ
 | Mic A | S1–S6 | [ ] |
 | Mic B | S7–S12 | [ ] |
 | Amp + speaker | S13–S19 | [ ] |
-| Servo plugs | 8 plugs, channels 0–7 | [ ] |
+| Servo plugs | 8 plugs, channels 0–3 and 8–11 | [ ] |
 | Camera ribbon | 2 ends | [ ] |
 
 Roughly 45 electrical connections total. Suggested build order: section 2 (power, verified at 5.1 V) -> section 3 (I2C, verify with i2cdetect) -> section 4 (I2S, verify with arecord/aplay) -> section 5 (servos, verify with sweep) -> section 6 (camera). Verifying each bus before starting the next means a fault is always in the last ten wires you touched.
