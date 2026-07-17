@@ -139,6 +139,7 @@ class SessionManager:
                     self._cfg.robot_name,
                     self._store,
                     show_pin=self._show_pin,
+                    mcp_port=self._cfg.mcp_port,
                 )
                 log.info("connected to brain %s (%s)", peer.name, peer.id)
                 if self._broker is not None:
