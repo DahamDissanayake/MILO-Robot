@@ -32,6 +32,9 @@ Thumbs.db
 # Agent scratch state (subagent-driven-development progress ledger)
 .superpowers/
 
+# graphify knowledge graph output (regenerable, not source)
+graphify-out/
+
 # IOT-Testing session artifacts (directory tracked via .gitkeep, contents are not)
 IOT-Testing/results/*
 !IOT-Testing/results/.gitkeep
