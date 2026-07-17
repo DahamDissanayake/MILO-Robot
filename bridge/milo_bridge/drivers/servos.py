@@ -32,13 +32,23 @@ DEFAULT_PULSE_RANGE = (PULSE_MIN_US, PULSE_MAX_US)
 SAFE_ANGLE_MIN = 5.0
 SAFE_ANGLE_MAX = 175.0
 
-# Channel map inherited from the Sesame firmware (movement-sequences.h).
+# Channel map: front legs (R1/R2/L1/L2) inherited from the Sesame firmware
+# (movement-sequences.h) and left on channels 0-3; rear legs (R4/R3/L3/L4)
+# rewired onto 8-11, off the front bank.
 SERVO_CHANNELS: dict[str, int] = {
     "R1": 0, "R2": 1, "L1": 2, "L2": 3,
-    "R4": 4, "R3": 5, "L3": 6, "L4": 7,
+    "R4": 8, "R3": 9, "L3": 10, "L4": 11,
 }
 SERVO_NAMES = tuple(SERVO_CHANNELS)
 NUM_SERVOS = len(SERVO_CHANNELS)
+
+# pulse_ranges/_last_angles are calibration data ordered by servo (SERVO_NAMES
+# position), not by raw PCA9685 channel number -- channels aren't contiguous
+# (0-3, 8-11), so a raw channel can't be used as a list index directly. This
+# maps a channel number back to its calibration slot.
+_CHANNEL_TO_SLOT: dict[int, int] = {
+    channel: slot for slot, channel in enumerate(SERVO_CHANNELS.values())
+}
 
 
 def angle_to_pulse_us(angle: float, min_us: float = PULSE_MIN_US, max_us: float = PULSE_MAX_US) -> float:
@@ -99,10 +109,11 @@ class ServoDriver:
         # Clamp the *pulse* into the safe band so a commanded extreme can't
         # stall the servo against its hard-stop; keep last_angle in full
         # 0-180 logical space for the slew layer above.
-        min_us, max_us = self.pulse_ranges[channel]
+        slot = _CHANNEL_TO_SLOT[channel]
+        min_us, max_us = self.pulse_ranges[slot]
         safe = min(max(angle, SAFE_ANGLE_MIN), SAFE_ANGLE_MAX)
         self._pca.channels[channel].duty_cycle = pulse_us_to_duty(angle_to_pulse_us(safe, min_us, max_us))
-        self._last_angles[channel] = angle
+        self._last_angles[slot] = angle
 
     def set_angle(self, servo: int | str, angle: float) -> None:
         channel = SERVO_CHANNELS[servo] if isinstance(servo, str) else servo
@@ -117,10 +128,10 @@ class ServoDriver:
 
     def last_angle(self, servo: int | str) -> float | None:
         channel = SERVO_CHANNELS[servo] if isinstance(servo, str) else servo
-        return self._last_angles[channel]
+        return self._last_angles[_CHANNEL_TO_SLOT[channel]]
 
     def relax(self) -> None:
         """Stop driving all channels (servos go limp; saves power while asleep)."""
-        for channel in range(NUM_SERVOS):
+        for slot, channel in enumerate(SERVO_CHANNELS.values()):
             self._pca.channels[channel].duty_cycle = 0
-            self._last_angles[channel] = None
+            self._last_angles[slot] = None

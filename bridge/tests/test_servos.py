@@ -30,9 +30,9 @@ def test_pulse_to_duty_16bit():
     assert sv.pulse_us_to_duty(20000) == 0xFFFF
 
 
-def test_channel_map_matches_firmware():
+def test_channel_map_front_legs_unchanged_rear_legs_on_8_to_11():
     assert sv.SERVO_CHANNELS == {
-        "R1": 0, "R2": 1, "L1": 2, "L2": 3, "R4": 4, "R3": 5, "L3": 6, "L4": 7,
+        "R1": 0, "R2": 1, "L1": 2, "L2": 3, "R4": 8, "R3": 9, "L3": 10, "L4": 11,
     }
 
 
@@ -40,7 +40,7 @@ def test_set_angle_by_name_and_channel():
     pca = FakePca()
     driver = ServoDriver(pca, stagger_ms=0)
     driver.set_angle("R3", 90)
-    assert pca.channels[5].duty_cycle == sv.pulse_us_to_duty(1500)
+    assert pca.channels[9].duty_cycle == sv.pulse_us_to_duty(1500)
     driver.set_angle(0, 0)  # commanded 0deg, but driven only to the safe near-extreme
     assert pca.channels[0].duty_cycle == sv.pulse_us_to_duty(sv.angle_to_pulse_us(sv.SAFE_ANGLE_MIN))
 
@@ -81,9 +81,9 @@ def test_uncalibrated_channel_safe_clamps_the_default_range():
     pca = FakePca()
     driver = ServoDriver(pca, stagger_ms=0)
     driver.set_angle("R3", 0)
-    assert pca.channels[5].duty_cycle == sv.pulse_us_to_duty(sv.angle_to_pulse_us(sv.SAFE_ANGLE_MIN))
+    assert pca.channels[9].duty_cycle == sv.pulse_us_to_duty(sv.angle_to_pulse_us(sv.SAFE_ANGLE_MIN))
     driver.set_angle("R3", 180)
-    assert pca.channels[5].duty_cycle == sv.pulse_us_to_duty(sv.angle_to_pulse_us(sv.SAFE_ANGLE_MAX))
+    assert pca.channels[9].duty_cycle == sv.pulse_us_to_duty(sv.angle_to_pulse_us(sv.SAFE_ANGLE_MAX))
 
 
 def test_set_pose_staggers_between_writes():
@@ -110,5 +110,19 @@ def test_relax_zeroes_all_channels():
     for name in sv.SERVO_CHANNELS:
         driver.set_angle(name, 90)
     driver.relax()
-    assert all(pca.channels[c].duty_cycle == 0 for c in range(8))
+    assert all(pca.channels[c].duty_cycle == 0 for c in sv.SERVO_CHANNELS.values())
     assert driver.last_angle("R1") is None
+    assert driver.last_angle("R4") is None
+
+
+def test_calibration_slot_is_independent_of_the_non_contiguous_channel_number():
+    # R4 lives on channel 8, but it's only the 5th servo declared (slot index
+    # 4) -- pulse_ranges/last_angles must be indexed by that slot, not by the
+    # raw channel number, or this raises IndexError / silently misapplies
+    # another servo's calibrated range.
+    pca = FakePca()
+    ranges = [sv.DEFAULT_PULSE_RANGE] * 4 + [(600, 2400)] + [sv.DEFAULT_PULSE_RANGE] * 3
+    driver = ServoDriver(pca, pulse_ranges=ranges, stagger_ms=0)
+    driver.set_angle("R4", 0)  # safe-clamped within R4's own (600, 2400) calibration
+    assert pca.channels[8].duty_cycle == sv.pulse_us_to_duty(sv.angle_to_pulse_us(sv.SAFE_ANGLE_MIN, 600, 2400))
+    assert driver.last_angle("R4") == 0
