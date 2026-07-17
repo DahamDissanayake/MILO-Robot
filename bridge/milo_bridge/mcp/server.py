@@ -109,4 +109,28 @@ def build_mcp_server(deps: McpDeps):
         deps.runner.abort()
         return {"ok": True}
 
+    @server.tool()
+    async def get_imu_state() -> dict:
+        """Live IMU snapshot: roll/pitch/yaw in degrees, gyro in deg/s, accel in g. Never gated."""
+        if deps.imu is None:
+            return {"ok": False, "error": "imu unavailable"}
+        state = deps.imu.update()
+        return {
+            "ok": True, "roll": state.roll, "pitch": state.pitch, "yaw": state.yaw,
+            "gyro": list(state.gyro), "accel": list(state.accel),
+        }
+
+    @server.tool()
+    async def get_status() -> dict:
+        """Gait mode/backend, who holds control, whether a movement is in
+        flight, and the current face. Never gated."""
+        return {
+            "ok": True,
+            "mode": deps.gait.mode,
+            "backend": deps.gait.backend,
+            "owner": deps.broker.owner,
+            "moving": deps.movement_guard.busy(),
+            "current_face": deps.display.current_face if deps.display is not None else None,
+        }
+
     return server

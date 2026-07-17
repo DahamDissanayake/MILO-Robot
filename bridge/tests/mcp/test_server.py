@@ -230,3 +230,66 @@ def test_stop_is_never_gated_and_aborts():
         assert deps.runner.aborted is True
 
     asyncio.run(main())
+
+
+from dataclasses import dataclass
+
+
+@dataclass
+class FakeImuState:
+    roll: float
+    pitch: float
+    yaw: float
+    gyro: tuple
+    accel: tuple
+
+
+class FakeImu:
+    def __init__(self, state):
+        self._state = state
+
+    def update(self):
+        return self._state
+
+
+class FakeDisplay:
+    current_face = "idle"
+
+
+def test_get_imu_state_reports_the_live_snapshot_and_is_never_gated():
+    async def main():
+        deps = make_deps(allow=False)  # web controls -- read must still work
+        deps.imu = FakeImu(FakeImuState(roll=1.5, pitch=-2.0, yaw=10.0, gyro=(0, 0, 0), accel=(0, 0, 1)))
+        server = build_mcp_server(deps)
+        result = await _call(server, "get_imu_state")
+        assert result == {
+            "ok": True, "roll": 1.5, "pitch": -2.0, "yaw": 10.0,
+            "gyro": [0, 0, 0], "accel": [0, 0, 1],
+        }
+
+    asyncio.run(main())
+
+
+def test_get_imu_state_reports_unavailable_when_no_imu():
+    async def main():
+        deps = make_deps()
+        server = build_mcp_server(deps)
+        result = await _call(server, "get_imu_state")
+        assert result == {"ok": False, "error": "imu unavailable"}
+
+    asyncio.run(main())
+
+
+def test_get_status_reports_mode_backend_owner_and_current_face():
+    async def main():
+        deps = make_deps(allow=False)
+        deps.broker.owner = "web"
+        deps.display = FakeDisplay()
+        server = build_mcp_server(deps)
+        result = await _call(server, "get_status")
+        assert result == {
+            "ok": True, "mode": "balanced", "backend": "cpg", "owner": "web",
+            "moving": False, "current_face": "idle",
+        }
+
+    asyncio.run(main())
