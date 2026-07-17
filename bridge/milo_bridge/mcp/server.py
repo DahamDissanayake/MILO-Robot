@@ -133,4 +133,13 @@ def build_mcp_server(deps: McpDeps):
             "current_face": deps.display.current_face if deps.display is not None else None,
         }
 
+    @server.tool()
+    async def set_face(name: str) -> dict:
+        """Show a preset face expression: happy, sad, angry, surprised,
+        sleepy, love, excited, confused, thinking, or idle."""
+        if not deps.broker.allow_brain_motion():
+            return {"ok": False, "error": "web-control-active"}
+        await deps.display.set_face(name)
+        return {"ok": True, "face": deps.display.current_face}
+
     return server

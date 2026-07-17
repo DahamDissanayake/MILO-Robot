@@ -293,3 +293,48 @@ def test_get_status_reports_mode_backend_owner_and_current_face():
         }
 
     asyncio.run(main())
+
+
+class FakeDisplayWithSet:
+    def __init__(self):
+        self.current_face = None
+        self.requested: list[str] = []
+
+    async def set_face(self, name):
+        self.requested.append(name)
+        self.current_face = name
+
+
+def test_set_face_calls_through_and_reports_the_actual_face():
+    async def main():
+        deps = make_deps()
+        deps.display = FakeDisplayWithSet()
+        server = build_mcp_server(deps)
+        result = await _call(server, "set_face", name="happy")
+        assert result == {"ok": True, "face": "happy"}
+        assert deps.display.requested == ["happy"]
+
+    asyncio.run(main())
+
+
+def test_set_face_accepts_talk_prefixed_names_for_the_reflex_caller():
+    async def main():
+        deps = make_deps()
+        deps.display = FakeDisplayWithSet()
+        server = build_mcp_server(deps)
+        result = await _call(server, "set_face", name="talk_happy")
+        assert result == {"ok": True, "face": "talk_happy"}
+
+    asyncio.run(main())
+
+
+def test_set_face_denied_while_web_controls():
+    async def main():
+        deps = make_deps(allow=False)
+        deps.display = FakeDisplayWithSet()
+        server = build_mcp_server(deps)
+        result = await _call(server, "set_face", name="happy")
+        assert result == {"ok": False, "error": "web-control-active"}
+        assert deps.display.requested == []
+
+    asyncio.run(main())
