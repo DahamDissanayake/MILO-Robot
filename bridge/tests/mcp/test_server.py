@@ -1,0 +1,232 @@
+import asyncio
+import json
+
+import pytest
+
+from milo_bridge.mcp.deps import McpDeps
+from milo_bridge.mcp.server import build_mcp_server
+
+
+class FakeGait:
+    def __init__(self):
+        self.velocity = None
+        self.mode = "balanced"
+        self.backend = "cpg"
+        self.reset_called = False
+        self.standby_called = False
+
+    def set_velocity_command(self, vx, vy, yaw):
+        self.velocity = (vx, vy, yaw)
+
+    def set_mode(self, name):
+        if name not in ("raw", "balanced", "angled"):
+            raise ValueError(f"unknown mode {name!r}")
+        self.mode = name
+
+    def reset(self):
+        self.reset_called = True
+
+    def standby(self):
+        self.standby_called = True
+
+
+class FakeRunner:
+    def __init__(self):
+        self.ran: list[tuple[str, int | None]] = []
+        self.aborted = False
+        self.gate = None  # optional asyncio.Event to hold run() open
+
+    async def run(self, name, cycles=None):
+        self.ran.append((name, cycles))
+        if self.gate is not None:
+            await self.gate.wait()
+        return True
+
+    def abort(self):
+        self.aborted = True
+
+
+class FakeBroker:
+    def __init__(self, allow=True):
+        self._allow = allow
+        self.owner = "none"
+
+    def allow_brain_motion(self):
+        return self._allow
+
+
+class FakeServos:
+    def __init__(self):
+        self.relaxed = False
+        self.held = False
+
+    def relax(self):
+        self.relaxed = True
+
+    def hold(self):
+        self.held = True
+
+
+def make_deps(allow=True):
+    return McpDeps(
+        gait=FakeGait(), runner=FakeRunner(), imu=None, broker=FakeBroker(allow),
+        servos=FakeServos(), display=None, audio=None,
+    )
+
+
+async def _call(server, tool_name, **kwargs):
+    # Parameter deliberately named tool_name, not name -- several tools
+    # (run_pose, set_mode, set_face) take a kwarg literally called `name`,
+    # which would collide with (and shadow) a same-named parameter here.
+    result = await server.call_tool(tool_name, kwargs)
+    # run_pose/turn fire-and-forget their work via MovementGuard.start(),
+    # which wraps the coroutine in asyncio.ensure_future(). A freshly
+    # scheduled Task never runs any of its own code until the event loop
+    # gets control back through an await -- and our tool coroutines return
+    # immediately without yielding once the Task is created. Give the loop
+    # one tick here so the fire-and-forget task's synchronous prefix (e.g.
+    # FakeRunner.run() appending to `ran` before it awaits its gate) has
+    # actually executed by the time callers inspect side effects. This is
+    # in-process test plumbing only; it doesn't change the tools' contract.
+    await asyncio.sleep(0)
+    # FastMCP's call_tool() (mcp SDK 1.28.1) always runs with
+    # convert_result=True. Because our tools are annotated `-> dict` (a bare
+    # dict, not a pydantic model/TypedDict), FastMCP infers no structured
+    # output schema for them, so convert_result falls back to *unstructured*
+    # content: a list of ContentBlock (TextContent) objects whose `.text` is
+    # the JSON-serialized dict our tool function actually returned, rather
+    # than the dict itself. Unwrap that here so tests can keep asserting
+    # against plain dicts -- the tool functions' return contract (they
+    # return dicts) is unchanged.
+    if isinstance(result, dict):
+        return result
+    (block,) = result
+    return json.loads(block.text)
+
+
+def test_walk_clamps_and_forwards_velocity():
+    async def main():
+        deps = make_deps()
+        server = build_mcp_server(deps)
+        result = await _call(server, "walk", vx=5.0, vy=-5.0, yaw_rate=100.0)
+        assert result["ok"] is True
+        assert deps.gait.velocity == (1.0, -1.0, 2.0)  # clamped to VX_LIM/VY_LIM/YAW_LIM
+
+    asyncio.run(main())
+
+
+def test_walk_denied_while_web_controls():
+    async def main():
+        deps = make_deps(allow=False)
+        server = build_mcp_server(deps)
+        result = await _call(server, "walk", vx=0.1, vy=0.0, yaw_rate=0.0)
+        assert result == {"ok": False, "error": "web-control-active"}
+        assert deps.gait.velocity is None
+
+    asyncio.run(main())
+
+
+def test_run_pose_rejects_unknown_name():
+    async def main():
+        deps = make_deps()
+        server = build_mcp_server(deps)
+        result = await _call(server, "run_pose", name="not-a-pose")
+        assert result["ok"] is False and "unknown pose" in result["error"]
+
+    asyncio.run(main())
+
+
+def test_run_pose_starts_the_runner_and_returns_immediately():
+    async def main():
+        deps = make_deps()
+        deps.runner.gate = asyncio.Event()  # keep the pose "running" so we can assert fire-and-forget
+        server = build_mcp_server(deps)
+        result = await _call(server, "run_pose", name="wave")
+        assert result == {"ok": True}
+        assert deps.runner.ran == [("wave", None)]
+        assert deps.movement_guard.busy() is True
+        deps.runner.gate.set()
+
+    asyncio.run(main())
+
+
+def test_run_pose_rejects_a_second_call_while_one_is_in_flight():
+    async def main():
+        deps = make_deps()
+        deps.runner.gate = asyncio.Event()
+        server = build_mcp_server(deps)
+        await _call(server, "run_pose", name="wave")
+        second = await _call(server, "run_pose", name="dance")
+        assert second == {"ok": False, "error": "movement-in-progress"}
+        deps.runner.gate.set()
+
+    asyncio.run(main())
+
+
+def test_turn_starts_the_continuous_turn_pose():
+    async def main():
+        deps = make_deps()
+        server = build_mcp_server(deps)
+        result = await _call(server, "turn", direction="left")
+        assert result == {"ok": True}
+        name, cycles = deps.runner.ran[0]
+        assert name == "turn_left" and cycles == 10_000
+
+    asyncio.run(main())
+
+
+def test_turn_rejects_bad_direction():
+    async def main():
+        deps = make_deps()
+        server = build_mcp_server(deps)
+        result = await _call(server, "turn", direction="sideways")
+        assert result["ok"] is False
+
+    asyncio.run(main())
+
+
+def test_set_mode_validates_and_applies():
+    async def main():
+        deps = make_deps()
+        server = build_mcp_server(deps)
+        ok = await _call(server, "set_mode", name="raw")
+        assert ok == {"ok": True, "mode": "raw"}
+        assert deps.gait.mode == "raw"
+        bad = await _call(server, "set_mode", name="sideways")
+        assert bad["ok"] is False
+
+    asyncio.run(main())
+
+
+def test_reset_and_standby_call_through_when_allowed():
+    async def main():
+        deps = make_deps()
+        server = build_mcp_server(deps)
+        await _call(server, "reset")
+        await _call(server, "standby")
+        assert deps.gait.reset_called and deps.gait.standby_called
+
+    asyncio.run(main())
+
+
+def test_relax_and_hold_call_through():
+    async def main():
+        deps = make_deps()
+        server = build_mcp_server(deps)
+        await _call(server, "relax")
+        await _call(server, "hold")
+        assert deps.servos.relaxed and deps.servos.held
+
+    asyncio.run(main())
+
+
+def test_stop_is_never_gated_and_aborts():
+    async def main():
+        deps = make_deps(allow=False)  # web controls -- stop must still work
+        server = build_mcp_server(deps)
+        result = await _call(server, "stop")
+        assert result == {"ok": True}
+        assert deps.gait.velocity == (0.0, 0.0, 0.0)
+        assert deps.runner.aborted is True
+
+    asyncio.run(main())
