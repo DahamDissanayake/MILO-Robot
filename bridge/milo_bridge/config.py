@@ -43,6 +43,7 @@ class BridgeConfig:
     web_port: int = 80
     web_username: str = "dama"
     web_password_hash: str = ""   # scrypt "<salt_hex>$<hash_hex>"; seeded on first load()
+    mcp_port: int = 8766
 
     @property
     def paired_path(self) -> Path:
