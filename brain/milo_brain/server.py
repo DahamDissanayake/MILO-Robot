@@ -92,6 +92,7 @@ class Advertiser:
         self._info = None
         self.busy = False
         self.pairing = False
+        self.advertised_ip = ""
 
     def _service_info(self):
         from zeroconf import ServiceInfo
@@ -105,6 +106,7 @@ class Advertiser:
             "pairing": "1" if self.pairing else "0",
         }
         host = _local_ip()
+        self.advertised_ip = host
         return ServiceInfo(
             SERVICE_TYPE,
             f"{self._cfg.brain_id}.{SERVICE_TYPE}",
