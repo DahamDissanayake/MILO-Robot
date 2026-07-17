@@ -338,3 +338,90 @@ def test_set_face_denied_while_web_controls():
         assert deps.display.requested == []
 
     asyncio.run(main())
+
+
+class FakeAudio:
+    def __init__(self):
+        self.played: list[bytes] = []
+
+    def play_pcm(self, pcm):
+        self.played.append(pcm)
+
+
+def test_speak_synthesizes_and_plays(monkeypatch):
+    async def main():
+        deps = make_deps()
+        deps.audio = FakeAudio()
+
+        async def fake_synth(text, timeout_s=10.0):
+            return b"pcmbytes"
+
+        monkeypatch.setattr("milo_bridge.mcp.server.tts_available", lambda: True)
+        monkeypatch.setattr("milo_bridge.mcp.server.synth_pcm", fake_synth)
+
+        server = build_mcp_server(deps)
+        result = await _call(server, "speak", text="hello there")
+        assert result == {"ok": True}
+        assert deps.audio.played == [b"pcmbytes"]
+
+    asyncio.run(main())
+
+
+def test_speak_truncates_to_500_chars(monkeypatch):
+    async def main():
+        deps = make_deps()
+        deps.audio = FakeAudio()
+        seen = {}
+
+        async def fake_synth(text, timeout_s=10.0):
+            seen["text"] = text
+            return b"x"
+
+        monkeypatch.setattr("milo_bridge.mcp.server.tts_available", lambda: True)
+        monkeypatch.setattr("milo_bridge.mcp.server.synth_pcm", fake_synth)
+
+        server = build_mcp_server(deps)
+        await _call(server, "speak", text="a" * 600)
+        assert len(seen["text"]) == 500
+
+    asyncio.run(main())
+
+
+def test_speak_denied_while_web_controls():
+    async def main():
+        deps = make_deps(allow=False)
+        deps.audio = FakeAudio()
+        server = build_mcp_server(deps)
+        result = await _call(server, "speak", text="hi")
+        assert result == {"ok": False, "error": "web-control-active"}
+
+    asyncio.run(main())
+
+
+def test_speak_reports_tts_unavailable(monkeypatch):
+    async def main():
+        deps = make_deps()
+        deps.audio = FakeAudio()
+        monkeypatch.setattr("milo_bridge.mcp.server.tts_available", lambda: False)
+        server = build_mcp_server(deps)
+        result = await _call(server, "speak", text="hi")
+        assert result == {"ok": False, "error": "tts-unavailable"}
+
+    asyncio.run(main())
+
+
+def test_speak_reports_synthesis_failure(monkeypatch):
+    async def main():
+        deps = make_deps()
+        deps.audio = FakeAudio()
+
+        async def fake_synth(text, timeout_s=10.0):
+            return None
+
+        monkeypatch.setattr("milo_bridge.mcp.server.tts_available", lambda: True)
+        monkeypatch.setattr("milo_bridge.mcp.server.synth_pcm", fake_synth)
+        server = build_mcp_server(deps)
+        result = await _call(server, "speak", text="hi")
+        assert result == {"ok": False, "error": "tts-failed"}
+
+    asyncio.run(main())

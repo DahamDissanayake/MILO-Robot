@@ -7,6 +7,7 @@ so overlapping callers serialize instead of racing the same PoseRunner.
 from __future__ import annotations
 
 from ..poses import POSES
+from ..webapp.api.speak import synth_pcm, tts_available
 from .deps import McpDeps
 
 TURN_HOLD_CYCLES = 10_000  # matches webapp/motion.py's "continuous until aborted" idiom
@@ -141,5 +142,24 @@ def build_mcp_server(deps: McpDeps):
             return {"ok": False, "error": "web-control-active"}
         await deps.display.set_face(name)
         return {"ok": True, "face": deps.display.current_face}
+
+    @server.tool()
+    async def speak(text: str) -> dict:
+        """Say something out loud right now, independent of the normal
+        spoken conversational reply -- for something unprompted."""
+        if not deps.broker.allow_brain_motion():
+            return {"ok": False, "error": "web-control-active"}
+        if deps.audio is None:
+            return {"ok": False, "error": "audio unavailable"}
+        if not tts_available():
+            return {"ok": False, "error": "tts-unavailable"}
+        clean = text[:500].strip()
+        if not clean:
+            return {"ok": False, "error": "empty text"}
+        pcm = await synth_pcm(clean)
+        if pcm is None:
+            return {"ok": False, "error": "tts-failed"}
+        deps.audio.play_pcm(pcm)
+        return {"ok": True}
 
     return server
