@@ -277,3 +277,21 @@ def test_factory_handle_closes_mcp_client_when_connect_fails(tmp_path, monkeypat
 
     assert len(FakeFailingMcpClient.instances) == 1
     assert FakeFailingMcpClient.instances[0].closed is True
+
+
+def test_factory_wires_rate_tracker_into_the_ollama_client(tmp_path, monkeypatch):
+    import milo_brain.pipelines.asr as asr_mod
+    import milo_brain.pipelines.tts as tts_mod
+    import milo_brain.pipelines.vision as vision_mod
+    from milo_brain.config import BrainConfig
+    from milo_brain.llm.token_rate import TokenRateTracker
+    from milo_brain.session import CognitionSessionFactory
+
+    monkeypatch.setattr(asr_mod, "WhisperAsr", lambda *a, **kw: object())
+    monkeypatch.setattr(vision_mod, "FaceVision", lambda *a, **kw: object())
+    monkeypatch.setattr(tts_mod, "PiperTts", lambda *a, **kw: object())
+
+    cfg = BrainConfig(brain_id="b", name="n", tier="small", data_dir=str(tmp_path))
+    tracker = TokenRateTracker()
+    factory = CognitionSessionFactory(cfg, rate_tracker=tracker)
+    assert factory._llm._rate_tracker is tracker

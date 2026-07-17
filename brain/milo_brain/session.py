@@ -22,6 +22,7 @@ from milo_common.protocol import MiloSocket
 
 from .config import BrainConfig
 from .llm.agent import AgentResult, CognitionAgent, OllamaClient
+from .llm.token_rate import TokenRateTracker
 from .pipelines import direction as direction_mod
 from .pipelines.tts import chunk_pcm
 from .pipelines.vad import VadSegmenter
@@ -165,7 +166,7 @@ def _idle(task: asyncio.Task | None) -> bool:
 class CognitionSessionFactory:
     """Builds the production pipeline stack once and a session per robot."""
 
-    def __init__(self, cfg: BrainConfig):
+    def __init__(self, cfg: BrainConfig, rate_tracker: TokenRateTracker | None = None):
         from milo_common.auth import PairedStore
 
         from .llm.agent import OllamaClient
@@ -178,7 +179,7 @@ class CognitionSessionFactory:
         self._asr = WhisperAsr(cfg.whisper_model)
         self._vision = FaceVision(analysis_fps=cfg.vision_fps)
         self._tts = PiperTts(cfg.piper_voice)
-        self._llm = OllamaClient(cfg.ollama_url, cfg.llm_model)
+        self._llm = OllamaClient(cfg.ollama_url, cfg.llm_model, rate_tracker=rate_tracker)
 
     async def handle(self, sock: MiloSocket, peer: Peer) -> None:
         from .mcp_client import MiloMcpClient
