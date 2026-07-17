@@ -93,7 +93,7 @@ Two install tiers, matching `brain/pyproject.toml`:
 | Install | Command | Gets you |
 |---|---|---|
 | **Light** | `pip install -e ./brain` | mDNS discovery, pairing, WebSocket server, MCP tool-calling client. Enough to pair and see the robot connect — no cognition yet. |
-| **Full** | `pip install -e "./brain[full]"` | + `faster-whisper`, `insightface`, `onnxruntime-gpu`, `piper-tts`, `torch` (Silero VAD), `opencv-python`, `PyQt6` (tray UI) |
+| **Full** | `pip install -e "./brain[full]"` | + `faster-whisper`, `insightface`, `onnxruntime-gpu`, `piper-tts`, `torch` (Silero VAD), `opencv-python` |
 
 ## Install — native Linux
 
@@ -258,14 +258,16 @@ on Windows) to reset to auto-detected defaults on the next run.
 .venv\Scripts\Activate.ps1     # Windows, if not already active
 # or: source .venv/bin/activate    (Linux)
 
-python -m milo_brain           # tray UI (needs PyQt6 — included in the [full] extra, or `pip install PyQt6` on its own)
-python -m milo_brain --headless   # no tray, just logs — for headless/server boxes
-python -m milo_brain --pairing    # start with pairing mode already enabled (skips the tray toggle)
+python -m milo_brain           # TUI: dashboard, pairing, model picker
+python -m milo_brain --headless   # no TUI, just logs -- for headless/server boxes
+python -m milo_brain --pairing    # start with pairing mode already enabled
 ```
 
-The tray UI works out of the box on native Windows and on Linux with a
-desktop session — use `--headless` on a server box or anywhere without a
-GUI session running.
+The TUI runs in any terminal on Windows or Linux -- no GUI session or system
+tray required. Keybindings: `p` toggles pairing mode, `m` opens the model
+picker (lists whatever's installed in Ollama), `q` quits. Use `--headless`
+on a genuinely headless box (no terminal attached at all, e.g. run under a
+service manager).
 
 On startup you'll see something like:
 
@@ -281,11 +283,11 @@ discoverable, and idle until a robot connects.
 1. Make sure `milo-bridge` is running on the robot (see the
    [top-level README](../README.md) or
    [`docs/SOFTWARE-SETUP.md`](../docs/SOFTWARE-SETUP.md)).
-2. Start the brain with `--pairing` (or enable pairing mode from the tray
-   icon).
+2. Start the brain with `--pairing` (or press `p` in the TUI to enable
+   pairing mode).
 3. Milo's face shows a **6-digit PIN**.
-4. Type it into the brain (tray dialog, or the `--headless` prompt in the
-   terminal).
+4. Type it into the brain -- a modal appears in the TUI asking for it (or
+   the `--headless` prompt in the terminal).
 5. Done — the trust token is stored in `~/.milo-brain/paired.json`. You
    won't need the PIN again for this robot/brain pair; every future
    connection re-authenticates automatically via HMAC challenge-response.
@@ -344,9 +346,14 @@ client against the robot — see below.
   server for the life of one session.
 - **`config.py`** — GPU tier detection (`nvidia-smi`) and
   `~/.milo-brain/config.yaml` load/save.
-- **`ui/tray.py`** — optional PyQt6 system tray (connection state, pairing
-  toggle, PIN entry dialog). Falls back to headless automatically if PyQt6
-  isn't installed.
+- **`tui/app.py`** — `MiloBrainApp`, the Textual TUI. Runs `BrainServer` as
+  a background worker on its own event loop (no separate thread), so the
+  pairing-PIN flow is a direct `await` on a modal screen rather than
+  cross-thread signaling.
+- **`tui/dashboard.py`** — the main screen: identity, connection, model
+  (with live tokens/sec), and pairing panels.
+- **`tui/pairing.py`**, **`tui/model_picker.py`** — modal screens for PIN
+  entry and picking an installed Ollama model.
 
 Everything in `pipelines/` and the pairing/session flow is designed to be
 testable off-hardware: real Whisper/InsightFace/Ollama/MCP clients are
@@ -393,10 +400,6 @@ your firewall isn't blocking UDP 5353 (mDNS) or the brain's WebSocket port
 **PowerShell says running scripts is disabled** — when activating the venv
 (`.venv\Scripts\Activate.ps1`), run
 `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` once, then retry.
-
-**`PyQt6 not installed — running headless`** — expected and harmless if you
-didn't install the `[full]` extra. Use `--headless` explicitly to skip the
-message.
 
 **LLM never calls any tools / conversations feel "dumber" than expected** —
 confirm your Ollama model actually supports tool-calling
