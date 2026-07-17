@@ -171,16 +171,45 @@ async def main() -> None:
     )
 
     gait_task = asyncio.create_task(gait.run())
+    mcp_task = asyncio.create_task(
+        _start_mcp(cfg, gait, runner, imu, broker, motion_servos, display, audio)
+    )
     backup_task = asyncio.create_task(_nightly_backup(graph, Path(cfg.data_dir) / "backups"))
     try:
         await manager.run_forever()
     finally:
         gait_task.cancel()
         backup_task.cancel()
+        mcp_task.cancel()
         motion_servos.stop()
         if web_task is not None:
             web_task.cancel()
         graph.close()
+
+
+async def _start_mcp(cfg, gait, runner, imu, broker, servos, display, audio) -> None:
+    """Start the movement/face/speech/IMU MCP server; logs and swallows any
+    startup failure, matching every other optional subsystem in this file."""
+    try:
+        import uvicorn
+        from milo_common.auth import PairedStore
+
+        from .mcp.auth import BearerAuthMiddleware
+        from .mcp.deps import McpDeps
+        from .mcp.server import build_mcp_server
+
+        store = PairedStore(cfg.paired_path)
+        deps = McpDeps(
+            gait=gait, runner=runner, imu=imu, broker=broker,
+            servos=servos, display=display, audio=audio,
+        )
+        app = build_mcp_server(deps).streamable_http_app()
+        wrapped = BearerAuthMiddleware(app, store)
+        config = uvicorn.Config(wrapped, host="0.0.0.0", port=cfg.mcp_port, log_level="warning")
+        log.info("MCP server on http://0.0.0.0:%d/mcp", cfg.mcp_port)
+        await uvicorn.Server(config).serve()
+    except Exception:
+        log.exception("MCP server failed to start — continuing without it")
 
 
 async def _nightly_backup(graph: GraphStore, dest_dir: Path) -> None:

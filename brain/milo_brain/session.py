@@ -66,6 +66,7 @@ class RobotCognitionSession:
         tts,
         agent: CognitionAgent,
         graph: GraphClient,
+        mcp=None,
         face_match_threshold: float = 0.45,
     ):
         self._sock = sock
@@ -76,6 +77,7 @@ class RobotCognitionSession:
         self._tts = tts
         self._agent = agent
         self._graph = graph
+        self._mcp = mcp
         self._threshold = face_match_threshold
         self._current_person: dict | None = None
         self._current_embedding_b64: str | None = None
@@ -125,8 +127,9 @@ class RobotCognitionSession:
 
     async def _handle_segment(self, segment) -> None:
         bearing = direction_mod.estimate_bearing(segment.stereo)
-        if direction_mod.classify(bearing) != "center":
-            await self._sock.send(protocol.T_CMD, move={"turn": bearing})
+        direction = direction_mod.classify(bearing)
+        if direction != "center" and self._mcp is not None:
+            await self._mcp.call_tool("run_pose", name=f"turn_{direction}")
 
         transcript = await asyncio.to_thread(self._asr.transcribe, segment.mono)
         log.info("heard (%.2f): %s", transcript.confidence, transcript.text)
@@ -141,16 +144,18 @@ class RobotCognitionSession:
     async def _respond(self, result: AgentResult) -> None:
         if not result.reply:
             return
-        cmd: dict = {"face": f"talk_{result.face}" if result.face != "idle" else "idle"}
-        if result.move != "none":
-            cmd["move"] = {"pose": result.move}
-        await self._sock.send(protocol.T_CMD, **cmd)
+        current_face = "idle"
+        if self._mcp is not None:
+            status = await self._mcp.call_tool("get_status")
+            current_face = status.get("current_face") or "idle"
+            await self._mcp.call_tool("set_face", name=f"talk_{current_face}")
 
         pcm = await asyncio.to_thread(self._tts.synthesize, result.reply)
         for chunk in chunk_pcm(pcm):
             await self._sock.send(protocol.T_TTS, payload=chunk)
-        # Talking done: settle the face back to the non-talk variant.
-        await self._sock.send(protocol.T_CMD, face=result.face)
+
+        if self._mcp is not None:
+            await self._mcp.call_tool("set_face", name=current_face)
 
 
 def _idle(task: asyncio.Task | None) -> bool:
@@ -161,28 +166,46 @@ class CognitionSessionFactory:
     """Builds the production pipeline stack once and a session per robot."""
 
     def __init__(self, cfg: BrainConfig):
+        from milo_common.auth import PairedStore
+
         from .llm.agent import OllamaClient
         from .pipelines.asr import WhisperAsr
         from .pipelines.tts import PiperTts
         from .pipelines.vision import FaceVision
 
         self._cfg = cfg
+        self._store = PairedStore(cfg.paired_path)
         self._asr = WhisperAsr(cfg.whisper_model)
         self._vision = FaceVision(analysis_fps=cfg.vision_fps)
         self._tts = PiperTts(cfg.piper_voice)
         self._llm = OllamaClient(cfg.ollama_url, cfg.llm_model)
 
     async def handle(self, sock: MiloSocket, peer: Peer) -> None:
+        from .mcp_client import MiloMcpClient
+
         graph = GraphClient(sock)
-        session = RobotCognitionSession(
-            sock,
-            peer,
-            vad=VadSegmenter(),
-            asr=self._asr,
-            vision=self._vision,
-            tts=self._tts,
-            agent=CognitionAgent(self._llm, graph),
-            graph=graph,
-            face_match_threshold=self._cfg.face_match_threshold,
-        )
-        await session.run()
+        mcp = None
+        if peer.mcp_url:
+            token = self._store.token_for(peer.id)
+            if token is not None:
+                mcp = MiloMcpClient(peer.mcp_url, token=token.hex(), peer_id=self._cfg.brain_id)
+        try:
+            if mcp is not None:
+                await mcp.connect()
+            agent = CognitionAgent(self._llm, graph, mcp)
+            session = RobotCognitionSession(
+                sock,
+                peer,
+                vad=VadSegmenter(),
+                asr=self._asr,
+                vision=self._vision,
+                tts=self._tts,
+                agent=agent,
+                graph=graph,
+                mcp=mcp,
+                face_match_threshold=self._cfg.face_match_threshold,
+            )
+            await session.run()
+        finally:
+            if mcp is not None:
+                await mcp.close()

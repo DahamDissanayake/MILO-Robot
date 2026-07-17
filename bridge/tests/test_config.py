@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 
 from milo_bridge.config import BridgeConfig
 from milo_bridge.webapp.auth import verify_password
@@ -48,3 +49,14 @@ def test_load_drops_stale_renamed_field_instead_of_crashing(tmp_path):
     # loaded again on the next restart.
     saved = json.loads(path.read_text(encoding="utf-8"))
     assert "servo_trims" not in saved
+
+
+def test_mcp_port_defaults_and_round_trips(tmp_path: Path):
+    path = tmp_path / "config.json"
+    cfg = BridgeConfig.load(path)
+    assert cfg.mcp_port == 8766
+
+    cfg.mcp_port = 9999
+    cfg.save(path)
+    reloaded = BridgeConfig.load(path)
+    assert reloaded.mcp_port == 9999

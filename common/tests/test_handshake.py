@@ -172,3 +172,25 @@ def test_replayed_auth_fails_across_sessions(tmp_path):
             await r2
 
     asyncio.run(main())
+
+
+def test_mcp_port_travels_from_robot_to_brain(tmp_path):
+    robot_store, brain_store = stores(tmp_path, paired=True)
+    rs, bs = socket_pair()
+    robot_result, brain_result = run_both(
+        robot_handshake(rs, ROBOT_ID, "milo", robot_store, mcp_port=8766),
+        brain_handshake(bs, BRAIN_ID, "desk", "large", brain_store),
+    )
+    assert not isinstance(brain_result, Exception), brain_result
+    assert brain_result.mcp_port == 8766
+    assert brain_result.mcp_url == ""  # handshake never computes this -- see Task 13
+
+
+def test_mcp_port_defaults_to_zero_when_omitted(tmp_path):
+    robot_store, brain_store = stores(tmp_path, paired=True)
+    rs, bs = socket_pair()
+    _robot_result, brain_result = run_both(
+        robot_handshake(rs, ROBOT_ID, "milo", robot_store),
+        brain_handshake(bs, BRAIN_ID, "desk", "large", brain_store),
+    )
+    assert brain_result.mcp_port == 0

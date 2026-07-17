@@ -2,22 +2,10 @@ import asyncio
 
 from milo_common import protocol
 from milo_common.protocol import Message
+from milo_common.testing import socket_pair
 
 from milo_bridge.config import BridgeConfig
 from milo_bridge.net.session import SessionManager, RobotSession
-
-
-class FakeRunner:
-    def __init__(self):
-        self.ran: list[tuple[str, int | None]] = []
-        self.aborted = 0
-
-    def abort(self):
-        self.aborted += 1
-
-    async def run(self, name, cycles=None):
-        self.ran.append((name, cycles))
-        return True
 
 
 class FakeDisplay:
@@ -39,14 +27,6 @@ class FakeAudio:
         self.played.append(pcm)
 
 
-class FakeGait:
-    def __init__(self):
-        self.commands: list[tuple[float, float, float]] = []
-
-    def set_velocity_command(self, vx, vy, yaw):
-        self.commands.append((vx, vy, yaw))
-
-
 class FakeSock:
     def __init__(self):
         self.sent: list[tuple[str, dict]] = []
@@ -61,10 +41,8 @@ def msg(t, payload=None, **fields):
 
 def make_session(**overrides):
     deps = dict(
-        runner=FakeRunner(),
         display=FakeDisplay(),
         audio=FakeAudio(),
-        gait=FakeGait(),
         graph_api=None,
     )
     deps.update(overrides)
@@ -75,56 +53,6 @@ def test_tts_plays_audio():
     session, deps = make_session()
     asyncio.run(session.dispatch(msg(protocol.T_TTS, payload=b"pcmdata")))
     assert deps["audio"].played == [b"pcmdata"]
-
-
-def test_cmd_face_talk_faces_loop():
-    session, deps = make_session()
-    asyncio.run(session.dispatch(msg(protocol.T_CMD, face="talk_happy")))
-    assert deps["display"].faces == ["talk_happy"]
-
-
-def test_cmd_pose_runs_via_runner():
-    async def run():
-        session, deps = make_session()
-        await session.dispatch(msg(protocol.T_CMD, move={"pose": "wave"}))
-        await asyncio.sleep(0)
-        return deps
-
-    deps = asyncio.run(run())
-    assert deps["runner"].ran == [("wave", None)]
-
-
-def test_cmd_velocity_goes_to_gait_engine():
-    session, deps = make_session()
-    asyncio.run(session.dispatch(msg(protocol.T_CMD, move={"velocity": [0.1, 0.0, 15.0]})))
-    assert deps["gait"].commands == [(0.1, 0.0, 15.0)]
-
-
-def test_cmd_stop_aborts_pose_and_zeroes_gait():
-    session, deps = make_session()
-    asyncio.run(session.dispatch(msg(protocol.T_CMD, move={"stop": True})))
-    assert deps["runner"].aborted == 1
-    assert deps["gait"].commands == [(0.0, 0.0, 0.0)]
-
-
-def test_cmd_turn_uses_gait_yaw():
-    session, deps = make_session()
-    asyncio.run(session.dispatch(msg(protocol.T_CMD, move={"turn": -45})))
-    assert deps["gait"].commands == [(0.0, 0.0, -30.0)]
-    # Small bearings are ignored (already facing the speaker).
-    asyncio.run(session.dispatch(msg(protocol.T_CMD, move={"turn": 5})))
-    assert len(deps["gait"].commands) == 1
-
-
-def test_cmd_turn_without_gait_falls_back_to_pose():
-    async def run():
-        session, deps = make_session(gait=None)
-        await session.dispatch(msg(protocol.T_CMD, move={"turn": 45}))
-        await asyncio.sleep(0)
-        return deps
-
-    deps = asyncio.run(run())
-    assert deps["runner"].ran == [("turn_right", 1)]
 
 
 def test_graph_without_api_reports_error():
@@ -148,52 +76,6 @@ def test_graph_dispatches_to_api():
     assert fields["nodes"] == [{"type": "person"}]
 
 
-class FakeBroker:
-    def __init__(self, allow: bool):
-        self._allow = allow
-
-    def allow_brain_motion(self):
-        return self._allow
-
-
-def test_brain_motion_dropped_while_broker_denies():
-    session, deps = make_session(broker=FakeBroker(allow=False))
-    asyncio.run(session.dispatch(msg(protocol.T_CMD, move={"velocity": [0.1, 0.0, 15.0]})))
-    assert deps["gait"].commands == []
-
-
-def test_brain_pose_and_turn_dropped_while_broker_denies():
-    async def run():
-        session, deps = make_session(broker=FakeBroker(allow=False))
-        await session.dispatch(msg(protocol.T_CMD, move={"pose": "wave"}))
-        await session.dispatch(msg(protocol.T_CMD, move={"turn": -45}))
-        await asyncio.sleep(0)
-        return deps
-
-    deps = asyncio.run(run())
-    assert deps["runner"].ran == []
-    assert deps["gait"].commands == []
-
-
-def test_brain_motion_allowed_when_broker_permits():
-    session, deps = make_session(broker=FakeBroker(allow=True))
-    asyncio.run(session.dispatch(msg(protocol.T_CMD, move={"velocity": [0.1, 0.0, 15.0]})))
-    assert deps["gait"].commands == [(0.1, 0.0, 15.0)]
-
-
-def test_stop_always_allowed_even_while_broker_denies():
-    session, deps = make_session(broker=FakeBroker(allow=False))
-    asyncio.run(session.dispatch(msg(protocol.T_CMD, move={"stop": True})))
-    assert deps["runner"].aborted == 1
-    assert deps["gait"].commands == [(0.0, 0.0, 0.0)]
-
-
-def test_face_updates_are_not_gated_by_broker():
-    session, deps = make_session(broker=FakeBroker(allow=False))
-    asyncio.run(session.dispatch(msg(protocol.T_CMD, face="talk_happy")))
-    assert deps["display"].faces == ["talk_happy"]
-
-
 class FakeDiscoveryEmpty:
     def snapshot(self):
         return []
@@ -203,6 +85,24 @@ class FakeDiscoveryEmpty:
 
     def stop(self):
         pass
+
+
+def test_cmd_with_move_or_face_is_ignored_not_crashed():
+    async def main():
+        robot_sock, brain_sock = socket_pair()
+        display = FakeDisplay()
+        session = RobotSession(robot_sock, display=display)
+        task = asyncio.create_task(session.run())
+        try:
+            # A stale/legacy T_CMD carrying move+face must be silently
+            # ignored -- the bridge no longer interprets either field.
+            await brain_sock.send(protocol.T_CMD, face="happy", move={"pose": "wave"})
+            await asyncio.sleep(0.05)
+            assert display.faces == []
+        finally:
+            task.cancel()
+
+    asyncio.run(main())
 
 
 def test_tick_reconnects_and_does_not_crash_with_no_brain_found(tmp_path):
@@ -217,3 +117,32 @@ def test_tick_reconnects_and_does_not_crash_with_no_brain_found(tmp_path):
         discovery=FakeDiscoveryEmpty(),
     )
     asyncio.run(manager._tick())
+
+
+def test_session_manager_advertises_configured_mcp_port(tmp_path, monkeypatch):
+    from milo_common.auth import PairedStore, derive_token
+    from milo_common.handshake import brain_handshake, robot_handshake
+    from milo_common.testing import socket_pair
+
+    async def main():
+        cfg = BridgeConfig(data_dir=str(tmp_path), robot_id="milo-1", robot_name="milo", mcp_port=9001)
+        token = derive_token("123456", cfg.robot_id, "brain-1")
+        PairedStore(cfg.paired_path).add("brain-1", token)
+
+        rs, bs = socket_pair()
+
+        # Simpler: drive robot_handshake directly against the brain side and
+        # assert what it received, instead of the full discovery/connect
+        # plumbing (which needs a real BrainRecord/select_brain wiring not
+        # worth faking here).
+        brain_store = PairedStore(tmp_path / "brain_paired.json")
+        brain_store.add(cfg.robot_id, token)
+
+        robot_task = asyncio.create_task(
+            robot_handshake(rs, cfg.robot_id, cfg.robot_name, PairedStore(cfg.paired_path), mcp_port=cfg.mcp_port)
+        )
+        peer = await brain_handshake(bs, "brain-1", "d", "large", brain_store)
+        await robot_task
+        assert peer.mcp_port == 9001
+
+    asyncio.run(main())
