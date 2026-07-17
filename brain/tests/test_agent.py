@@ -1,5 +1,6 @@
 import asyncio
 import json
+import json as json_lib
 
 import httpx
 
@@ -12,6 +13,7 @@ from milo_brain.llm.agent import (
     parse_llm_json,
     sanitize,
 )
+from milo_brain.llm.token_rate import TokenRateTracker
 
 
 def test_system_prompt_face_list_is_derived_from_valid_faces():
@@ -21,25 +23,43 @@ def test_system_prompt_face_list_is_derived_from_valid_faces():
         assert face in SYSTEM_PROMPT
 
 
-class _FakeResponse:
-    def __init__(self, payload):
-        self._payload = payload
+class _FakeStreamResponse:
+    def __init__(self, lines):
+        self._lines = lines
 
     def raise_for_status(self):
         pass
 
-    def json(self):
-        return self._payload
+    async def aiter_lines(self):
+        for line in self._lines:
+            yield line
+
+
+class _FakeStreamCtx:
+    def __init__(self, lines):
+        self._lines = lines
+
+    async def __aenter__(self):
+        return _FakeStreamResponse(self._lines)
+
+    async def __aexit__(self, *exc):
+        return False
 
 
 def test_chat_without_tools_requests_json_format(monkeypatch):
     captured = {}
 
-    async def fake_post(self, url, json):
+    def fake_stream(self, method, url, json):
         captured.update(json)
-        return _FakeResponse({"message": {"role": "assistant", "content": "hi"}})
+        return _FakeStreamCtx([
+            json_lib.dumps({"message": {"role": "assistant", "content": "hi"}, "done": False}),
+            json_lib.dumps({
+                "message": {"role": "assistant", "content": ""}, "done": True,
+                "prompt_eval_count": 5, "prompt_eval_duration": 100_000_000,
+            }),
+        ])
 
-    monkeypatch.setattr(httpx.AsyncClient, "post", fake_post)
+    monkeypatch.setattr(httpx.AsyncClient, "stream", fake_stream)
     client = OllamaClient()
     message = asyncio_run_chat(client, "sys", [{"role": "user", "content": "hey"}])
     assert captured["format"] == "json"
@@ -50,19 +70,63 @@ def test_chat_without_tools_requests_json_format(monkeypatch):
 def test_chat_with_tools_omits_json_format_and_forwards_tools(monkeypatch):
     captured = {}
 
-    async def fake_post(self, url, json):
+    def fake_stream(self, method, url, json):
         captured.update(json)
-        return _FakeResponse({"message": {"role": "assistant", "content": "", "tool_calls": [
-            {"function": {"name": "walk", "arguments": {"vx": 0.1}}}
-        ]}})
+        return _FakeStreamCtx([
+            json_lib.dumps({
+                "message": {"role": "assistant", "content": "", "tool_calls": [
+                    {"function": {"name": "walk", "arguments": {"vx": 0.1}}}
+                ]},
+                "done": False,
+            }),
+            json_lib.dumps({
+                "message": {"role": "assistant", "content": ""}, "done": True,
+                "prompt_eval_count": 8, "prompt_eval_duration": 200_000_000,
+            }),
+        ])
 
-    monkeypatch.setattr(httpx.AsyncClient, "post", fake_post)
+    monkeypatch.setattr(httpx.AsyncClient, "stream", fake_stream)
     client = OllamaClient()
     tools = [{"type": "function", "function": {"name": "walk", "description": "", "parameters": {}}}]
     message = asyncio_run_chat(client, "sys", [{"role": "user", "content": "walk forward"}], tools=tools)
     assert "format" not in captured
     assert captured["tools"] == tools
     assert message["tool_calls"][0]["function"]["name"] == "walk"
+
+
+def test_chat_feeds_token_rate_tracker_from_streamed_chunks(monkeypatch):
+    def fake_stream(self, method, url, json):
+        return _FakeStreamCtx([
+            json_lib.dumps({"message": {"role": "assistant", "content": "Hel"}, "done": False}),
+            json_lib.dumps({"message": {"role": "assistant", "content": "lo"}, "done": False}),
+            json_lib.dumps({
+                "message": {"role": "assistant", "content": ""}, "done": True,
+                "prompt_eval_count": 100, "prompt_eval_duration": 200_000_000,  # -> 500 tok/s
+            }),
+        ])
+
+    monkeypatch.setattr(httpx.AsyncClient, "stream", fake_stream)
+    tracker = TokenRateTracker()
+    client = OllamaClient(rate_tracker=tracker)
+    message = asyncio_run_chat(client, "sys", [{"role": "user", "content": "hey"}])
+    assert message["content"] == "Hello"
+    assert tracker.tokens_per_sec_out > 0
+    assert tracker.tokens_per_sec_in == 500.0
+
+
+def test_chat_without_a_rate_tracker_still_works(monkeypatch):
+    def fake_stream(self, method, url, json):
+        return _FakeStreamCtx([
+            json_lib.dumps({
+                "message": {"role": "assistant", "content": "ok"}, "done": True,
+                "prompt_eval_count": 1, "prompt_eval_duration": 1_000_000,
+            }),
+        ])
+
+    monkeypatch.setattr(httpx.AsyncClient, "stream", fake_stream)
+    client = OllamaClient()  # no rate_tracker
+    message = asyncio_run_chat(client, "sys", [{"role": "user", "content": "hey"}])
+    assert message == {"role": "assistant", "content": "ok"}
 
 
 def asyncio_run_chat(client, system, messages, tools=None):

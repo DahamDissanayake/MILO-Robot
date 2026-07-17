@@ -16,6 +16,8 @@ import logging
 import re
 from dataclasses import dataclass, field
 
+from .token_rate import TokenRateTracker
+
 log = logging.getLogger(__name__)
 
 VALID_FACES = {
@@ -53,9 +55,15 @@ class AgentResult:
 class OllamaClient:
     """Minimal Ollama /api/chat wrapper with JSON-format output."""
 
-    def __init__(self, base_url: str = "http://127.0.0.1:11434", model: str = "llama3.2:3b"):
+    def __init__(
+        self,
+        base_url: str = "http://127.0.0.1:11434",
+        model: str = "llama3.2:3b",
+        rate_tracker: TokenRateTracker | None = None,
+    ):
         self.base_url = base_url.rstrip("/")
         self.model = model
+        self._rate_tracker = rate_tracker
 
     async def chat(self, system: str, messages: list[dict], tools: list[dict] | None = None) -> dict:
         """Returns the raw assistant message dict (``content`` and, if the
@@ -64,22 +72,53 @@ class OllamaClient:
         together, so ``format: "json"`` is only requested when no tools are
         offered -- the final tool-calling turn's JSON-ness instead relies on
         SYSTEM_PROMPT's instructions plus parse_llm_json's existing
-        tolerance for stray/non-strict text."""
+        tolerance for stray/non-strict text.
+
+        Streams the response (rather than one blocking POST) so a
+        TokenRateTracker, if given, reports a live tokens/sec rate to the
+        TUI while the model is still generating, not just a number after
+        the fact."""
         import httpx
 
         payload = {
             "model": self.model,
             "messages": [{"role": "system", "content": system}, *messages],
-            "stream": False,
+            "stream": True,
         }
         if tools:
             payload["tools"] = tools
         else:
             payload["format"] = "json"
+
+        role = "assistant"
+        content_parts: list[str] = []
+        tool_calls: list[dict] = []
         async with httpx.AsyncClient(timeout=120) as client:
-            response = await client.post(f"{self.base_url}/api/chat", json=payload)
-            response.raise_for_status()
-            return response.json()["message"]
+            async with client.stream("POST", f"{self.base_url}/api/chat", json=payload) as response:
+                response.raise_for_status()
+                async for line in response.aiter_lines():
+                    if not line:
+                        continue
+                    chunk = json.loads(line)
+                    message = chunk.get("message") or {}
+                    role = message.get("role", role)
+                    piece = message.get("content", "")
+                    if piece:
+                        content_parts.append(piece)
+                        if self._rate_tracker is not None:
+                            self._rate_tracker.record_output_token()
+                    if message.get("tool_calls"):
+                        tool_calls = message["tool_calls"]
+                    if chunk.get("done") and self._rate_tracker is not None:
+                        count = chunk.get("prompt_eval_count")
+                        duration = chunk.get("prompt_eval_duration")
+                        if count is not None and duration is not None:
+                            self._rate_tracker.record_prompt_eval(count, duration)
+
+        result: dict = {"role": role, "content": "".join(content_parts)}
+        if tool_calls:
+            result["tool_calls"] = tool_calls
+        return result
 
 
 def parse_llm_json(raw: str) -> dict:
