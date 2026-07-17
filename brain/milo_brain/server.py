@@ -22,8 +22,55 @@ from .config import BrainConfig
 log = logging.getLogger(__name__)
 
 SERVICE_TYPE = "_milo-brain._tcp.local."
+PORT_FALLBACK_ATTEMPTS = 200  # Windows/Hyper-V can exclude ~100-port blocks
 
 RobotHandler = Callable[[MiloSocket, Peer], Awaitable[None]]
+
+
+def _port_free(port: int) -> bool:
+    with socketlib.socket(socketlib.AF_INET, socketlib.SOCK_STREAM) as s:
+        s.setsockopt(socketlib.SOL_SOCKET, socketlib.SO_REUSEADDR, 1)
+        try:
+            s.bind(("0.0.0.0", port))
+            return True
+        except OSError:
+            return False
+
+
+def pick_port(preferred: int, attempts: int = PORT_FALLBACK_ATTEMPTS, port_free=_port_free) -> int:
+    """Preferred port, or the next free one -- Windows/Hyper-V reserves ~100-port
+    exclusion blocks for NAT that shift across reboots, so a fixed single fallback
+    (unlike the bridge webapp's port 80->8080) isn't reliable here."""
+    for port in range(preferred, preferred + attempts):
+        if port_free(port):
+            if port != preferred:
+                log.warning("port %d unavailable, using %d instead", preferred, port)
+            return port
+    log.warning(
+        "no free port found in %d-%d, trying preferred %d anyway",
+        preferred, preferred + attempts - 1, preferred,
+    )
+    return preferred
+
+
+def _local_ip() -> str:
+    """Best-effort real LAN IP to advertise to the robot.
+
+    ``gethostbyname(gethostname())`` is unreliable on a multi-homed machine --
+    on Windows with a VPN client, WSL/Hyper-V, or VirtualBox installed, it can
+    resolve to one of *those* virtual adapters instead of the real WiFi/LAN
+    one (confirmed: a Fortinet VPN adapter's address, unreachable from the
+    robot, on a dev machine with several such adapters). Connecting a UDP
+    socket sends no packets -- it only asks the OS routing table which local
+    interface would reach the destination, which is the real outbound-facing
+    adapter regardless of how many virtual ones exist alongside it.
+    """
+    with socketlib.socket(socketlib.AF_INET, socketlib.SOCK_DGRAM) as s:
+        try:
+            s.connect(("8.8.8.8", 80))
+            return s.getsockname()[0]
+        except OSError:
+            return socketlib.gethostbyname(socketlib.gethostname())
 
 
 async def default_handler(sock: MiloSocket, peer: Peer) -> None:
@@ -57,19 +104,31 @@ class Advertiser:
             "busy": "1" if self.busy else "0",
             "pairing": "1" if self.pairing else "0",
         }
-        host = socketlib.gethostbyname(socketlib.gethostname())
+        host = _local_ip()
         return ServiceInfo(
             SERVICE_TYPE,
             f"{self._cfg.brain_id}.{SERVICE_TYPE}",
+            # zeroconf's own register path back-fills a missing `server` from
+            # the instance name (ServiceInfo.set_server_if_missing()), but its
+            # update path doesn't -- and Advertiser.update() builds a fresh
+            # ServiceInfo every call, so it must be set explicitly here or
+            # update_service() hits `AssertionError: ServiceInfo must have a
+            # server` in zeroconf's registry.
+            server=f"{self._cfg.brain_id}.local.",
             addresses=[socketlib.inet_aton(host)],
             port=self._cfg.port,
             properties=props,
         )
 
     def start(self) -> None:
-        from zeroconf import Zeroconf
+        from zeroconf import InterfaceChoice, Zeroconf
 
-        self._zc = Zeroconf()
+        # InterfaceChoice.All (the zeroconf default) enumerates and binds to
+        # every adapter, including virtual ones that will never see the robot
+        # (VPN, Hyper-V/WSL switches, VirtualBox host-only, ...). Default
+        # restricts this to interfaces with a default route -- the real
+        # LAN/WiFi link the robot is actually reachable on.
+        self._zc = Zeroconf(interfaces=InterfaceChoice.Default)
         self._info = self._service_info()
         self._zc.register_service(self._info)
 
@@ -137,7 +196,19 @@ class BrainServer:
     async def serve_forever(self) -> None:
         import websockets
 
-        self.advertiser.start()
+        # Resolve before advertising -- the mDNS record embeds self._cfg.port,
+        # so it must already reflect whatever port we're actually about to
+        # bind. Mutated in place: self.advertiser shares this same cfg object.
+        port = await asyncio.to_thread(pick_port, self._cfg.port)
+        self._cfg.port = port
+
+        # Advertiser.start/stop use zeroconf's synchronous API, which detects
+        # the running event loop on its calling thread and schedules its own
+        # engine on it -- calling it directly here (this coroutine's own loop
+        # thread) deadlocks that scheduling and raises EventLoopBlocked. Run
+        # it on a worker thread instead, where zeroconf sees no running loop
+        # and spins up its own, as it's designed to.
+        await asyncio.to_thread(self.advertiser.start)
         try:
             async with websockets.serve(self._on_connection, "0.0.0.0", self._cfg.port):
                 log.info(
@@ -146,4 +217,4 @@ class BrainServer:
                 )
                 await asyncio.Future()  # run until cancelled
         finally:
-            self.advertiser.stop()
+            await asyncio.to_thread(self.advertiser.stop)

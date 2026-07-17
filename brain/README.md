@@ -16,15 +16,15 @@ happened) never leave the Pi** — brains are stateless, interchangeable
 compute.
 
 This README covers the `brain/` package specifically: installing it on
-native Linux, installing it on Windows via WSL2, configuring it, running it,
+native Linux, installing it on native Windows, configuring it, running it,
 and how its pieces fit together. For the full project (robot side, wiring,
 architecture), see the [top-level README](../README.md) and
 [`docs/ARCHITECTURE.md`](../docs/ARCHITECTURE.md).
 
-> **Native Windows (no WSL)?** See
+> Setting up several brain machines as part of a full from-zero robot build?
 > [`docs/SOFTWARE-SETUP.md` Part 4](../docs/SOFTWARE-SETUP.md#part-4-set-up-the-brain-machines-windows-pc-laptop)
-> instead — that path uses PowerShell directly and is fully supported. This
-> document is for Linux and WSL2.
+> has the same Windows steps in condensed form alongside the rest of the
+> build. This document is the detailed reference for this package alone.
 
 ---
 
@@ -33,7 +33,7 @@ architecture), see the [top-level README](../README.md) and
 - [What this package actually does](#what-this-package-actually-does)
 - [Requirements](#requirements)
 - [Install — native Linux](#install--native-linux)
-- [Install — Windows via WSL2](#install--windows-via-wsl2)
+- [Install — native Windows](#install--native-windows)
 - [Configuration](#configuration)
 - [Running it](#running-it)
 - [Pairing with the robot](#pairing-with-the-robot)
@@ -70,8 +70,9 @@ architecture), see the [top-level README](../README.md) and
 
 Audio and video never touch a local mic/speaker/camera on the brain
 machine — they arrive from and are sent back to the robot entirely over the
-WebSocket connection. This means a WSL2 setup with no audio passthrough
-works fine.
+WebSocket connection. That means a plain, ordinary Windows or Linux machine
+works fine with no extra audio driver setup — the brain never opens your
+laptop's mic or speakers.
 
 ## Requirements
 
@@ -133,84 +134,104 @@ pip install -e "./brain[full]"
 reboot, then confirm with `nvidia-smi` before installing the `full` extra —
 `torch`/`onnxruntime-gpu` will otherwise silently fall back to CPU.
 
-## Install — Windows via WSL2
+## Install — native Windows
 
-WSL2 gives you a real Linux userspace with GPU passthrough to your NVIDIA
-card, which is what lets `torch`/`onnxruntime-gpu` actually use the GPU
-without dual-booting.
+No WSL, no Linux subsystem — everything below runs directly in PowerShell
+against a normal Windows install of Python. This is the fully supported path
+for a Windows brain machine.
 
-### 1. Enable WSL2 and install a distro
+### Prerequisites
 
-From an **elevated PowerShell** (Windows 11, or Windows 10 21H2+):
+- **Windows 10 21H2+ or Windows 11.**
+- **Python 3.11+** from [python.org](https://www.python.org/downloads/windows/)
+  — during install, tick **"Add python.exe to PATH"**. Verify afterward:
+  `python --version` in PowerShell.
+- **Git for Windows** — https://git-scm.com/download/win
+- **[Ollama](https://ollama.com)** — the Windows installer sets it up and
+  starts it automatically in the background; no separate service step.
+- **NVIDIA GPU (optional but recommended):** install/update the regular
+  **[Game Ready or Studio driver](https://www.nvidia.com/drivers)**. Once
+  installed, `nvidia-smi` in PowerShell should print your card. CPU works
+  too for the full stack, just slower.
+
+### 1. Get the code
 
 ```powershell
-wsl --install -d Ubuntu
+git clone https://github.com/<your-username>/MILO-Robot.git
+cd MILO-Robot
 ```
 
-Reboot if prompted, then finish the Ubuntu first-run setup (creates your
-Linux username/password) from the Start Menu.
+### 2. Virtual environment
 
-### 2. Install the NVIDIA driver — on Windows, not inside WSL
-
-If you have an NVIDIA GPU: install/update the regular
-**[NVIDIA Game Ready or Studio driver](https://www.nvidia.com/drivers)** on
-the **Windows host**. Do **not** install a separate Linux NVIDIA driver
-inside WSL — WSL2 passes the Windows driver through automatically. Verify
-from inside WSL:
-
-```bash
-nvidia-smi
+```powershell
+python -m venv .venv
+.venv\Scripts\Activate.ps1
 ```
 
-If this prints your GPU, passthrough is working. If it errors, update the
-Windows-side driver and restart WSL (`wsl --shutdown` from PowerShell, then
-reopen the Ubuntu terminal).
+> If PowerShell refuses to run the activation script with a message like
+> *"running scripts is disabled on this system"*, allow it once for your
+> user account and try again:
+> ```powershell
+> Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
+> ```
 
-### 3. From here, it's the native Linux install
+### 3. Install — light first (fast, confirms pairing works end to end)
 
-Open the Ubuntu (WSL) terminal and follow **[Install — native Linux](#install--native-linux)**
-above exactly — steps 1 through 7 are identical inside WSL2. The only
-WSL-specific notes:
+```powershell
+pip install -e .\common
+pip install -e .\brain
+```
 
-- **Ollama**: the `curl -fsSL https://ollama.com/install.sh | sh` installer
-  works fine inside WSL2 and will use the passed-through GPU automatically
-  once `nvidia-smi` works. `sudo systemctl enable --now ollama` requires
-  systemd support in WSL — if `systemctl` isn't available, run
-  `ollama serve &` manually instead, or add
+### 4. Pull a tool-calling-capable model for your tier
+
+```powershell
+ollama pull llama3.2:3b        # small tier: <16 GB VRAM (or CPU)
+ollama pull llama3.1:8b        # large tier: >=16 GB VRAM
+```
+
+### 5. Full AI stack, once you're ready for real cognition (not just pairing)
+
+```powershell
+pip install -e ".\brain[full]"
+```
+
+First run downloads the Whisper / InsightFace / Silero model weights.
+
+**GPU notes for Windows:**
+- `torch` installed via plain `pip install` already bundles its own CUDA
+  runtime — no separate CUDA Toolkit install needed for it. Verify with:
+  ```powershell
+  python -c "import torch; print(torch.cuda.is_available())"
   ```
-  [boot]
-  systemd=true
-  ```
-  to `/etc/wsl.conf`, then `wsl --shutdown` from PowerShell and reopen the
-  terminal.
-- **Networking / mDNS discovery**: WSL2 uses a virtualized network adapter
-  behind NAT by default, which can prevent mDNS (multicast) from reaching
-  the robot on your physical LAN. If the brain's tray/log never shows the
-  robot as discovered:
-  - Easiest fix: set WSL to **mirrored networking mode** (Windows 11
-    23H2+), which shares the host's network adapter directly. Add to
-    `%UserProfile%\.wslconfig` on the Windows side:
-    ```ini
-    [wsl2]
-    networkingMode=mirrored
-    ```
-    then `wsl --shutdown` and reopen.
-  - If mirrored mode isn't available, run the **light** install (pairing
-    only) on native Windows per
-    [`docs/SOFTWARE-SETUP.md` Part 4](../docs/SOFTWARE-SETUP.md#part-4-set-up-the-brain-machines-windows-pc-laptop)
-    instead, and keep WSL2 only for GPU-heavy workloads that don't need to
-    reach the robot directly (e.g. gait policy training, per
-    [`training/`](../training/)).
-- **Filesystem location**: clone the repo into the WSL filesystem
-  (`~/MILO-Robot`, i.e. `/home/<you>/MILO-Robot`), not into `/mnt/c/...`.
-  Cross-filesystem access from WSL to Windows-side files is significantly
-  slower and can trip up `pip install -e`'s editable-install symlinks.
+  This should print `True` on a machine with a working NVIDIA driver.
+- `onnxruntime-gpu` is different: it links against a **system-wide CUDA
+  Toolkit + cuDNN** install rather than bundling one. If it silently falls
+  back to CPU, either install the matching CUDA/cuDNN versions from the
+  [ONNX Runtime CUDA requirements table](https://onnxruntime.ai/docs/execution-providers/CUDA-ExecutionProvider.html#requirements),
+  or just leave it on CPU — InsightFace's face-matching model is small
+  enough to run acceptably on CPU even on a modest laptop.
+
+### 6. Windows Firewall
+
+The first time you run `python -m milo_brain`, **Windows Defender Firewall**
+will prompt to allow `python.exe` on **Private networks** — allow it. This
+is what opens the WebSocket port (`8765`) and mDNS (UDP `5353`) so the robot
+can actually reach the brain. If you accidentally dismissed the prompt or it
+never appeared, add the rule manually: **Windows Defender Firewall →
+Advanced settings → Inbound Rules → New Rule → Program**, pointing it at
+your venv's `.venv\Scripts\python.exe`.
+
+From here, configuration, running, and pairing are identical to the Linux
+steps below — the only difference is the config path, which resolves under
+`%USERPROFILE%` (i.e. `C:\Users\<you>\.milo-brain\config.yaml`) instead of
+`~`.
 
 ## Configuration
 
-Config lives at `~/.milo-brain/config.yaml`, created automatically on first
-run with sensible defaults (GPU tier auto-detected via `nvidia-smi`). You
-generally don't need to touch it, but every field:
+Config lives at `~/.milo-brain/config.yaml` (`%USERPROFILE%\.milo-brain\config.yaml`
+on Windows), created automatically on first run with sensible defaults (GPU
+tier auto-detected via `nvidia-smi`). You generally don't need to touch it,
+but every field:
 
 | Field | Default | What it does |
 |---|---|---|
@@ -228,20 +249,23 @@ generally don't need to touch it, but every field:
 | `busy_gpu_percent` | `85` | Above this, the brain advertises itself as busy over mDNS. |
 | `data_dir` | `~/.milo-brain` | Where `config.yaml` and `paired.json` (pairing trust store) live. |
 
-Delete `~/.milo-brain/config.yaml` to reset to auto-detected defaults on the
-next run.
+Delete `~/.milo-brain/config.yaml` (or `%USERPROFILE%\.milo-brain\config.yaml`
+on Windows) to reset to auto-detected defaults on the next run.
 
 ## Running it
 
-```bash
-source .venv/bin/activate      # if not already active
+```powershell
+.venv\Scripts\Activate.ps1     # Windows, if not already active
+# or: source .venv/bin/activate    (Linux)
 
 python -m milo_brain           # tray UI (needs PyQt6 — included in the [full] extra, or `pip install PyQt6` on its own)
-python -m milo_brain --headless   # no tray, just logs — the only option without PyQt6, and what you want on a headless WSL/server box
+python -m milo_brain --headless   # no tray, just logs — for headless/server boxes
 python -m milo_brain --pairing    # start with pairing mode already enabled (skips the tray toggle)
 ```
 
-On WSL2 without an X server, always use `--headless`.
+The tray UI works out of the box on native Windows and on Linux with a
+desktop session — use `--headless` on a server box or anywhere without a
+GUI session running.
 
 On startup you'll see something like:
 
@@ -330,7 +354,15 @@ injected, tests use fakes. See [`tests/`](tests/) for the fakes' shape.
 
 ## Development / running the tests
 
+```powershell
+pip install -e .\common
+pip install -e ".\brain[dev]"
+cd brain
+pytest tests\ -v
+```
+
 ```bash
+# Linux
 pip install -e ./common
 pip install -e "./brain[dev]"
 cd brain && pytest tests/ -v
@@ -345,27 +377,37 @@ objects.
 
 **`ollama pull` / connection refused talking to Ollama** — confirm it's
 running: `curl http://127.0.0.1:11434/api/tags` should return JSON, not a
-connection error. `sudo systemctl status ollama` (native Linux/WSL with
-systemd) or run `ollama serve` in a terminal directly.
+connection error. On Windows, check the Ollama tray icon is present (it
+starts automatically on login); on native Linux, `sudo systemctl status
+ollama` or run `ollama serve` in a terminal directly.
 
 **Robot never appears / brain never appears on the other side** — both
-sides need multicast DNS reachability on the same LAN segment. On WSL2 this
-is the most common failure; see the WSL2 networking note above. On native
-Linux, check your firewall isn't blocking UDP 5353 (mDNS) or the brain's
-WebSocket port (`8765` by default).
+sides need multicast DNS reachability on the same LAN segment. On Windows,
+the most common cause is the **Windows Defender Firewall** prompt being
+dismissed or missed on first run — see [Windows Firewall](#6-windows-firewall)
+above; also confirm the network is set to **Private**, not **Public**
+(Public profile blocks discovery traffic by default). On native Linux, check
+your firewall isn't blocking UDP 5353 (mDNS) or the brain's WebSocket port
+(`8765` by default).
+
+**PowerShell says running scripts is disabled** — when activating the venv
+(`.venv\Scripts\Activate.ps1`), run
+`Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` once, then retry.
 
 **`PyQt6 not installed — running headless`** — expected and harmless if you
-didn't install the `[full]` extra, or on WSL2 without an X server. Use
-`--headless` explicitly to skip the message.
+didn't install the `[full]` extra. Use `--headless` explicitly to skip the
+message.
 
 **LLM never calls any tools / conversations feel "dumber" than expected** —
 confirm your Ollama model actually supports tool-calling
 (`llama3.2:3b`/`llama3.1:8b` do); a non-tool-calling model will just ignore
 the tool schemas and reply in plain text.
 
-**`nvidia-smi` works on Windows but not inside WSL** — update the Windows
-NVIDIA driver (not a Linux driver inside WSL), then `wsl --shutdown` from
-PowerShell and reopen the WSL terminal.
+**`onnxruntime-gpu` (InsightFace) stuck on CPU** — unlike `torch`,
+`onnxruntime-gpu` needs a system-wide CUDA Toolkit + cuDNN install matched
+to its version (see the GPU notes in the
+[native Windows install](#install--native-windows) section above). It's
+safe to leave this on CPU — it's a small model.
 
 **Face recognition / Whisper very slow** — confirm `torch`/`onnxruntime-gpu`
 are actually using the GPU (`tier`/`gpu` in `~/.milo-brain/config.yaml`
