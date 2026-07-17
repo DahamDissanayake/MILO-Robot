@@ -38,6 +38,8 @@ class Peer:
     id: str
     name: str
     tier: str = ""
+    mcp_port: int = 0   # the robot's MCP server port, carried in its T_HELLO
+    mcp_url: str = ""   # computed brain-side from mcp_port + the connection's remote address (see server.py)
 
 
 async def _expect(sock: MiloSocket, expected_type: str) -> protocol.Message:
@@ -55,11 +57,15 @@ async def robot_handshake(
     robot_name: str,
     store: PairedStore,
     show_pin: Callable[[str], Awaitable[None]] | None = None,
+    mcp_port: int = 0,
 ) -> Peer:
     """Run the robot side. ``show_pin`` renders the pairing PIN on the OLED;
-    without it, unpaired brains are refused outright."""
+    without it, unpaired brains are refused outright. ``mcp_port`` is this
+    robot's movement/face/speech/IMU MCP server port, advertised to the
+    brain so it can reach it without a second discovery mechanism."""
     await sock.send(
-        protocol.T_HELLO, role="robot", robot_id=robot_id, name=robot_name, proto=PROTOCOL_VERSION
+        protocol.T_HELLO, role="robot", robot_id=robot_id, name=robot_name,
+        proto=PROTOCOL_VERSION, mcp_port=mcp_port,
     )
     hello = await _expect(sock, protocol.T_HELLO)
     if hello.get("proto") != PROTOCOL_VERSION:
@@ -120,7 +126,7 @@ async def brain_handshake(
     """Run the brain (server) side. ``request_pin(robot_name)`` asks the user to
     type the PIN shown on the robot; None/absent declines pairing."""
     hello = await _expect(sock, protocol.T_HELLO)
-    peer = Peer(id=hello["robot_id"], name=hello.get("name", ""))
+    peer = Peer(id=hello["robot_id"], name=hello.get("name", ""), mcp_port=hello.get("mcp_port", 0))
     await sock.send(
         protocol.T_HELLO,
         role="brain",

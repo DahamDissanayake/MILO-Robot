@@ -17,7 +17,7 @@ import json
 from dataclasses import dataclass
 from typing import Any
 
-PROTOCOL_VERSION = 1
+PROTOCOL_VERSION = 2
 
 # Robot -> brain
 T_VIDEO = "video"
