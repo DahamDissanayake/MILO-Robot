@@ -150,3 +150,28 @@ def test_full_pairing_flow_over_real_sockets(tmp_path):
             await ws_server.wait_closed()
 
     asyncio.run(main())
+
+
+def test_peer_gets_mcp_url_from_the_connections_remote_address(tmp_path, paired_stores):
+    robot_store, _ = paired_stores
+    received: list = []
+    done = asyncio.Event()
+
+    async def handler(sock, peer):
+        received.append(peer)
+        done.set()
+
+    async def main():
+        server = make_server(tmp_path, handler)
+        ws_server, port = await serve(server)
+        try:
+            async with websockets.connect(f"ws://127.0.0.1:{port}") as ws:
+                sock = MiloSocket(ws)
+                await robot_handshake(sock, "milo-1", "milo", robot_store, mcp_port=8766)
+                await asyncio.wait_for(done.wait(), timeout=5)
+        finally:
+            ws_server.close()
+            await ws_server.wait_closed()
+
+    asyncio.run(main())
+    assert received[0].mcp_url == "http://127.0.0.1:8766"

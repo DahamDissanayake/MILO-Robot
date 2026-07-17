@@ -11,6 +11,7 @@ import asyncio
 import logging
 import socket as socketlib
 from collections.abc import Awaitable, Callable
+from dataclasses import replace
 
 from milo_common.auth import PairedStore
 from milo_common.handshake import HandshakeError, Peer, brain_handshake
@@ -121,6 +122,9 @@ class BrainServer:
             log.warning("refused connection: %s", exc)
             await sock.close(4001, "auth failed")
             return
+        if peer.mcp_port:
+            host = ws.remote_address[0]
+            peer = replace(peer, mcp_url=f"http://{host}:{peer.mcp_port}")
         log.info("robot connected: %s (%s)", peer.name, peer.id)
         self.connected_robot = peer
         try:
