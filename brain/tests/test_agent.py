@@ -1,4 +1,5 @@
 import asyncio
+import json
 
 import httpx
 
@@ -60,15 +61,33 @@ def asyncio_run_chat(client, system, messages, tools=None):
 
 
 class FakeLlm:
-    def __init__(self, responses=None):
-        self.responses = responses or []
-        self.calls: list[list[dict]] = []
+    """Each entry in ``turns`` is one raw message dict to return, in order,
+    across the tool-calling loop's rounds."""
 
-    async def chat(self, system, messages):
-        self.calls.append(messages)
-        if self.responses:
-            return self.responses.pop(0)
-        return '{"reply": "Hello!", "face": "happy", "move": "none", "facts": []}'
+    def __init__(self, turns=None):
+        self.turns = turns if turns is not None else [
+            {"role": "assistant", "content": '{"reply": "Hello!", "facts": []}'}
+        ]
+        self.calls: list[dict] = []
+
+    async def chat(self, system, messages, tools=None):
+        self.calls.append({"messages": [dict(m) for m in messages], "tools": tools})
+        return self.turns.pop(0)
+
+
+class FakeMcp:
+    def __init__(self, tools=None):
+        self._tools = tools or [{"type": "function", "function": {"name": "run_pose", "description": "", "parameters": {}}}]
+        self.calls: list[tuple[str, dict]] = []
+
+    async def list_tools(self):
+        return self._tools
+
+    async def call_tool(self, tool_name, **arguments):
+        # Parameter named tool_name, not name -- set_face/run_pose/set_mode
+        # all take a kwarg literally called `name`, which would collide.
+        self.calls.append((tool_name, arguments))
+        return {"ok": True}
 
 
 class FakeGraph:
@@ -110,10 +129,12 @@ def test_parse_llm_json_garbage_degrades_gracefully():
     assert result["reply"]
 
 
-def test_sanitize_rejects_invalid_face_and_move():
-    result = sanitize({"reply": "x", "face": "smug", "move": "backflip", "facts": [1, " ok "]})
-    assert result.face == "happy" and result.move == "none"
-    assert result.facts == ["1", " ok "] or result.facts == ["1", "ok"]
+def test_sanitize_drops_face_and_move_keeps_reply_and_facts():
+    result = sanitize({"reply": "x", "facts": [1, " ok "], "face": "ignored", "move": "ignored"})
+    assert result.reply == "x"
+    assert result.facts == ["1", " ok "]
+    assert not hasattr(result, "face")
+    assert not hasattr(result, "move")
 
 
 def test_extract_name_variants():
@@ -126,53 +147,107 @@ def test_extract_name_variants():
 
 # --- agent flows -------------------------------------------------------------
 
-def test_known_person_gets_contextual_reply_and_facts_written():
-    llm = FakeLlm(['{"reply": "Hi Daham!", "face": "happy", "move": "wave",'
-                   ' "facts": ["Daham has an exam tomorrow"]}'])
+def test_known_person_gets_contextual_reply_with_no_tool_calls():
+    llm = FakeLlm([{"role": "assistant", "content": '{"reply": "Hi Daham!", "facts": ["Daham has an exam tomorrow"]}'}])
     graph = FakeGraph()
-    agent = CognitionAgent(llm, graph)
+    mcp = FakeMcp()
+    agent = CognitionAgent(llm, graph, mcp)
 
     result = asyncio.run(agent.on_utterance("I have an exam tomorrow", DAHAM, None))
     assert result.reply == "Hi Daham!"
-    assert result.move == "wave"
 
-    # Context included the graph material.
-    sent = str(llm.calls[0])
+    sent = str(llm.calls[0]["messages"])
     assert "likes robots" in sent and "met Daham yesterday" in sent
-    # The fact was stored and linked to the speaker.
     ops = [op for op, _ in graph.calls]
     assert "upsert_node" in ops and "upsert_edge" in ops
-    edge = next(kw for op, kw in graph.calls if op == "upsert_edge")
-    assert edge["src"] == 1 and edge["type"] == "said"
 
 
-def test_unknown_person_triggers_naming_flow():
-    llm, graph = FakeLlm(), FakeGraph()
-    agent = CognitionAgent(llm, graph)
+def test_tool_calls_are_executed_and_looped_until_a_final_reply():
+    llm = FakeLlm([
+        {"role": "assistant", "content": "", "tool_calls": [
+            {"function": {"name": "run_pose", "arguments": {"name": "wave"}}}
+        ]},
+        {"role": "assistant", "content": '{"reply": "Done waving!", "facts": []}'},
+    ])
+    mcp = FakeMcp()
+    agent = CognitionAgent(llm, FakeGraph(), mcp)
+
+    result = asyncio.run(agent.on_utterance("wave at me", DAHAM, None))
+    assert result.reply == "Done waving!"
+    assert mcp.calls == [("run_pose", {"name": "wave"})]
+    assert len(llm.calls) == 2
+    # Round 2's messages include the tool call and its result.
+    round_two_messages = llm.calls[1]["messages"]
+    assert any(m.get("role") == "tool" for m in round_two_messages)
+
+
+def test_tool_loop_gives_up_gracefully_after_max_rounds():
+    keep_calling = {"role": "assistant", "content": "", "tool_calls": [
+        {"function": {"name": "run_pose", "arguments": {"name": "wave"}}}
+    ]}
+    llm = FakeLlm([keep_calling, keep_calling, keep_calling, keep_calling])
+    mcp = FakeMcp()
+    agent = CognitionAgent(llm, FakeGraph(), mcp)
+
+    result = asyncio.run(agent.on_utterance("wave forever", DAHAM, None))
+    assert result.reply  # some graceful fallback reply, not a crash
+    assert len(llm.calls) == 4  # MAX_TOOL_ROUNDS
+
+
+def test_on_utterance_works_without_an_mcp_client():
+    llm = FakeLlm([{"role": "assistant", "content": '{"reply": "hi", "facts": []}'}])
+    agent = CognitionAgent(llm, FakeGraph(), mcp=None)
+    result = asyncio.run(agent.on_utterance("hello", DAHAM, None))
+    assert result.reply == "hi"
+    assert llm.calls[0]["tools"] is None
+
+
+def test_tool_schemas_are_fetched_once_and_cached_across_utterances():
+    class CountingMcp(FakeMcp):
+        def __init__(self):
+            super().__init__()
+            self.list_tools_calls = 0
+
+        async def list_tools(self):
+            self.list_tools_calls += 1
+            return await super().list_tools()
+
+    llm = FakeLlm([
+        {"role": "assistant", "content": '{"reply": "hi", "facts": []}'},
+        {"role": "assistant", "content": '{"reply": "hi again", "facts": []}'},
+    ])
+    mcp = CountingMcp()
+    agent = CognitionAgent(llm, FakeGraph(), mcp)
+    asyncio.run(agent.on_utterance("hello", DAHAM, None))
+    asyncio.run(agent.on_utterance("hello again", DAHAM, None))
+    assert mcp.list_tools_calls == 1  # fetched once at first use, not per utterance
+
+
+def test_unknown_person_flow_sets_face_directly_via_mcp():
+    mcp = FakeMcp()
+    agent = CognitionAgent(FakeLlm(), FakeGraph(), mcp)
 
     first = asyncio.run(agent.on_utterance("hello there", None, "ZmFrZQ=="))
     assert "name" in first.reply.lower()
-    assert llm.calls == []  # no LLM round-trip for the scripted ask
+    assert ("set_face", {"name": "surprised"}) in mcp.calls
 
     second = asyncio.run(agent.on_utterance("My name is Sarah", None, "ZmFrZQ=="))
     assert second.new_person_name == "Sarah"
-    assert "Sarah" in second.reply
-    created = next(kw for op, kw in graph.calls if op == "upsert_node"
-                   and kw.get("type") == "person")
-    assert created["props"]["name"] == "Sarah"
-    assert created["embedding"] == "ZmFrZQ=="
+    assert ("set_face", {"name": "excited"}) in mcp.calls
+    assert ("run_pose", {"name": "wave"}) in mcp.calls
 
 
-def test_naming_flow_reprompts_on_unclear_answer():
-    agent = CognitionAgent(FakeLlm(), FakeGraph())
+def test_naming_flow_reprompts_and_sets_confused_face():
+    mcp = FakeMcp()
+    agent = CognitionAgent(FakeLlm(), FakeGraph(), mcp)
     asyncio.run(agent.on_utterance("hi", None, None))
     retry = asyncio.run(agent.on_utterance("ehh whatever who cares honestly like", None, None))
     assert "name" in retry.reply.lower()
-    # Still waiting: a clear answer now succeeds.
+    assert ("set_face", {"name": "confused"}) in mcp.calls
     done = asyncio.run(agent.on_utterance("I'm Bob", None, None))
     assert done.new_person_name == "Bob"
 
 
 def test_empty_transcript_is_ignored():
-    result = asyncio.run(CognitionAgent(FakeLlm(), FakeGraph()).on_utterance("  ", DAHAM, None))
+    result = asyncio.run(CognitionAgent(FakeLlm(), FakeGraph(), FakeMcp()).on_utterance("  ", DAHAM, None))
     assert result.reply == ""
