@@ -126,6 +126,17 @@ def test_walk_denied_while_web_controls():
     asyncio.run(main())
 
 
+def test_run_pose_denied_while_web_controls():
+    async def main():
+        deps = make_deps(allow=False)
+        server = build_mcp_server(deps)
+        result = await _call(server, "run_pose", name="wave")
+        assert result == {"ok": False, "error": "web-control-active"}
+        assert deps.runner.ran == []
+
+    asyncio.run(main())
+
+
 def test_run_pose_rejects_unknown_name():
     async def main():
         deps = make_deps()
@@ -175,6 +186,17 @@ def test_turn_starts_the_continuous_turn_pose():
     asyncio.run(main())
 
 
+def test_turn_denied_while_web_controls():
+    async def main():
+        deps = make_deps(allow=False)
+        server = build_mcp_server(deps)
+        result = await _call(server, "turn", direction="left")
+        assert result == {"ok": False, "error": "web-control-active"}
+        assert deps.runner.ran == []
+
+    asyncio.run(main())
+
+
 def test_turn_rejects_bad_direction():
     async def main():
         deps = make_deps()
@@ -209,6 +231,39 @@ def test_reset_and_standby_call_through_when_allowed():
     asyncio.run(main())
 
 
+def test_set_mode_denied_while_web_controls():
+    async def main():
+        deps = make_deps(allow=False)
+        server = build_mcp_server(deps)
+        result = await _call(server, "set_mode", name="raw")
+        assert result == {"ok": False, "error": "web-control-active"}
+        assert deps.gait.mode == "balanced"
+
+    asyncio.run(main())
+
+
+def test_reset_denied_while_web_controls():
+    async def main():
+        deps = make_deps(allow=False)
+        server = build_mcp_server(deps)
+        result = await _call(server, "reset")
+        assert result == {"ok": False, "error": "web-control-active"}
+        assert deps.gait.reset_called is False
+
+    asyncio.run(main())
+
+
+def test_standby_denied_while_web_controls():
+    async def main():
+        deps = make_deps(allow=False)
+        server = build_mcp_server(deps)
+        result = await _call(server, "standby")
+        assert result == {"ok": False, "error": "web-control-active"}
+        assert deps.gait.standby_called is False
+
+    asyncio.run(main())
+
+
 def test_relax_and_hold_call_through():
     async def main():
         deps = make_deps()
@@ -216,6 +271,28 @@ def test_relax_and_hold_call_through():
         await _call(server, "relax")
         await _call(server, "hold")
         assert deps.servos.relaxed and deps.servos.held
+
+    asyncio.run(main())
+
+
+def test_relax_denied_while_web_controls():
+    async def main():
+        deps = make_deps(allow=False)
+        server = build_mcp_server(deps)
+        result = await _call(server, "relax")
+        assert result == {"ok": False, "error": "web-control-active"}
+        assert deps.servos.relaxed is False
+
+    asyncio.run(main())
+
+
+def test_hold_denied_while_web_controls():
+    async def main():
+        deps = make_deps(allow=False)
+        server = build_mcp_server(deps)
+        result = await _call(server, "hold")
+        assert result == {"ok": False, "error": "web-control-active"}
+        assert deps.servos.held is False
 
     asyncio.run(main())
 
@@ -299,9 +376,11 @@ class FakeDisplayWithSet:
     def __init__(self):
         self.current_face = None
         self.requested: list[str] = []
+        self.modes: list = []
 
-    async def set_face(self, name):
+    async def set_face(self, name, mode=None):
         self.requested.append(name)
+        self.modes.append(mode)
         self.current_face = name
 
 
@@ -324,6 +403,20 @@ def test_set_face_accepts_talk_prefixed_names_for_the_reflex_caller():
         server = build_mcp_server(deps)
         result = await _call(server, "set_face", name="talk_happy")
         assert result == {"ok": True, "face": "talk_happy"}
+
+    asyncio.run(main())
+
+
+def test_set_face_loops_talk_prefixed_faces_and_plays_others_once():
+    async def main():
+        from milo_bridge.drivers.display import AnimMode
+
+        deps = make_deps()
+        deps.display = FakeDisplayWithSet()
+        server = build_mcp_server(deps)
+        await _call(server, "set_face", name="talk_happy")
+        await _call(server, "set_face", name="happy")
+        assert deps.display.modes == [AnimMode.LOOP, AnimMode.ONCE]
 
     asyncio.run(main())
 
@@ -383,6 +476,24 @@ def test_speak_truncates_to_500_chars(monkeypatch):
         server = build_mcp_server(deps)
         await _call(server, "speak", text="a" * 600)
         assert len(seen["text"]) == 500
+
+    asyncio.run(main())
+
+
+def test_speak_reports_tts_failed_when_synth_raises(monkeypatch):
+    async def main():
+        deps = make_deps()
+        deps.audio = FakeAudio()
+
+        async def raising_synth(text, timeout_s=10.0):
+            raise RuntimeError("espeak-ng vanished")
+
+        monkeypatch.setattr("milo_bridge.mcp.server.tts_available", lambda: True)
+        monkeypatch.setattr("milo_bridge.mcp.server.synth_pcm", raising_synth)
+        server = build_mcp_server(deps)
+        result = await _call(server, "speak", text="hi")
+        assert result == {"ok": False, "error": "tts-failed"}
+        assert deps.audio.played == []
 
     asyncio.run(main())
 
