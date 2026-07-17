@@ -1,4 +1,4 @@
-# MILO-Dashboard — Live TUI System Dashboard
+# milo-dashboard — Live TUI System Dashboard
 
 One full-screen, auto-refreshing dashboard for Milo's Pi: system load,
 temperature and throttling, network, storage, and `milo-bridge` service
@@ -8,11 +8,11 @@ health — everything visible at once over a plain SSH session.
 
     cd ~/MILO-Robot
     source ~/.venvs/milo/bin/activate     # or any venv
-    pip install -e MILO-Dashboard
+    pip install -e milo-dashboard
 
 ## Run
 
-    cd ~/MILO-Robot/MILO-Dashboard
+    cd ~/MILO-Robot/milo-dashboard
     milo-dash                 # full live dashboard
     milo-dash --check         # one-shot plain-text report (no TUI)
     python -m milo_dashboard  # same as milo-dash
@@ -54,4 +54,4 @@ crashing. If the journal panel shows an error, add your user to the
 
 ## Tests
 
-    python -m pytest MILO-Dashboard/tests -v
+    python -m pytest milo-dashboard/tests -v

@@ -35,6 +35,6 @@ Thumbs.db
 # graphify knowledge graph output (regenerable, not source)
 graphify-out/
 
-# IOT-Testing session artifacts (directory tracked via .gitkeep, contents are not)
-IOT-Testing/results/*
-!IOT-Testing/results/.gitkeep
+# iot-testing session artifacts (directory tracked via .gitkeep, contents are not)
+iot-testing/results/*
+!iot-testing/results/.gitkeep

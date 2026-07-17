@@ -1,4 +1,4 @@
-# IOT-Testing — Milo Hardware Tester
+# iot-testing — Milo Hardware Tester
 
 A Textual-based TUI for validating every sensor and actuator on Milo — servos,
 OLED display, IMU, camera, microphones, speaker — over SSH, plus an I2C bus
@@ -71,7 +71,7 @@ python3 -m venv --system-site-packages .venv
 source .venv/bin/activate
 pip install -e ./common
 pip install -e "./bridge[pi]"
-pip install -e ./IOT-Testing
+pip install -e ./iot-testing
 ```
 
 ### 6. Launch the tester
@@ -127,15 +127,15 @@ field for what went wrong.
 
 ### 8. Check results
 
-Every result is appended to `IOT-Testing/results/session-<timestamp>.log` as
+Every result is appended to `iot-testing/results/session-<timestamp>.log` as
 you go (so nothing is lost if you exit early), and summarized in the app's
 **Results** screen. Camera snapshots (`camera-test-*.jpg`) and mic recordings
-(`mic-test-*.wav`) also land in `IOT-Testing/results/` — `scp` them down to a
+(`mic-test-*.wav`) also land in `iot-testing/results/` — `scp` them down to a
 machine with a screen/speakers to verify content (a headless Pi terminal
 can't preview images or play audio you can hear remotely).
 
 ```bash
-scp <pi-username>@milo.local:MILO-Robot/IOT-Testing/results/camera-test-*.jpg .
+scp <pi-username>@milo.local:MILO-Robot/iot-testing/results/camera-test-*.jpg .
 ```
 
 ## Troubleshooting

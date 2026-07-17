@@ -89,6 +89,8 @@ decision — lives in **[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)**.
 | [`brain/`](brain/) | `milo-brain` — the desktop app: ASR/vision/TTS pipelines, LLM agent, tray UI |
 | [`training/`](training/) | MuJoCo model + PPO training + ONNX export for the gait policy |
 | [`hardware/reference-sesame/`](hardware/reference-sesame/) | Original Sesame firmware files Milo ports from (credit: Dorian Todd) |
+| [`iot-testing/`](iot-testing/) | `milo-iot-tester` — TUI hardware tester (servos, display, IMU, camera, mics, speaker) that drives the real robot drivers |
+| [`milo-dashboard/`](milo-dashboard/) | `milo-dashboard` — live TUI system dashboard for the Pi (load, network, storage, `milo-bridge` health) |
 | [`docs/specs/`](docs/specs/) | The approved Project Milo design spec |
 
 ## Quickstart
