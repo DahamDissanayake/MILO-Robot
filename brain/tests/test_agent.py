@@ -1,11 +1,62 @@
 import asyncio
 
+import httpx
+
 from milo_brain.llm.agent import (
     CognitionAgent,
+    OllamaClient,
     extract_name,
     parse_llm_json,
     sanitize,
 )
+
+
+class _FakeResponse:
+    def __init__(self, payload):
+        self._payload = payload
+
+    def raise_for_status(self):
+        pass
+
+    def json(self):
+        return self._payload
+
+
+def test_chat_without_tools_requests_json_format(monkeypatch):
+    captured = {}
+
+    async def fake_post(self, url, json):
+        captured.update(json)
+        return _FakeResponse({"message": {"role": "assistant", "content": "hi"}})
+
+    monkeypatch.setattr(httpx.AsyncClient, "post", fake_post)
+    client = OllamaClient()
+    message = asyncio_run_chat(client, "sys", [{"role": "user", "content": "hey"}])
+    assert captured["format"] == "json"
+    assert "tools" not in captured
+    assert message == {"role": "assistant", "content": "hi"}
+
+
+def test_chat_with_tools_omits_json_format_and_forwards_tools(monkeypatch):
+    captured = {}
+
+    async def fake_post(self, url, json):
+        captured.update(json)
+        return _FakeResponse({"message": {"role": "assistant", "content": "", "tool_calls": [
+            {"function": {"name": "walk", "arguments": {"vx": 0.1}}}
+        ]}})
+
+    monkeypatch.setattr(httpx.AsyncClient, "post", fake_post)
+    client = OllamaClient()
+    tools = [{"type": "function", "function": {"name": "walk", "description": "", "parameters": {}}}]
+    message = asyncio_run_chat(client, "sys", [{"role": "user", "content": "walk forward"}], tools=tools)
+    assert "format" not in captured
+    assert captured["tools"] == tools
+    assert message["tool_calls"][0]["function"]["name"] == "walk"
+
+
+def asyncio_run_chat(client, system, messages, tools=None):
+    return asyncio.run(client.chat(system, messages, tools=tools))
 
 
 class FakeLlm:

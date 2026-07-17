@@ -51,19 +51,29 @@ class OllamaClient:
         self.base_url = base_url.rstrip("/")
         self.model = model
 
-    async def chat(self, system: str, messages: list[dict]) -> str:
+    async def chat(self, system: str, messages: list[dict], tools: list[dict] | None = None) -> dict:
+        """Returns the raw assistant message dict (``content`` and, if the
+        model requested one or more tool calls, ``tool_calls``). Ollama's
+        strict JSON-format mode and its tool-calling mode aren't used
+        together, so ``format: "json"`` is only requested when no tools are
+        offered -- the final tool-calling turn's JSON-ness instead relies on
+        SYSTEM_PROMPT's instructions plus parse_llm_json's existing
+        tolerance for stray/non-strict text."""
         import httpx
 
         payload = {
             "model": self.model,
             "messages": [{"role": "system", "content": system}, *messages],
-            "format": "json",
             "stream": False,
         }
+        if tools:
+            payload["tools"] = tools
+        else:
+            payload["format"] = "json"
         async with httpx.AsyncClient(timeout=120) as client:
             response = await client.post(f"{self.base_url}/api/chat", json=payload)
             response.raise_for_status()
-            return response.json()["message"]["content"]
+            return response.json()["message"]
 
 
 def parse_llm_json(raw: str) -> dict:
