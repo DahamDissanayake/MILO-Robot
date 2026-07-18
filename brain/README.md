@@ -274,7 +274,10 @@ list; inside it, `i` opens **Connect by IP** to dial a robot directly,
 bypassing mDNS discovery entirely -- for networks where multicast doesn't
 reach between devices, e.g. some routers don't forward it between WiFi
 clients even on the same network), `m` opens the model picker (lists
-whatever's installed in Ollama), `q` quits. Use `--headless` on a
+whatever's installed in Ollama), `l` opens **Logs** (live tail of
+everything logged, including background-task errors like a failed
+handshake or a dropped connection that would otherwise be invisible
+once the TUI has taken over the terminal), `q` quits. Use `--headless` on a
 genuinely headless box (no terminal attached at all, e.g. run under a
 service manager) -- it'll print a plain `PIN:` prompt on stdin instead of
 a TUI modal when a robot it dials into needs pairing.
@@ -368,10 +371,16 @@ client against the robot — see below.
 - **`tui/dashboard.py`** — the main screen: identity, connection (connected
   robot + paired count), and model (with live tokens/sec) panels.
 - **`tui/connect_robots.py`** — the refreshable discovered-robots list;
-  selecting one requests a manual connect.
+  selecting one requests a manual connect. `tui/connect_by_ip.py` is its
+  "type an IP directly" fallback for networks where mDNS doesn't reach.
 - **`tui/pairing.py`**, **`tui/model_picker.py`** — modal screens for PIN
   entry (popped reactively when a robot requests pairing mid-handshake) and
   picking an installed Ollama model.
+- **`logbuf.py`**, **`tui/logs.py`** — a ring buffer attached to the root
+  logger, and the screen that tails it live. This is the only place
+  background-task errors (a failed handshake, a lost connection, zeroconf
+  noise) are visible while the TUI is running -- a plain stderr handler
+  would corrupt or vanish into Textual's alternate screen buffer instead.
 
 Everything in `pipelines/` and the pairing/session flow is designed to be
 testable off-hardware: real Whisper/InsightFace/Ollama/MCP clients are

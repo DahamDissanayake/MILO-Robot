@@ -7,8 +7,10 @@ import asyncio
 from milo_brain.config import BrainConfig
 from milo_brain.llm.token_rate import TokenRateTracker
 from milo_brain.tui.app import MiloBrainApp
+from milo_brain.logbuf import RingBufferLogHandler
 from milo_brain.tui.connect_robots import ConnectRobotsScreen
 from milo_brain.tui.dashboard import DashboardScreen
+from milo_brain.tui.logs import LogsScreen
 
 
 class FakeDiscovery:
@@ -71,3 +73,29 @@ def test_connect_robots_action_pushes_the_screen():
             return isinstance(app.screen, ConnectRobotsScreen)
 
     assert asyncio.run(scenario()) is True
+
+
+def test_logs_action_pushes_the_screen():
+    async def scenario():
+        app, connector = make_app()
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            app.action_logs()
+            await pilot.pause()
+            return isinstance(app.screen, LogsScreen)
+
+    assert asyncio.run(scenario()) is True
+
+
+def test_log_buffer_defaults_to_an_empty_one_when_not_provided():
+    app, _connector = make_app()
+    assert isinstance(app.log_buffer, RingBufferLogHandler)
+    assert app.log_buffer.lines() == []
+
+
+def test_provided_log_buffer_is_used_as_is():
+    connector = FakeConnector()
+    cfg = BrainConfig(brain_id="b", name="n", tier="small")
+    log_buffer = RingBufferLogHandler()
+    app = MiloBrainApp(connector, cfg, TokenRateTracker(), log_buffer)
+    assert app.log_buffer is log_buffer

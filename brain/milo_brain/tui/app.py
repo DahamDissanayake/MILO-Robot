@@ -11,9 +11,11 @@ from textual.app import App
 
 from ..config import BrainConfig
 from ..llm.token_rate import TokenRateTracker
+from ..logbuf import RingBufferLogHandler
 from ..net.connector import RobotConnectorManager
 from .connect_robots import ConnectRobotsScreen
 from .dashboard import DashboardScreen
+from .logs import LogsScreen
 from .model_picker import ModelPickerScreen
 from .pairing import PairingPinScreen
 
@@ -26,14 +28,22 @@ class MiloBrainApp(App):
     BINDINGS = [
         ("c", "connect_robots", "Connect Robots"),
         ("m", "pick_model", "Model"),
+        ("l", "logs", "Logs"),
         ("q", "quit", "Quit"),
     ]
 
-    def __init__(self, connector: RobotConnectorManager, cfg: BrainConfig, rate_tracker: TokenRateTracker):
+    def __init__(
+        self,
+        connector: RobotConnectorManager,
+        cfg: BrainConfig,
+        rate_tracker: TokenRateTracker,
+        log_buffer: RingBufferLogHandler | None = None,
+    ):
         super().__init__()
         self.connector = connector
         self.cfg = cfg
         self.rate_tracker = rate_tracker
+        self.log_buffer = log_buffer or RingBufferLogHandler()
         # Same pattern the old tray UI used (server._request_pin = ...),
         # just pointed at a modal screen instead of a QInputDialog.
         self.connector._request_pin = self.request_pin_from_user
@@ -59,6 +69,9 @@ class MiloBrainApp(App):
 
     def action_connect_robots(self) -> None:
         self.push_screen(ConnectRobotsScreen(self.connector))
+
+    def action_logs(self) -> None:
+        self.push_screen(LogsScreen(self.log_buffer))
 
     def action_pick_model(self) -> None:
         self.run_worker(self._pick_model())

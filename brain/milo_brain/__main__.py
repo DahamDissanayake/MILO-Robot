@@ -8,6 +8,7 @@ import logging
 
 from .config import BrainConfig
 from .llm.token_rate import TokenRateTracker
+from .logbuf import RingBufferLogHandler
 from .net.connector import RobotConnectorManager, RobotHandler
 
 
@@ -32,12 +33,27 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--headless", action="store_true", help="run without the TUI")
     args = parser.parse_args(argv)
 
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
+    # The ring buffer is what powers the TUI's Logs screen ("l" key) --
+    # background task errors (a failed handshake, a dropped connection,
+    # zeroconf noise) would otherwise be invisible once Textual has taken
+    # over the terminal, since a plain StreamHandler writing to stderr
+    # corrupts/vanishes into its alternate screen buffer instead of
+    # appearing anywhere the user can read. --headless has no TUI to view
+    # it in, so it also gets a normal stderr handler for a plain terminal.
+    log_buffer = RingBufferLogHandler()
+    root_logger = logging.getLogger()
+    root_logger.setLevel(logging.INFO)
+    root_logger.addHandler(log_buffer)
+    if args.headless:
+        stderr_handler = logging.StreamHandler()
+        stderr_handler.setFormatter(logging.Formatter("%(asctime)s %(name)s %(message)s"))
+        root_logger.addHandler(stderr_handler)
+
     cfg = BrainConfig.load()
     rate_tracker = TokenRateTracker()
-    handler = _build_handler(cfg, rate_tracker)
+    session_handler = _build_handler(cfg, rate_tracker)
 
-    connector = RobotConnectorManager(cfg, request_pin=_headless_request_pin, session_handler=handler)
+    connector = RobotConnectorManager(cfg, request_pin=_headless_request_pin, session_handler=session_handler)
 
     if args.headless:
         asyncio.run(connector.run_forever())
@@ -45,7 +61,7 @@ def main(argv: list[str] | None = None) -> None:
 
     from .tui.app import MiloBrainApp
 
-    MiloBrainApp(connector, cfg, rate_tracker).run()
+    MiloBrainApp(connector, cfg, rate_tracker, log_buffer).run()
 
 
 if __name__ == "__main__":
