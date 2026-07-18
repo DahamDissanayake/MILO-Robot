@@ -25,8 +25,25 @@ def _clamp(value: float, lo: float, hi: float) -> float:
 
 def build_mcp_server(deps: McpDeps):
     from mcp.server.fastmcp import FastMCP
+    from mcp.server.transport_security import TransportSecuritySettings
 
-    server = FastMCP("milo-movement")
+    # FastMCP's constructor auto-enables Host-header DNS-rebinding
+    # protection restricted to 127.0.0.1/localhost whenever `host` isn't
+    # given (it defaults to "127.0.0.1"). That protection guards against a
+    # browser being tricked into hitting an unauthenticated localhost dev
+    # server -- it doesn't apply here: main.py binds this app's real
+    # uvicorn server to 0.0.0.0 on purpose (the brain is a separate machine
+    # on the LAN) and every request is already gated by BearerAuthMiddleware
+    # (mcp/auth.py). Left at the default, every brain's first MCP request
+    # -- session.initialize() -- gets rejected with 421 Misdirected Request
+    # because its Host header is the robot's LAN IP, not "localhost"; that
+    # exception tears down the whole cognition session immediately after
+    # connecting, which is why a brain looked like it connected then
+    # vanished a few seconds later.
+    server = FastMCP(
+        "milo-movement",
+        transport_security=TransportSecuritySettings(enable_dns_rebinding_protection=False),
+    )
 
     @server.tool()
     async def walk(vx: float, vy: float, yaw_rate: float) -> dict:
