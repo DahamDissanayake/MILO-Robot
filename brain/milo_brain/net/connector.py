@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from collections.abc import Awaitable, Callable
 from dataclasses import replace
 
@@ -75,7 +76,12 @@ class RobotConnectorManager:
         self.discovery = discovery or RobotDiscovery()  # public: ConnectRobotsScreen reads .snapshot()
         self._connect = connect
         self.connected_robot: Peer | None = None
-        self.link_state: str = "disconnected"
+        # "idle" | "connecting" | "handshaking" | "connected" | "retrying" --
+        # read by the dashboard every poll to show what's actually happening.
+        self.link_state: str = "idle"
+        self.link_target: tuple[str, int] | None = None  # host:port currently being dialed
+        self.last_error: str | None = None  # most recent connect/handshake failure
+        self.retry_at: float | None = None  # time.monotonic() deadline for the next attempt
         self._manual_target: str | None = None
         self._manual_host_target: tuple[str, int] | None = None
         # Last robot this process actually completed a handshake with --
@@ -86,7 +92,7 @@ class RobotConnectorManager:
         # Consecutive connection drops since the last successful connect --
         # drives _drop_backoff_seconds(); reset to 0 as soon as a connect
         # succeeds again.
-        self._consecutive_drops = 0
+        self.consecutive_drops = 0
 
     def paired_ids(self) -> list[str]:
         return self._store.peer_ids()
@@ -147,6 +153,8 @@ class RobotConnectorManager:
         manual_target, self._manual_target = self._manual_target, None
         choice = select_robot(self.discovery.snapshot(), self._store, manual_target=manual_target)
         if choice is None:
+            self.link_state = "idle"
+            self.link_target = None
             await self._wait_before_retry(self._cfg.reconnect_seconds)
             return
         record, needs_pairing = choice
@@ -164,9 +172,13 @@ class RobotConnectorManager:
         self._wake.clear()
 
     async def _connect_and_run(self, url: str, *, offer_pairing: bool) -> None:
+        self.link_state = "connecting"
+        self.link_target = _parse_host_port(url)
+        self.last_error = None
         try:
             async with self._connect(url) as ws:
                 sock = MiloSocket(ws)
+                self.link_state = "handshaking"
                 peer = await brain_handshake(
                     sock,
                     self._cfg.brain_id,
@@ -182,20 +194,26 @@ class RobotConnectorManager:
                 self.connected_robot = peer
                 self.link_state = "connected"
                 self.last_connected = _parse_host_port(url)
-                self._consecutive_drops = 0
+                self.consecutive_drops = 0
                 try:
                     await self._session_handler(sock, peer)
                 finally:
                     self.connected_robot = None
-                    self.link_state = "disconnected"
+                    self.link_state = "idle"
         except HandshakeError as exc:
+            self.link_state = "idle"
+            self.last_error = f"handshake failed: {exc}"
             log.warning("handshake with %s failed: %s", url, exc)
             await self._wait_before_retry(self._cfg.reconnect_seconds)
         except Exception as exc:  # connection drop -> fail over on next tick
-            self._consecutive_drops += 1
-            backoff = _drop_backoff_seconds(self._consecutive_drops)
+            self.consecutive_drops += 1
+            backoff = _drop_backoff_seconds(self.consecutive_drops)
+            self.link_state = "retrying"
+            self.retry_at = time.monotonic() + backoff
+            self.last_error = f"{type(exc).__name__}: {exc}"
             log.info(
                 "robot link lost (%s: %s), rescanning in %.0fs",
                 type(exc).__name__, exc, backoff,
             )
             await self._wait_before_retry(backoff)
+            self.retry_at = None

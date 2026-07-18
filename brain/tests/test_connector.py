@@ -82,7 +82,7 @@ def test_tick_waits_when_nothing_discovered(tmp_path):
     )
     asyncio.run(connector._tick())
     assert connector.connected_robot is None
-    assert connector.link_state == "disconnected"
+    assert connector.link_state == "idle"
 
 
 def test_tick_connects_to_a_selected_robot_and_runs_the_session_handler(tmp_path):
@@ -131,7 +131,7 @@ def test_tick_connects_to_a_selected_robot_and_runs_the_session_handler(tmp_path
         # The handler already returned by the time _tick() moves on, so the
         # connection is cleaned up.
         assert connector.connected_robot is None
-        assert connector.link_state == "disconnected"
+        assert connector.link_state == "idle"
         # last_connected survives the session ending -- it's what
         # request_reconnect() redials, not "currently connected".
         assert connector.last_connected == ("10.0.0.9", 8765)
@@ -151,9 +151,11 @@ def test_consecutive_drops_counts_up_on_repeated_connect_failures(tmp_path):
         discovery=discovery,
         connect=lambda url: _RaisingConnectCM(OSError("[Errno 11001] getaddrinfo failed")),
     )
-    assert connector._consecutive_drops == 0
+    assert connector.consecutive_drops == 0
     asyncio.run(connector._tick())  # backoff is 1s on the first drop
-    assert connector._consecutive_drops == 1
+    assert connector.consecutive_drops == 1
+    assert connector.link_state == "retrying"
+    assert "getaddrinfo failed" in connector.last_error
 
 
 def test_consecutive_drops_resets_after_a_successful_connect(tmp_path):
@@ -177,7 +179,7 @@ def test_consecutive_drops_resets_after_a_successful_connect(tmp_path):
             cfg, session_handler=handler, discovery=discovery,
             connect=lambda url: _ConnectCM(raw_brain),
         )
-        connector._consecutive_drops = 3  # simulate a prior run of failures
+        connector.consecutive_drops = 3  # simulate a prior run of failures
 
         robot_task = asyncio.create_task(
             robot_handshake(MiloSocket(raw_robot), "milo-1", "milo", robot_store, mcp_port=0)
@@ -185,9 +187,90 @@ def test_consecutive_drops_resets_after_a_successful_connect(tmp_path):
         await connector._tick()
         await robot_task
 
-        assert connector._consecutive_drops == 0
+        assert connector.consecutive_drops == 0
+        assert connector.link_state == "idle"
 
     asyncio.run(main())
+
+
+def test_tick_shows_connecting_then_handshaking_before_the_session_starts(tmp_path):
+    async def main():
+        cfg = BrainConfig(brain_id="brain-1", name="d", tier="large", data_dir=str(tmp_path))
+        token = derive_token("123456", "milo-1", "brain-1")
+        PairedStore(cfg.paired_path).add("milo-1", token)
+        robot_store = PairedStore(tmp_path / "robot" / "paired.json")
+        robot_store.add("brain-1", token)
+
+        raw_robot, raw_brain = FakeWebSocket(), FakeWebSocket()
+        raw_robot.peer, raw_brain.peer = raw_brain, raw_robot
+
+        async def handler(sock, peer):
+            pass
+
+        discovery = FakeDiscoveryWith(
+            [RobotRecord(robot_id="milo-1", name="milo", host="10.0.0.9", port=8765)]
+        )
+        connector = RobotConnectorManager(
+            cfg, session_handler=handler, discovery=discovery,
+            connect=lambda url: _ConnectCM(raw_brain),
+        )
+
+        assert connector.link_state == "idle"
+        tick_task = asyncio.create_task(connector._tick())
+        await asyncio.sleep(0)  # let _tick() start; handshake hasn't completed yet
+        assert connector.link_state in ("connecting", "handshaking")
+        assert connector.link_target == ("10.0.0.9", 8765)
+
+        robot_task = asyncio.create_task(
+            robot_handshake(MiloSocket(raw_robot), "milo-1", "milo", robot_store, mcp_port=0)
+        )
+        await tick_task
+        await robot_task
+
+        assert connector.link_state == "idle"  # handler returned immediately -> session ended
+
+    asyncio.run(main())
+
+
+def test_tick_sets_idle_and_clears_target_when_nothing_is_discovered(tmp_path):
+    cfg = BrainConfig(data_dir=str(tmp_path), reconnect_seconds=0.0)
+
+    async def handler(sock, peer):
+        raise AssertionError("must never be reached -- nothing was discovered")
+
+    connector = RobotConnectorManager(
+        cfg, session_handler=handler, discovery=FakeDiscoveryEmpty(),
+    )
+    connector.link_state = "retrying"
+    connector.link_target = ("10.0.0.9", 8765)
+
+    asyncio.run(connector._tick())
+
+    assert connector.link_state == "idle"
+    assert connector.link_target is None
+
+
+def test_handshake_failure_sets_idle_with_last_error(tmp_path):
+    from milo_common import protocol
+
+    cfg = BrainConfig(data_dir=str(tmp_path), reconnect_seconds=0.0)
+    discovery = FakeDiscoveryWith(
+        [RobotRecord(robot_id="milo-1", name="milo", host="10.0.0.9", port=8765, pairing=True)]
+    )
+    # brain_handshake() always reads the robot's hello first (_expect at the
+    # top of handshake.py); pre-seeding an "error" frame instead makes
+    # _expect raise HandshakeError immediately instead of hanging on recv().
+    raw_brain = FakeWebSocket()
+    raw_brain.outbox.put_nowait(protocol.encode_header(protocol.T_ERROR, code="bad_pin"))
+    connector = RobotConnectorManager(
+        cfg, request_pin=lambda name: None, session_handler=lambda sock, peer: None,
+        discovery=discovery, connect=lambda url: _ConnectCM(raw_brain),
+    )
+
+    asyncio.run(connector._tick())
+
+    assert connector.link_state == "idle"
+    assert connector.last_error is not None and "handshake failed" in connector.last_error
 
 
 def test_request_reconnect_is_a_noop_before_any_connection(tmp_path):
