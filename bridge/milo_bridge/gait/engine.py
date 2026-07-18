@@ -67,6 +67,7 @@ class GaitEngine:
         self._mode = "balanced"
         self._holding_target: dict[str, float] | None = None
         self._manual_override = False
+        self._suspended = False
         self._was_deferring = False
         self._t0 = clock()
 
@@ -123,14 +124,40 @@ class GaitEngine:
             self._command = (0.0, 0.0, 0.0)
             self._active = False
 
+    def set_suspended(self, on: bool) -> None:
+        """Stop writing servos entirely while SleepController is mid
+        sleep/wake sequence -- without this, balanced/angled mode's
+        self-leveling re-engages (and re-drives) the servos the instant
+        SleepController.relax()es them for asleep power savings, since
+        hold-level would otherwise treat "no active command" as its cue to
+        drive back toward a target every tick."""
+        self._suspended = on
+
+    def _current_angles(self) -> dict[str, float]:
+        return {
+            name: (angle if (angle := self._servos.last_angle(name)) is not None else STAND_ANGLES[name])
+            for name in STAND_ANGLES
+        }
+
     def tick(self) -> dict[str, float] | None:
         """One control step; returns the angles written (None while idle)."""
-        deferring = self._manual_override or (self._runner is not None and self._runner.is_running)
+        deferring = self._manual_override or self._suspended or (
+            self._runner is not None and self._runner.is_running
+        )
         if deferring:
             self._was_deferring = True
-            return None  # manual override, or a scripted pose, owns the servos right now
-        if self._was_deferring and self._active:
-            self._t0 = self._clock()  # resume the CPG cycle cleanly, not mid-phase
+            return None  # manual override, sleep, or a scripted pose owns the servos right now
+        if self._was_deferring:
+            if self._active:
+                self._t0 = self._clock()  # resume the CPG cycle cleanly, not mid-phase
+            else:
+                # A scripted pose (or manual override) just released control.
+                # Hold wherever it actually left the servos instead of
+                # snapping hold-level's self-leveling back to a stale target
+                # (e.g. STAND_ANGLES) -- this is what was yanking poses like
+                # "dead"/"point" (which intentionally end off-stand) back to
+                # standing the instant they finished.
+                self._holding_target = self._current_angles()
         self._was_deferring = False
         if not self._active:
             return self._hold_level() if self._mode in _BALANCE_MODES else None
@@ -172,6 +199,11 @@ class GaitEngine:
         interval = 1.0 / self._rate_hz
         while True:
             started = self._clock()
-            self.tick()
+            try:
+                self.tick()
+            except Exception:
+                # Same reasoning as SmoothServos.run(): one bad tick (e.g. an
+                # IMU read glitch) must not permanently stop the gait loop.
+                log.exception("GaitEngine.tick failed; continuing")
             elapsed = self._clock() - started
             await asyncio.sleep(max(0.0, interval - elapsed))

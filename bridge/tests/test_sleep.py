@@ -39,6 +39,14 @@ class FakeServos:
         self.relaxed += 1
 
 
+class FakeGait:
+    def __init__(self):
+        self.suspended_calls: list[bool] = []
+
+    def set_suspended(self, on):
+        self.suspended_calls.append(on)
+
+
 def test_sleep_then_wake_sequence():
     runner, display, servos = FakeRunner(), FakeDisplay(), FakeServos()
     ctl = SleepController(runner, display, servos=servos)
@@ -59,6 +67,23 @@ def test_sleep_then_wake_sequence():
         assert display.idle
         await ctl.ensure_awake()  # idempotent
         assert runner.ran == ["rest", "stand"]
+
+    asyncio.run(run())
+
+
+def test_ensure_asleep_suspends_gait_before_relaxing_and_wake_resumes_it():
+    # Regression: hold-level self-leveling was re-engaging (and re-driving)
+    # servos the instant relax() went limp, defeating asleep power saving.
+    # set_suspended(True) must be called before relax(), and lifted again
+    # on wake.
+    runner, display, servos, gait = FakeRunner(), FakeDisplay(), FakeServos(), FakeGait()
+    ctl = SleepController(runner, display, servos=servos, gait=gait)
+
+    async def run():
+        await ctl.ensure_asleep()
+        assert gait.suspended_calls == [True]
+        await ctl.ensure_awake()
+        assert gait.suspended_calls == [True, False]
 
     asyncio.run(run())
 

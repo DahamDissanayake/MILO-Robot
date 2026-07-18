@@ -133,7 +133,7 @@ async def main() -> None:
     asyncio.get_running_loop().set_exception_handler(_make_crash_exception_handler(crash_log))
 
     sleep_controller = SleepController(
-        runner, display, loud_rms_threshold=cfg.loud_rms_threshold, servos=motion_servos
+        runner, display, loud_rms_threshold=cfg.loud_rms_threshold, servos=motion_servos, gait=gait
     )
 
     broker = ControlBroker(on_change=_make_control_change_handler(sleep_controller))

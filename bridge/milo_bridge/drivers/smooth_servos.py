@@ -17,10 +17,13 @@ blocked-and-ramped inside the call itself would stall GaitEngine's own
 from __future__ import annotations
 
 import asyncio
+import logging
 import time
 from collections.abc import Mapping
 
 from .servos import SERVO_NAMES
+
+log = logging.getLogger(__name__)
 
 DEFAULT_SLEW_DEG_PER_S = 300.0
 TICK_HZ = 50
@@ -60,6 +63,13 @@ class SmoothServos:
     def last_angle(self, servo):
         return self._servos.last_angle(servo)
 
+    @property
+    def slew_deg_per_s(self) -> float:
+        """Exposed so callers (PoseRunner) can compute how long a commanded
+        move will actually take to land, instead of trusting a hand-picked
+        wait_ms that predates this slew limiter."""
+        return self._slew
+
     def relax(self) -> None:
         self._pre_relax_targets = {
             name: self._servos.last_angle(name)
@@ -96,7 +106,14 @@ class SmoothServos:
         interval = 1.0 / TICK_HZ
         while True:
             started = self._clock()
-            self.tick()
+            try:
+                self.tick()
+            except Exception:
+                # A transient I2C error (e.g. the servo rail sagging under
+                # load) must not permanently kill this loop -- every servo
+                # write funnels through here, so an unguarded exception
+                # would freeze the robot mid-move until a manual restart.
+                log.exception("SmoothServos.tick failed; continuing")
             elapsed = self._clock() - started
             await asyncio.sleep(max(0.0, interval - elapsed))
 

@@ -1,3 +1,4 @@
+import asyncio
 import math
 
 import numpy as np
@@ -366,6 +367,48 @@ def test_manual_mode_blocks_balanced_self_leveling_too():
     assert servos.writes == 0
 
 
+def test_set_suspended_stops_all_writes():
+    servos = FakeServos()
+    engine = GaitEngine(servos, clock=lambda: 0.0)
+    engine.set_velocity_command(0.1, 0.0, 0.0)
+    engine.set_suspended(True)
+    assert engine.tick() is None
+    assert servos.writes == 0
+
+
+def test_suspended_blocks_balanced_self_leveling_too():
+    servos = FakeServos()
+    imu = FakeImu(roll=20.0, pitch=0.0)
+    engine = GaitEngine(servos, imu=imu, clock=lambda: 0.0)
+    engine.set_mode("balanced")
+    engine.set_suspended(True)
+    assert engine.tick() is None
+    assert servos.writes == 0
+
+
+def test_pose_completing_holds_current_servos_not_a_stale_target():
+    # Regression: a scripted pose that intentionally ends off-stand (e.g.
+    # "dead"/"point", end_stand=False) must not get yanked back to
+    # STAND_ANGLES the instant it finishes just because balanced mode's
+    # hold-level treats "no active command" as its cue to self-level
+    # toward a stale target.
+    servos = FakeServos()
+    imu = FakeImu(roll=0.0, pitch=0.0)
+    runner = FakeRunner()
+    engine = GaitEngine(servos, imu=imu, runner=runner, clock=lambda: 0.0)
+    engine.set_mode("balanced")
+    runner.is_running = True
+    assert engine.tick() is None  # deferring while the pose runs
+
+    off_stand_angles = {n: 45.0 for n in STAND_ANGLES}
+    servos.angles = dict(off_stand_angles)  # simulates PoseRunner's writes
+    runner.is_running = False
+    written = engine.tick()  # pose just finished; hold-level takes over
+    assert written is not None
+    for name in STAND_ANGLES:
+        assert written[name] == pytest.approx(off_stand_angles[name])
+
+
 def test_gait_resumes_with_a_fresh_phase_after_a_pose_defers_it():
     now = {"t": 0.0}
     servos = FakeServos()
@@ -382,3 +425,32 @@ def test_gait_resumes_with_a_fresh_phase_after_a_pose_defers_it():
     written = engine.tick()  # pose just finished; gait resumes
     expected = CpgGait().angles_at(0.0, 0.1, 0.0, 0.0)  # phase restarted at t=0, not the stale elapsed time
     assert written == expected
+
+
+def test_run_survives_a_tick_exception_instead_of_dying_silently():
+    # Same reasoning as SmoothServos: an IMU or servo-write glitch inside
+    # one tick must not permanently stop the gait loop.
+    servos = FakeServos()
+    engine = GaitEngine(servos, clock=lambda: 0.0)
+    calls = {"n": 0}
+    real_tick = engine.tick
+
+    def flaky_tick():
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise RuntimeError("simulated glitch")
+        return real_tick()
+
+    engine.tick = flaky_tick
+
+    async def drive():
+        task = asyncio.create_task(engine.run())
+        await asyncio.sleep(0.07)
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+
+    asyncio.run(drive())
+    assert calls["n"] >= 2

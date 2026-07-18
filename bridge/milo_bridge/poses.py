@@ -270,6 +270,25 @@ class PoseRunner:
             if self._abort.is_set():
                 return False
             await self._servos.set_pose(step.updates)
-            if step.wait_ms:
-                await self._sleep(step.wait_ms / 1000)
+            wait_s = max(step.wait_ms / 1000, self._settle_time(step.updates))
+            if wait_s:
+                await self._sleep(wait_s)
         return True
+
+    def _settle_time(self, updates: dict[str, int]) -> float:
+        """How long the slew-limited servo layer actually needs to land the
+        farthest-traveling servo in this step, so a pose step's hold never
+        ends before its commanded move has physically finished (the moves
+        here were ported angle-for-angle from firmware that snapped
+        instantly -- SmoothServos' slew limit means the old wait_ms values
+        can be too short to cover the real travel time)."""
+        slew = getattr(self._servos, "slew_deg_per_s", None)
+        last_angle = getattr(self._servos, "last_angle", None)
+        if not slew or last_angle is None:
+            return 0.0
+        max_delta = 0.0
+        for name, target in updates.items():
+            current = last_angle(name)
+            if current is not None:
+                max_delta = max(max_delta, abs(target - current))
+        return max_delta / slew

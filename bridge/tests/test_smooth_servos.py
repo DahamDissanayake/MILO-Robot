@@ -128,3 +128,33 @@ def test_hold_without_a_prior_relax_is_a_no_op():
     smooth.hold()
     smooth.tick()
     assert driver.last_angle("R1") is None
+
+
+def test_run_survives_a_tick_exception_instead_of_dying_silently():
+    # A transient I2C error (a stalled/browned-out servo) must not
+    # permanently kill the 50Hz loop every write funnels through --
+    # otherwise the robot freezes mid-move until a manual restart.
+    driver = _driver()
+    smooth = SmoothServos(driver, clock=lambda: 0.0)
+    calls = {"n": 0}
+    real_tick = smooth.tick
+
+    def flaky_tick():
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise OSError("simulated I2C error")
+        real_tick()
+
+    smooth.tick = flaky_tick
+
+    async def drive():
+        task = asyncio.create_task(smooth.run())
+        await asyncio.sleep(0.07)  # a few 20ms ticks at the fixed clock
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+
+    asyncio.run(drive())
+    assert calls["n"] >= 2  # loop kept going past the first, failing tick

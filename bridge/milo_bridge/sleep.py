@@ -23,10 +23,12 @@ class SleepController:
         loud_rms_threshold: float = 2000.0,
         on_perk: Callable[[], None] | None = None,
         servos=None,
+        gait=None,
     ):
         self._runner = runner
         self._display = display
         self._servos = servos
+        self._gait = gait
         self._threshold = loud_rms_threshold
         self._on_perk = on_perk
         self.asleep = False
@@ -40,6 +42,11 @@ class SleepController:
         self._display.stop_idle()
         await self._runner.run("rest")
         await self._display.set_face("sleepy", AnimMode.BOOMERANG)
+        if self._gait is not None:
+            # Must happen before relax() -- otherwise the next gait tick's
+            # hold-level self-leveling re-engages the servos we're about to
+            # go limp, immediately undoing the power saving.
+            self._gait.set_suspended(True)
         if self._servos is not None:
             self._servos.relax()  # limp servos save battery while asleep
 
@@ -48,6 +55,8 @@ class SleepController:
             return
         self.asleep = False
         self._cancel_perk()
+        if self._gait is not None:
+            self._gait.set_suspended(False)
         await self._runner.run("stand")
         await self._display.set_face("excited", AnimMode.ONCE)
         self._display.start_idle()
