@@ -57,7 +57,7 @@ def test_unpaired_brain_refused_when_pairing_unavailable(tmp_path):
     robot_store, brain_store = stores(tmp_path, paired=False)
     rs, bs = socket_pair()
     robot_result, brain_result = run_both(
-        robot_handshake(rs, ROBOT_ID, "milo", robot_store, show_pin=None),
+        robot_handshake(rs, ROBOT_ID, "milo", robot_store, pending_pin=None),
         brain_handshake(bs, BRAIN_ID, "desk", "large", brain_store),
     )
     assert isinstance(robot_result, HandshakeError)
@@ -65,18 +65,18 @@ def test_unpaired_brain_refused_when_pairing_unavailable(tmp_path):
 
 
 def test_pairing_with_correct_pin(tmp_path):
+    # The PIN is already generated and "shown on the OLED" by the caller
+    # before the connection even happens -- the handshake just verifies
+    # whichever brain shows up against it.
     robot_store, brain_store = stores(tmp_path, paired=False)
-    shown: list[str] = []
-
-    async def show_pin(pin: str):
-        shown.append(pin)
+    pin = "654321"
 
     async def request_pin(robot_name: str):
-        return shown[0]  # "user" reads the OLED and types it in
+        return pin  # "user" reads the OLED and types it in
 
     rs, bs = socket_pair()
     robot_result, brain_result = run_both(
-        robot_handshake(rs, ROBOT_ID, "milo", robot_store, show_pin=show_pin),
+        robot_handshake(rs, ROBOT_ID, "milo", robot_store, pending_pin=pin),
         brain_handshake(bs, BRAIN_ID, "desk", "large", brain_store, request_pin=request_pin),
     )
     assert not isinstance(robot_result, Exception), robot_result
@@ -89,15 +89,12 @@ def test_pairing_with_correct_pin(tmp_path):
 def test_pairing_with_wrong_pin_refused(tmp_path):
     robot_store, brain_store = stores(tmp_path, paired=False)
 
-    async def show_pin(pin: str):
-        pass
-
     async def request_pin(robot_name: str):
         return "000000"  # user typo (worst case: guessing attacker)
 
     rs, bs = socket_pair()
     robot_result, brain_result = run_both(
-        robot_handshake(rs, ROBOT_ID, "milo", robot_store, show_pin=show_pin),
+        robot_handshake(rs, ROBOT_ID, "milo", robot_store, pending_pin="123456"),
         brain_handshake(bs, BRAIN_ID, "desk", "large", brain_store, request_pin=request_pin),
     )
     assert isinstance(robot_result, HandshakeError)
@@ -108,15 +105,12 @@ def test_pairing_with_wrong_pin_refused(tmp_path):
 def test_pairing_cancelled_by_user(tmp_path):
     robot_store, brain_store = stores(tmp_path, paired=False)
 
-    async def show_pin(pin: str):
-        pass
-
     async def request_pin(robot_name: str):
         return None
 
     rs, bs = socket_pair()
     robot_result, brain_result = run_both(
-        robot_handshake(rs, ROBOT_ID, "milo", robot_store, show_pin=show_pin),
+        robot_handshake(rs, ROBOT_ID, "milo", robot_store, pending_pin="123456"),
         brain_handshake(bs, BRAIN_ID, "desk", "large", brain_store, request_pin=request_pin),
     )
     assert isinstance(robot_result, HandshakeError)

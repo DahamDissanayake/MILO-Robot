@@ -4,7 +4,9 @@ Composition root: build drivers, gait engine, knowledge graph, and sleep
 controller, show a startup hardware checklist, play the boot tilt gesture
 (the same look_down/standby motion Q/E trigger by hand) to settle into
 stand with a hardware-status-aware idle face, then hand control to the
-SessionManager (discovery -> pairing/auth -> streams -> dispatch).
+RobotServer (WS accept loop + mDNS advertising -> pairing/auth -> streams
+-> dispatch). The robot is the WebSocket server and advertiser; a brain
+discovers and dials in (see net/server.py, net/advertiser.py).
 
 The robot's default idle state is standing at standby with self-leveling
 engaged -- not asleep -- whether that's right after boot or after any
@@ -36,7 +38,7 @@ from .drivers.smooth_servos import SmoothServos
 from .gait.engine import GaitEngine
 from .graph.api import GraphApi
 from .graph.store import GraphStore
-from .net.session import SessionManager
+from .net.server import RobotServer
 from .poses import PoseRunner
 from .sleep import SleepController
 
@@ -141,16 +143,18 @@ async def main() -> None:
     broker = ControlBroker(on_change=_make_control_change_handler(sleep_controller))
     hub = MediaHub(camera=camera, audio=audio, on_audio_level=sleep_controller.handle_audio_level)
 
-    manager = None
+    robot_server = RobotServer(
+        cfg, display=display, runner=runner, audio=audio, graph_api=graph_api,
+        gait=gait, media_hub=hub, broker=broker,
+    )
 
     web_deps = WebDeps(
         config=cfg, runner=runner, display=display, servos=motion_servos,
         camera=camera, audio=audio, imu=imu, gait=gait,
         graph_api=graph_api, graph_store=graph,
         broker=broker, media_hub=hub, log_buffer=log_buffer, crash_log=crash_log,
-        hardware_status=hardware_status,
-        # manager is assigned below; guard the startup window before it exists
-        get_link_state=lambda: manager.link_state if manager is not None else "disconnected",
+        hardware_status=hardware_status, robot_server=robot_server,
+        get_link_state=lambda: robot_server.link_state,
     )
     web_task = asyncio.create_task(start_web(web_deps)) if cfg.web_enabled else None
 
@@ -176,18 +180,7 @@ async def main() -> None:
     # already running from an earlier boot path.
     display.stop_idle()
     display.start_idle(base_face="idle" if all(hardware_status.values()) else "confused")
-    log.info("boot sequence complete; scanning for brains")
-
-    manager = SessionManager(
-        cfg,
-        display=display,
-        runner=runner,
-        audio=audio,
-        graph_api=graph_api,
-        gait=gait,
-        media_hub=hub,
-        broker=broker,
-    )
+    log.info("boot sequence complete; waiting for a brain to connect")
 
     gait_task = asyncio.create_task(gait.run())
     mcp_task = asyncio.create_task(
@@ -195,7 +188,7 @@ async def main() -> None:
     )
     backup_task = asyncio.create_task(_nightly_backup(graph, Path(cfg.data_dir) / "backups"))
     try:
-        await manager.run_forever()
+        await robot_server.serve_forever()
     finally:
         gait_task.cancel()
         backup_task.cancel()

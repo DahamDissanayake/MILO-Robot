@@ -61,18 +61,18 @@ remote-controlled robot without the AI stack, go build a Sesame — it's excelle
         ┌── MILO (Pi Zero 2W) ──────────────┐        ┌── any GPU machine on the LAN ──┐
 camera ─►                                    │  WiFi  │                                │
 mics ───►  milo-bridge: drivers · gait NN   ◄─────────►  Milo Brain app: Whisper ASR   │
-servos ◄─  · knowledge graph · sleep mode   │   WS    │  · InsightFace · Ollama LLM    │
-OLED ◄──   · mDNS discovery · PIN pairing   │        │  · Piper TTS · PyQt6 tray      │
-speaker ◄─                                   │        │                                │
+servos ◄─  · knowledge graph · standby      │   WS    │  · InsightFace · Ollama LLM    │
+OLED ◄──   · mDNS advertise · PIN pairing   │        │  · Piper TTS · Textual TUI     │
+speaker ◄─ (robot is the WS server)         │        │  (brain discovers + dials in)  │
         └────────────────────────────────────┘        └────────────────────────────────┘
 ```
 
-Milo streams camera + microphone audio to the highest-priority paired brain. The brain
-listens (VAD → ASR), looks (face embeddings matched against **Milo's** graph), thinks
-(LLM with graph context), and answers back: TTS audio for the speaker, an expression
-for the face, a movement intent for the gait engine, and new facts written into Milo's
-memory. Kill that brain and Milo fails over to another paired machine within seconds —
-with all of its memories intact, because they never left the robot.
+Milo advertises itself and accepts one connected brain at a time; a brain discovers it
+on the LAN and connects. The brain listens (VAD → ASR), looks (face embeddings matched
+against **Milo's** graph), thinks (LLM with graph context), and answers back: TTS audio
+for the speaker, an expression for the face, a movement intent for the gait engine, and
+new facts written into Milo's memory. Kill that brain and another paired one reconnects
+within seconds — with all of Milo's memories intact, because they never left the robot.
 
 Full detail — every component, wiring diagram, pin map, protocol, and tech-stack
 decision — lives in **[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)**.
@@ -85,8 +85,8 @@ decision — lives in **[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)**.
 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | System design — wiring diagrams, components, protocols, tech stack |
 | [`project-milo-plan.md`](project-milo-plan.md) | A–Z phased build plan (Phase 0 → G) with checklists |
 | [`common/`](common/) | `milo-common` — WebSocket protocol + pairing/auth shared by both sides |
-| [`bridge/`](bridge/) | `milo-bridge` — the Pi service: drivers, gait engine, knowledge graph, discovery. Also serves the **web dashboard** at `http://milo.local` — see [`docs/WEB-DASHBOARD.md`](docs/WEB-DASHBOARD.md) |
-| [`brain/`](brain/) | `milo-brain` — the desktop app: ASR/vision/TTS pipelines, LLM agent, tray UI |
+| [`bridge/`](bridge/) | `milo-bridge` — the Pi service: drivers, gait engine, knowledge graph, mDNS advertising + WebSocket server. Also serves the **web dashboard** at `http://milo.local` — see [`docs/WEB-DASHBOARD.md`](docs/WEB-DASHBOARD.md) |
+| [`brain/`](brain/) | `milo-brain` — the desktop app: mDNS discovery, ASR/vision/TTS pipelines, LLM agent, Textual TUI |
 | [`training/`](training/) | MuJoCo model + PPO training + ONNX export for the gait policy |
 | [`hardware/reference-sesame/`](hardware/reference-sesame/) | Original Sesame firmware files Milo ports from (credit: Dorian Todd) |
 | [`iot-testing/`](iot-testing/) | `milo-iot-tester` — TUI hardware tester (servos, display, IMU, camera, mics, speaker) that drives the real robot drivers |
@@ -100,7 +100,7 @@ decision — lives in **[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)**.
 ```bash
 # prerequisites: Python 3.11+, and Ollama installed & running (https://ollama.com)
 cd common && pip install -e . && cd ../brain && pip install -e .[full]
-python -m milo_brain            # tray icon appears; advertises _milo-brain._tcp on the LAN
+python -m milo_brain            # TUI opens; discovers robots advertising on the LAN
 ```
 
 ### On the robot (Raspberry Pi Zero 2W)
@@ -112,8 +112,9 @@ sudo cp bridge/systemd/milo-bridge.service /etc/systemd/system/
 sudo systemctl enable --now milo-bridge
 ```
 
-First contact: the brain's tray UI shows the discovered robot → Milo displays a 6-digit
-PIN on its face → type it into the brain → paired for good.
+First contact: click **Enter Pairing Mode** on Milo's web dashboard → it displays a
+6-digit PIN on its face → in the brain's TUI, press `c` for Connect Robots, refresh,
+select Milo, and type the PIN → paired for good.
 
 ### Developing without hardware
 

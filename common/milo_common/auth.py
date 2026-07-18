@@ -93,6 +93,10 @@ class PairedStore:
         entry = self._peers.get(peer_id)
         return entry["priority"] if entry else 0
 
+    def name_for(self, peer_id: str) -> str:
+        entry = self._peers.get(peer_id)
+        return entry["name"] if entry else peer_id
+
     def is_paired(self, peer_id: str) -> bool:
         return peer_id in self._peers
 

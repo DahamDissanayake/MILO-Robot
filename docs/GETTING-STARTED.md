@@ -9,13 +9,13 @@
 
 ### ✅ Already built (in this repo — you don't have to write code)
 
-All robot and desktop software is **implemented and passing 134 automated tests**. It was developed against mocked hardware, so it's waiting for a real robot to run on:
+All robot and desktop software is **implemented and passing its automated test suite** (`python -m pytest common/tests bridge/tests brain/tests training/tests` from the repo root). It was developed against mocked hardware, so it's waiting for a real robot to run on:
 
 | Package | What it does | Status |
 |---|---|---|
 | `common/` | Robot↔brain WebSocket protocol, PIN pairing, HMAC session auth | ✅ done, 21 tests |
-| `bridge/` | Everything that runs on the Pi: servo/OLED/IMU/camera/mic drivers, all 20 Sesame poses ported from the ESP32 firmware, 46 face graphics converted, CPG walking gait + ONNX policy runner, SQLite knowledge graph, brain discovery/failover, sleep mode, systemd service, test CLI | ✅ done, 81 tests |
-| `brain/` | Desktop app: mDNS advertising, tray UI, VAD → sound direction → Whisper ASR → face recognition → Ollama LLM → Piper TTS cognition loop, unknown-person naming flow | ✅ done, 28 tests |
+| `bridge/` | Everything that runs on the Pi: servo/OLED/IMU/camera/mic drivers, all 20 Sesame poses ported from the ESP32 firmware, 46 face graphics converted, CPG walking gait + ONNX policy runner, SQLite knowledge graph, robot-side mDNS advertising + WebSocket server + PIN pairing (triggered from the web dashboard's Brain card), sleep mode, systemd service, test CLI | ✅ done |
+| `brain/` | Desktop app: mDNS robot discovery, Connect Robots TUI tab, VAD → sound direction → Whisper ASR → face recognition → Ollama LLM → Piper TTS cognition loop, unknown-person naming flow | ✅ done |
 | `training/` | MuJoCo simulation, PPO trainer, ONNX export for the neural gait | ✅ code done, 4 tests (model geometry is placeholder — see Phase 10) |
 
 ### 🔩 Not built (what this guide walks you through)
@@ -302,20 +302,22 @@ journalctl -u milo-bridge -f             # watch it come up
 
 **Goal:** live video/audio streaming to your PC; PIN pairing; failover between two machines.
 
+The robot is the one that advertises itself and accepts connections; the brain app discovers robots on the LAN and dials in. Pairing is triggered from the **robot's web dashboard**, not the brain app.
+
 On each brain machine (your RTX 4050 laptop and/or 5090 desktop):
 
 ```bash
 git clone https://github.com/DahamDissanayake/MILO-Robot.git && cd MILO-Robot
 python -m venv .venv && .venv\Scripts\activate       # Windows
 pip install -e ./common -e ./brain                    # light install (no AI models yet)
-python -m milo_brain --pairing                        # tray icon appears; pairing mode ON
+python -m milo_brain                                   # TUI opens
 ```
 
 Pairing dance (once per machine, <2 min):
 
-1. ☐ Brain app running with pairing enabled → it advertises itself on the LAN.
-2. ☐ Milo discovers it, connects, and **shows a 6-digit PIN on its face**.
-3. ☐ Type the PIN into the brain app's dialog. Done — the trust token is stored on both sides forever (`/etc/milo/paired.json` ↔ `~/.milo-brain/paired.json`).
+1. ☐ On the robot's web dashboard (`http://milo.local/`), open the **Brain** card and click **Enter Pairing Mode**. The robot starts advertising itself on the LAN and **shows a 6-digit code on its face**.
+2. ☐ In the brain app's TUI, press **`c`** for **Connect Robots**, then **`r`** to refresh the list — Milo appears as `[pairing]`.
+3. ☐ Select it and press Enter. A modal pops up asking for the 6-digit PIN — type the code from Milo's face. Done — the trust token is stored on both sides forever (`~/.milo/paired.json` on the Pi ↔ `~/.milo-brain/paired.json` on the brain), and pairing mode closes itself automatically.
 
 Then verify the resilience story:
 
@@ -361,7 +363,7 @@ ssh dama@milo.local sudo systemctl restart milo-bridge   # log shows "gait backe
 On each brain machine:
 
 ```bash
-pip install -e "./brain[full]"          # faster-whisper, InsightFace, Piper, PyQt6, torch
+pip install -e "./brain[full]"          # faster-whisper, InsightFace, Piper, torch
 # install Ollama from https://ollama.com, then pull the tier model:
 ollama pull llama3.2:3b                 # 4050 laptop (small tier)
 ollama pull llama3.1:8b                 # 5090 desktop (large tier)

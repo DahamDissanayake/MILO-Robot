@@ -29,3 +29,4 @@ class WebDeps:
     crash_log: Any          # CrashLog -- always constructed, never None
     hardware_status: dict[str, bool]  # servos/display/imu/camera/audio presence at boot
     get_link_state: Callable[[], str]
+    robot_server: Any = None  # RobotServer -- .connected_brain, .pairing, .advertiser, .paired_brains()

@@ -183,6 +183,24 @@ class MotionService:
             return {"error": f"{type(exc).__name__}: {exc}"}
         return {"ok": True, "on": on}
 
+    async def enter_pairing_mode(self, client_id: str, on: bool) -> dict:
+        if err := self._denied(client_id):
+            return err
+        robot_server = self._deps.robot_server
+        if robot_server is None:
+            return {"error": "unavailable"}
+        try:
+            if on:
+                await robot_server.pairing.enter_pairing_mode()
+            else:
+                await robot_server.pairing.exit_pairing_mode()
+        except Exception as exc:
+            return {"error": f"{type(exc).__name__}: {exc}"}
+        # Report the *actual* current state, not just the echoed request --
+        # a brain could already have connected and closed pairing mode out
+        # from under us between the request and this point.
+        return {"ok": True, "on": robot_server.advertiser.pairing}
+
     async def turn(self, client_id: str, direction: str) -> dict:
         if err := self._denied(client_id):
             return err

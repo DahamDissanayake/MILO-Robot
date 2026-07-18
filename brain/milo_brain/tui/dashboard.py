@@ -1,4 +1,4 @@
-"""Main dashboard screen: identity, connection, model, and pairing panels."""
+"""Main dashboard screen: identity, connection, and model panels."""
 
 from __future__ import annotations
 
@@ -20,13 +20,13 @@ class IdentityPanel(Static):
 
 
 class ConnectionPanel(Static):
-    def render_connection(self, port: int, advertised_ip: str, robot_name: str | None) -> None:
+    def render_connection(self, robot_name: str | None, paired_count: int) -> None:
         status = f"connected: {robot_name}" if robot_name else "no robot connected"
         self.update(
             f"[b]Connection[/b]\n"
-            f"Listening: :{port}\n"
-            f"Advertised: {advertised_ip or 'not yet advertising'}\n"
-            f"Robot: {status}"
+            f"Robot: {status}\n"
+            f"Paired robots: {paired_count}\n"
+            f"[dim](c to connect a robot)[/dim]"
         )
 
 
@@ -43,12 +43,6 @@ class ModelPanel(Static):
             f"Tokens/s  in: {tokens_per_sec_in:.1f} ^   out: {tokens_per_sec_out:.1f} v\n"
             f"[dim](m to change model)[/dim]"
         )
-
-
-class PairingPanel(Static):
-    def render_pairing(self, enabled: bool) -> None:
-        state = "[b green]ON[/b green]" if enabled else "[b red]OFF[/b red]"
-        self.update(f"[b]Pairing[/b]\nMode: {state}\n[dim](p to toggle)[/dim]")
 
 
 class DashboardScreen(Screen):
@@ -79,20 +73,17 @@ class DashboardScreen(Screen):
             with Horizontal():
                 yield IdentityPanel(id="identity-panel")
                 yield ConnectionPanel(id="connection-panel")
-            with Horizontal():
-                yield ModelPanel(id="model-panel")
-                yield PairingPanel(id="pairing-panel")
+            yield ModelPanel(id="model-panel")
         yield Static("by DAMA", id="credit")
         yield Footer()
 
-    def refresh_from(self, server, cfg, rate_tracker) -> None:
-        robot = server.connected_robot
+    def refresh_from(self, connector, cfg, rate_tracker) -> None:
+        robot = connector.connected_robot
         self.query_one(IdentityPanel).render_identity(cfg.name, cfg.brain_id, cfg.tier, cfg.gpu)
         self.query_one(ConnectionPanel).render_connection(
-            cfg.port, server.advertiser.advertised_ip, robot.name if robot else None
+            robot.name if robot else None, len(connector.paired_ids())
         )
         self.query_one(ModelPanel).render_model(
             cfg.llm_model, cfg.whisper_model, cfg.piper_voice,
             rate_tracker.tokens_per_sec_in, rate_tracker.tokens_per_sec_out,
         )
-        self.query_one(PairingPanel).render_pairing(server.advertiser.pairing)

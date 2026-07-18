@@ -257,22 +257,25 @@ ollama pull llama3.1:8b           # large tier: desktop GPU
 
 ### 4.4 First run and pairing
 
+The robot advertises itself and accepts connections; the brain app discovers robots and dials in. Pairing starts from the **robot's web dashboard**, not the brain app.
+
 ```powershell
-python -m milo_brain --pairing
+python -m milo_brain
 ```
 
-A tray icon appears and the app advertises itself on the LAN. Then:
+The TUI opens. Then:
 
-1. Milo (with `milo-bridge` running) discovers the brain and shows a **6-digit PIN on its OLED face**.
-2. Type the PIN into the brain app's dialog.
-3. Done permanently — the trust token is stored on both sides (`/etc/milo/paired.json` on the Pi, `~/.milo-brain/paired.json` on the PC).
+1. On the robot's web dashboard (`http://milo.local/`), open the **Brain** card and click **Enter Pairing Mode** — Milo starts advertising on the LAN and shows a **6-digit PIN on its OLED face**.
+2. In the brain app, press **`c`** for **Connect Robots**, press **`r`** to refresh, and select Milo (shown as `[pairing]`).
+3. A modal asks for the 6-digit PIN — type the code from Milo's face.
+4. Done permanently — the trust token is stored on both sides (`~/.milo/paired.json` on the Pi, `~/.milo-brain/paired.json` on the PC), and pairing mode closes itself automatically.
 
-Pair every brain machine the same way. Verify: live video and mic levels appear in the brain's debug window; kill one brain and Milo fails over to the other within ~10 s; kill both and Milo sleeps.
+Pair every brain machine the same way. Verify: live video and mic levels appear in the brain's debug window; kill one brain and Milo fails over to the other within ~10 s (the surviving brain's own reconnect loop picks it up); kill both and Milo sleeps.
 
 ### 4.5 Full AI stack (when you reach the cognition phase)
 
 ```powershell
-pip install -e ".\brain[full]"    # faster-whisper, InsightFace, Piper, PyQt6, torch, opencv
+pip install -e ".\brain[full]"    # faster-whisper, InsightFace, Piper, torch, opencv
 python -m milo_brain              # first run downloads Whisper / InsightFace / Silero models
 ```
 
@@ -345,7 +348,7 @@ python -m milo_brain
 | Robot config (trims, fps, thresholds) | `~/.milo/config.json` |
 | Knowledge graph (Milo's memory) | `~/.milo/graph.db` |
 | Gait policy | `~/.milo/policy.onnx` |
-| Pairing tokens (robot side) | `/etc/milo/paired.json` |
+| Pairing tokens (robot side) | `~/.milo/paired.json` |
 | systemd unit | `/etc/systemd/system/milo-bridge.service` |
 | Service logs | `journalctl -u milo-bridge` |
 | Brain config (PC) | `~/.milo-brain/config.yaml` |
@@ -374,6 +377,6 @@ python -m milo_bridge.cli paired
 | No audio device after reboot | Typo in `config.txt` overlay lines; check `dtoverlay=googlevoicehat-soundcard` spelling |
 | Service crashes on boot loop | `journalctl -u milo-bridge -n 50` — usually wrong username/paths in the unit file or hardware not wired yet |
 | CLI says device busy | The service holds the hardware — `sudo systemctl stop milo-bridge`, run CLI, restart the service |
-| Brain never discovers the robot | Both must be on the same LAN/subnet; check Windows firewall allows Python (mDNS + WebSocket); confirm the tray app is running |
-| Pairing PIN never appears | Bridge not running (`systemctl status milo-bridge`) or brain not in `--pairing` mode |
+| Brain's Connect Robots list is empty | Both must be on the same LAN/subnet; check Windows firewall allows Python (mDNS + WebSocket); confirm `milo-bridge` is running and pairing mode is on (robot's web dashboard -> Brain card) |
+| Pairing PIN never appears on Milo's face | Bridge not running (`systemctl status milo-bridge`) or pairing mode wasn't turned on from the robot's web dashboard |
 | Streaming laggy / Pi hot | Drop `video_fps` to 10 in `~/.milo/config.json`; confirm 40% idle CPU headroom with `htop` |

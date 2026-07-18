@@ -1,4 +1,7 @@
-"""Connection handshake, both sides. The robot is always the WebSocket client.
+"""Connection handshake, both sides. Message order is fixed regardless of
+which side dialed the TCP connection: the robot always sends ``hello``
+first (the robot is the WebSocket *server* -- see bridge/milo_bridge/net/
+server.py -- and the brain is the *client* that discovers and dials it).
 
 Paired flow (mutual auth):
     robot -> hello {role, robot_id, name, proto}
@@ -8,8 +11,10 @@ Paired flow (mutual auth):
     robot -> auth {response}                         # robot proves itself
     brain -> auth_ok {}
 
-Pairing flow (first contact; trust anchor = PIN on the robot's OLED):
-    robot -> pair_begin {nonce}                      # robot shows PIN on its face
+Pairing flow (first contact; trust anchor = a PIN already showing on the
+robot's OLED before the brain ever connects -- see
+bridge/milo_bridge/net/pairing.py):
+    robot -> pair_begin {nonce}
     brain -> pair_pin {response}                     # HMAC(token_from_typed_pin, nonce)
     robot -> auth_ok {}          (PIN correct: both sides persist the token)
     robot -> error {code:"bad_pin"} + disconnect  (PIN wrong)
@@ -56,13 +61,16 @@ async def robot_handshake(
     robot_id: str,
     robot_name: str,
     store: PairedStore,
-    show_pin: Callable[[str], Awaitable[None]] | None = None,
+    pending_pin: str | None = None,
     mcp_port: int = 0,
 ) -> Peer:
-    """Run the robot side. ``show_pin`` renders the pairing PIN on the OLED;
-    without it, unpaired brains are refused outright. ``mcp_port`` is this
-    robot's movement/face/speech/IMU MCP server port, advertised to the
-    brain so it can reach it without a second discovery mechanism."""
+    """Run the robot side. ``pending_pin`` is a PIN already generated and
+    shown on the OLED *before* this connection arrived -- the caller owns
+    when/how it's displayed (see bridge/milo_bridge/net/pairing.py). Its
+    absence means "not currently in pairing mode", so an unpaired brain is
+    refused outright, same as before. ``mcp_port`` is this robot's
+    movement/face/speech/IMU MCP server port, advertised to the brain so
+    it can reach it without a second discovery mechanism."""
     await sock.send(
         protocol.T_HELLO, role="robot", robot_id=robot_id, name=robot_name,
         proto=PROTOCOL_VERSION, mcp_port=mcp_port,
@@ -74,10 +82,10 @@ async def robot_handshake(
 
     token = store.token_for(peer.id)
     if token is None:
-        if show_pin is None:
+        if pending_pin is None:
             await sock.send(protocol.T_ERROR, code="unpaired")
             raise HandshakeError(f"brain {peer.id} is not paired")
-        return await _robot_pairing(sock, robot_id, peer, store, show_pin)
+        return await _robot_pairing(sock, robot_id, peer, store, pending_pin)
 
     # Authenticate the brain.
     nonce = auth.make_challenge()
@@ -99,11 +107,9 @@ async def _robot_pairing(
     robot_id: str,
     peer: Peer,
     store: PairedStore,
-    show_pin: Callable[[str], Awaitable[None]],
+    pin: str,
 ) -> Peer:
-    pin = auth.generate_pin()
     expected_token = auth.derive_token(pin, robot_id, peer.id)
-    await show_pin(pin)
     nonce = auth.make_challenge()
     await sock.send(protocol.T_PAIR_BEGIN, nonce=nonce.hex())
     reply = await _expect(sock, protocol.T_PAIR_PIN)

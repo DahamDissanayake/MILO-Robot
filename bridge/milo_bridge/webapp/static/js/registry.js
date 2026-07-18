@@ -3,6 +3,7 @@ import camera from "./panels/camera.js";
 import move from "./panels/move.js";
 import comm from "./panels/comm.js";
 import sensors from "./panels/sensors.js";
+import brain from "./panels/brain.js";
 import graph from "./panels/graph.js";
 import poses from "./panels/poses.js";
 import servos from "./panels/servos.js";
@@ -13,7 +14,7 @@ import power from "./panels/power.js";
 export const registry = {
   cockpitMove: [move],
   cockpitCamera: [camera, poses],
-  cockpitSide: [comm, sensors],
+  cockpitSide: [comm, sensors, brain],
   bridgeLog: [log, crashlog],
   graph: [graph],
   tools: [servos, power],

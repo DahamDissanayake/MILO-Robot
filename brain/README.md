@@ -6,13 +6,16 @@ conversational agent with real tool-calling control over the robot's
 movement/face/speech/IMU, and text-to-speech — all running on your GPU
 machine (laptop or desktop), not on the Pi.
 
-Milo (the robot, running `milo-bridge`) discovers brains over mDNS, pairs
-once with a 6-digit PIN, then streams camera + microphone audio to whichever
-brain it's paired with. The brain listens, looks, thinks, and replies — TTS
-audio and movement/face tool calls go back over the same connection. Kill the
-brain and Milo fails over to another paired machine, or goes to sleep if none
-are reachable. **The robot's identity and memory (who it knows, what
-happened) never leave the Pi** — brains are stateless, interchangeable
+Milo (the robot, running `milo-bridge`) advertises itself over mDNS and
+accepts one connected brain at a time; `milo-brain` discovers robots on the
+LAN and dials in. Pairing (once per robot/brain pair, triggered from the
+robot's web dashboard) uses a 6-digit PIN shown on the robot's face; after
+that, the brain streams camera + microphone audio from whichever robot it's
+connected to. The brain listens, looks, thinks, and replies — TTS audio and
+movement/face tool calls go back over the same connection. Kill the brain
+and Milo waits, standing by, for another paired brain to reconnect (or the
+same one to come back). **The robot's identity and memory (who it knows,
+what happened) never leave the Pi** — brains are stateless, interchangeable
 compute.
 
 This README covers the `brain/` package specifically: installing it on
@@ -45,12 +48,14 @@ architecture), see the [top-level README](../README.md) and
 
 ## What this package actually does
 
-`milo-brain` is a WebSocket server (default port `8765`) that:
+`milo-brain` is a WebSocket client that:
 
-1. **Advertises itself** on the LAN via mDNS (`_milo-brain._tcp.local.`) with
-   its name, detected GPU, and tier so any robot on the network can find it.
-2. **Authenticates/pairs** incoming robot connections (PIN-based first
-   contact, then a stored HKDF trust token for every session after).
+1. **Discovers robots** on the LAN via mDNS (`_milo-robot._tcp.local.`),
+   picking a paired-and-reachable one automatically, or a specific one
+   chosen from the TUI's **Connect Robots** tab.
+2. **Authenticates/pairs** with the robot it connects to (PIN-based first
+   contact — triggered by the robot's "Enter Pairing Mode" — then a stored
+   HKDF trust token for every session after).
 3. **Runs the cognition pipeline** per connected robot:
    - `pipelines/vad.py` — voice activity detection, segments the incoming
      mic stream into utterances
@@ -92,7 +97,7 @@ Two install tiers, matching `brain/pyproject.toml`:
 
 | Install | Command | Gets you |
 |---|---|---|
-| **Light** | `pip install -e ./brain` | mDNS discovery, pairing, WebSocket server, MCP tool-calling client. Enough to pair and see the robot connect — no cognition yet. |
+| **Light** | `pip install -e ./brain` | mDNS discovery, pairing, WebSocket client, MCP tool-calling client. Enough to pair and see the robot connect — no cognition yet. |
 | **Full** | `pip install -e "./brain[full]"` | + `faster-whisper`, `insightface`, `onnxruntime-gpu`, `piper-tts`, `torch` (Silero VAD), `opencv-python` |
 
 ## Install — native Linux
@@ -214,10 +219,11 @@ First run downloads the Whisper / InsightFace / Silero model weights.
 ### 6. Windows Firewall
 
 The first time you run `python -m milo_brain`, **Windows Defender Firewall**
-will prompt to allow `python.exe` on **Private networks** — allow it. This
-is what opens the WebSocket port (`8765`) and mDNS (UDP `5353`) so the robot
-can actually reach the brain. If you accidentally dismissed the prompt or it
-never appeared, add the rule manually: **Windows Defender Firewall →
+may prompt to allow `python.exe` on **Private networks** — allow it. The
+brain no longer listens for inbound connections (it's the one dialing out
+to the robot now), but mDNS discovery still needs multicast (UDP `5353`)
+to actually see robots on the network. If discovery isn't finding anything
+and no prompt appeared, add the rule manually: **Windows Defender Firewall →
 Advanced settings → Inbound Rules → New Rule → Program**, pointing it at
 your venv's `.venv\Scripts\python.exe`.
 
@@ -236,8 +242,7 @@ but every field:
 | Field | Default | What it does |
 |---|---|---|
 | `brain_id` | random `brain-<hex>` | Stable identity across restarts/pairings — generated once, don't edit. |
-| `name` | your hostname | Shown in the robot's pairing UI and mDNS TXT record. |
-| `port` | `8765` | WebSocket listen port. |
+| `name` | your hostname | Shown on the robot's web dashboard Brain card once connected/paired. |
 | `tier` | auto (`small`/`large`) | `small` if VRAM < 16 GB, else `large`. Picks default model sizes. |
 | `gpu` | auto | GPU name from `nvidia-smi`, informational. |
 | `llm_model` | tier default | `llama3.2:3b` (small) / `llama3.1:8b` (large). Must support Ollama tool-calling. |
@@ -246,7 +251,8 @@ but every field:
 | `piper_voice` | `en_US-lessac-medium` | Piper TTS voice model name. |
 | `face_match_threshold` | `0.45` | Cosine-similarity cutoff for "this is the same person" in face matching. |
 | `vision_fps` | `3.0` | How often the video stream is analyzed for faces (independent of the robot's actual stream fps). |
-| `busy_gpu_percent` | `85` | Above this, the brain advertises itself as busy over mDNS. |
+| `busy_gpu_percent` | `85` | Reserved for a future "too busy to take a robot" signal — not yet wired up. |
+| `reconnect_seconds` | `10.0` | How often the connector re-scans/retries when nothing is currently connectable. |
 | `data_dir` | `~/.milo-brain` | Where `config.yaml` and `paired.json` (pairing trust store) live. |
 
 Delete `~/.milo-brain/config.yaml` (or `%USERPROFILE%\.milo-brain\config.yaml`
@@ -258,39 +264,37 @@ on Windows) to reset to auto-detected defaults on the next run.
 .venv\Scripts\Activate.ps1     # Windows, if not already active
 # or: source .venv/bin/activate    (Linux)
 
-python -m milo_brain           # TUI: dashboard, pairing, model picker
+python -m milo_brain           # TUI: dashboard, Connect Robots, model picker
 python -m milo_brain --headless   # no TUI, just logs -- for headless/server boxes
-python -m milo_brain --pairing    # start with pairing mode already enabled
 ```
 
-The TUI runs in any terminal on Windows or Linux -- no GUI session or system
-tray required. Keybindings: `p` toggles pairing mode, `m` opens the model
-picker (lists whatever's installed in Ollama), `q` quits. Use `--headless`
-on a genuinely headless box (no terminal attached at all, e.g. run under a
-service manager).
+The TUI runs in any terminal on Windows or Linux -- no GUI session required.
+Keybindings: `c` opens **Connect Robots** (refreshable discovered-device
+list), `m` opens the model picker (lists whatever's installed in Ollama),
+`q` quits. Use `--headless` on a genuinely headless box (no terminal
+attached at all, e.g. run under a service manager) -- it'll print a plain
+`PIN:` prompt on stdin instead of a TUI modal when a robot it dials into
+needs pairing.
 
-On startup you'll see something like:
-
-```
-milo-brain 'my-laptop' (small tier) listening on :8765
-```
-
-That confirms it's up and advertising over mDNS. It stays running,
-discoverable, and idle until a robot connects.
+It stays running, discovering robots on the LAN, and idle until it connects
+to (or is told to connect to) one.
 
 ## Pairing with the robot
 
 1. Make sure `milo-bridge` is running on the robot (see the
    [top-level README](../README.md) or
    [`docs/SOFTWARE-SETUP.md`](../docs/SOFTWARE-SETUP.md)).
-2. Start the brain with `--pairing` (or press `p` in the TUI to enable
-   pairing mode).
-3. Milo's face shows a **6-digit PIN**.
-4. Type it into the brain -- a modal appears in the TUI asking for it (or
-   the `--headless` prompt in the terminal).
-5. Done — the trust token is stored in `~/.milo-brain/paired.json`. You
-   won't need the PIN again for this robot/brain pair; every future
-   connection re-authenticates automatically via HMAC challenge-response.
+2. On the robot's **web dashboard**, open the Brain card and click
+   **Enter Pairing Mode**. Milo's face shows a **6-digit PIN**.
+3. In the brain's TUI, press `c` for **Connect Robots**, then `r` to
+   refresh -- Milo appears in the list (marked pairing-available).
+4. Select it. A modal appears asking for the PIN (or the `--headless`
+   prompt in the terminal) -- type the code from Milo's face.
+5. Done — the trust token is stored in `~/.milo-brain/paired.json`, and
+   the robot closes pairing mode automatically. You won't need the PIN
+   again for this robot/brain pair; every future connection
+   re-authenticates automatically via HMAC challenge-response, with the
+   brain reconnecting on its own.
 
 Once paired, the robot's `T_HELLO` handshake also advertises its own MCP
 server address (`mcp_port`); the brain resolves this into a full `mcp_url`
@@ -325,9 +329,13 @@ client against the robot — see below.
                           ──► T_TTS frames back to the robot
 ```
 
-- **`server.py`** — the WebSocket listener + mDNS `Advertiser`. Every
-  connecting robot goes through `brain_handshake` (`milo_common`), then gets
-  handed to a session handler.
+- **`net/discovery.py`** — `RobotDiscovery` browses `_milo-robot._tcp` mDNS,
+  `select_robot()` ranks candidates (paired+not-busy first, else a
+  pairing-mode one), with a manual-target override for the Connect Robots tab.
+- **`net/connector.py`** — `RobotConnectorManager`: one discover→select→
+  connect→session loop that drives both passive auto-reconnect and manual
+  connects. Every connection goes through `brain_handshake` (`milo_common`),
+  then gets handed to a session handler.
 - **`session.py`** — `CognitionSessionFactory` builds the real pipeline
   stack once (ASR, vision, TTS, LLM client) and a `RobotCognitionSession`
   per connected robot. It also builds a `MiloMcpClient` for that robot from
@@ -346,14 +354,17 @@ client against the robot — see below.
   server for the life of one session.
 - **`config.py`** — GPU tier detection (`nvidia-smi`) and
   `~/.milo-brain/config.yaml` load/save.
-- **`tui/app.py`** — `MiloBrainApp`, the Textual TUI. Runs `BrainServer` as
-  a background worker on its own event loop (no separate thread), so the
-  pairing-PIN flow is a direct `await` on a modal screen rather than
-  cross-thread signaling.
-- **`tui/dashboard.py`** — the main screen: identity, connection, model
-  (with live tokens/sec), and pairing panels.
+- **`tui/app.py`** — `MiloBrainApp`, the Textual TUI. Runs
+  `RobotConnectorManager` as a background worker on its own event loop (no
+  separate thread), so the reactive pairing-PIN flow is a direct `await` on
+  a modal screen rather than cross-thread signaling.
+- **`tui/dashboard.py`** — the main screen: identity, connection (connected
+  robot + paired count), and model (with live tokens/sec) panels.
+- **`tui/connect_robots.py`** — the refreshable discovered-robots list;
+  selecting one requests a manual connect.
 - **`tui/pairing.py`**, **`tui/model_picker.py`** — modal screens for PIN
-  entry and picking an installed Ollama model.
+  entry (popped reactively when a robot requests pairing mid-handshake) and
+  picking an installed Ollama model.
 
 Everything in `pipelines/` and the pairing/session flow is designed to be
 testable off-hardware: real Whisper/InsightFace/Ollama/MCP clients are
@@ -388,14 +399,15 @@ connection error. On Windows, check the Ollama tray icon is present (it
 starts automatically on login); on native Linux, `sudo systemctl status
 ollama` or run `ollama serve` in a terminal directly.
 
-**Robot never appears / brain never appears on the other side** — both
-sides need multicast DNS reachability on the same LAN segment. On Windows,
-the most common cause is the **Windows Defender Firewall** prompt being
-dismissed or missed on first run — see [Windows Firewall](#6-windows-firewall)
-above; also confirm the network is set to **Private**, not **Public**
-(Public profile blocks discovery traffic by default). On native Linux, check
-your firewall isn't blocking UDP 5353 (mDNS) or the brain's WebSocket port
-(`8765` by default).
+**Robot never shows up in Connect Robots** — both sides need multicast DNS
+reachability on the same LAN segment, and the robot needs to actually be
+advertising (check its web dashboard's Brain card, or that pairing mode is
+on if it's a brand-new/unpaired robot). On Windows, the most common cause is
+the **Windows Defender Firewall** prompt being dismissed or missed on first
+run — see [Windows Firewall](#6-windows-firewall) above; also confirm the
+network is set to **Private**, not **Public** (Public profile blocks
+discovery traffic by default). On native Linux, check your firewall isn't
+blocking UDP 5353 (mDNS).
 
 **PowerShell says running scripts is disabled** — when activating the venv
 (`.venv\Scripts\Activate.ps1`), run

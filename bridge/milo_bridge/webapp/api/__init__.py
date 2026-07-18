@@ -1,7 +1,7 @@
 """Route registry: adding a server feature = one import + one line here."""
 from aiohttp import web
 
-from . import auth, graph, imu, logs, media, motion_meta, speak, status, system
+from . import auth, brains, graph, imu, logs, media, motion_meta, speak, status, system
 
 
 def register_routes(app: web.Application) -> None:
@@ -14,3 +14,4 @@ def register_routes(app: web.Application) -> None:
     logs.register(app)
     imu.register(app)
     system.register(app)
+    brains.register(app)

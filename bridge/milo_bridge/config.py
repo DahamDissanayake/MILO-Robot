@@ -36,7 +36,6 @@ class BridgeConfig:
 
     # Sleep mode
     loud_rms_threshold: float = 2000.0  # int16 RMS that perks Milo up while asleep
-    reconnect_seconds: float = 10.0
 
     # Web dashboard
     web_enabled: bool = True
@@ -44,6 +43,10 @@ class BridgeConfig:
     web_username: str = "dama"
     web_password_hash: str = ""   # scrypt "<salt_hex>$<hash_hex>"; seeded on first load()
     mcp_port: int = 8766
+
+    # Robot<->brain link: the robot is the WebSocket server + mDNS advertiser
+    # (brains discover and dial in -- see milo_bridge/net/server.py).
+    robot_ws_port: int = 8765
 
     @property
     def paired_path(self) -> Path:

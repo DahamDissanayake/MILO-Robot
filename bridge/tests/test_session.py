@@ -4,8 +4,7 @@ from milo_common import protocol
 from milo_common.protocol import Message
 from milo_common.testing import socket_pair
 
-from milo_bridge.config import BridgeConfig
-from milo_bridge.net.session import SessionManager, RobotSession
+from milo_bridge.net.session import RobotSession
 
 
 class FakeDisplay:
@@ -76,17 +75,6 @@ def test_graph_dispatches_to_api():
     assert fields["nodes"] == [{"type": "person"}]
 
 
-class FakeDiscoveryEmpty:
-    def snapshot(self):
-        return []
-
-    def start(self):
-        pass
-
-    def stop(self):
-        pass
-
-
 def test_cmd_with_move_or_face_is_ignored_not_crashed():
     async def main():
         robot_sock, brain_sock = socket_pair()
@@ -101,48 +89,5 @@ def test_cmd_with_move_or_face_is_ignored_not_crashed():
             assert display.faces == []
         finally:
             task.cancel()
-
-    asyncio.run(main())
-
-
-def test_tick_reconnects_and_does_not_crash_with_no_brain_found(tmp_path):
-    # Sleep/wake is no longer this class's concern (moved to ControlBroker's
-    # on_change hook in main()) -- this just confirms the no-brain branch
-    # still cleanly waits and returns without a paired sleep_controller.
-    cfg = BridgeConfig(data_dir=str(tmp_path), reconnect_seconds=0.0)
-    manager = SessionManager(
-        cfg,
-        display=None,
-        runner=None,
-        discovery=FakeDiscoveryEmpty(),
-    )
-    asyncio.run(manager._tick())
-
-
-def test_session_manager_advertises_configured_mcp_port(tmp_path, monkeypatch):
-    from milo_common.auth import PairedStore, derive_token
-    from milo_common.handshake import brain_handshake, robot_handshake
-    from milo_common.testing import socket_pair
-
-    async def main():
-        cfg = BridgeConfig(data_dir=str(tmp_path), robot_id="milo-1", robot_name="milo", mcp_port=9001)
-        token = derive_token("123456", cfg.robot_id, "brain-1")
-        PairedStore(cfg.paired_path).add("brain-1", token)
-
-        rs, bs = socket_pair()
-
-        # Simpler: drive robot_handshake directly against the brain side and
-        # assert what it received, instead of the full discovery/connect
-        # plumbing (which needs a real BrainRecord/select_brain wiring not
-        # worth faking here).
-        brain_store = PairedStore(tmp_path / "brain_paired.json")
-        brain_store.add(cfg.robot_id, token)
-
-        robot_task = asyncio.create_task(
-            robot_handshake(rs, cfg.robot_id, cfg.robot_name, PairedStore(cfg.paired_path), mcp_port=cfg.mcp_port)
-        )
-        peer = await brain_handshake(bs, "brain-1", "d", "large", brain_store)
-        await robot_task
-        assert peer.mcp_port == 9001
 
     asyncio.run(main())

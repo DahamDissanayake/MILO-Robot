@@ -6,7 +6,7 @@ import aiohttp
 from milo_bridge.webapp.control import ControlBroker
 from milo_bridge.webapp.media_hub import MediaHub
 from .client_helpers import authed_client
-from .fakes import FakeAudio, make_deps
+from .fakes import FakeAudio, FakeRobotServer, make_deps
 
 
 async def _ws(deps):
@@ -280,6 +280,56 @@ async def test_manual_denied_without_control():
     client, ws = await _ws(deps)
     try:
         await ws.send_json({"t": "manual", "on": True})
+        data = await _recv_json_until(ws, "err")
+        assert data["error"] == "not-controlling"
+    finally:
+        await client.close()
+
+
+async def test_enter_pairing_mode_broadcasts_to_all_clients():
+    rs = FakeRobotServer()
+    deps = make_deps(broker=ControlBroker(), robot_server=rs)
+    client, ws1 = await _ws(deps)
+    try:
+        ws2 = await client.ws_connect("/ws")
+        await ws1.send_json({"t": "control", "take": True})
+        await _recv_json_until(ws1, "control")
+        await ws1.send_json({"t": "enter_pairing_mode", "on": True})
+        data1 = await _recv_json_until(ws1, "pairing")
+        data2 = await _recv_json_until(ws2, "pairing")
+        assert data1 == {"t": "pairing", "on": True}
+        assert data2 == {"t": "pairing", "on": True}
+        assert rs.pairing.entered == 1
+        assert rs.advertiser.pairing is True
+        # No message anywhere in this exchange ever carries the raw PIN.
+        assert "999999" not in str(data1) and "code" not in data1 and "pin" not in data1
+    finally:
+        await client.close()
+
+
+async def test_exit_pairing_mode_broadcasts_off():
+    rs = FakeRobotServer()
+    deps = make_deps(broker=ControlBroker(), robot_server=rs)
+    client, ws = await _ws(deps)
+    try:
+        await ws.send_json({"t": "control", "take": True})
+        await _recv_json_until(ws, "control")
+        await ws.send_json({"t": "enter_pairing_mode", "on": True})
+        await _recv_json_until(ws, "pairing")
+        await ws.send_json({"t": "enter_pairing_mode", "on": False})
+        data = await _recv_json_until(ws, "pairing")
+        assert data == {"t": "pairing", "on": False}
+        assert rs.pairing.exited == 1
+        assert rs.advertiser.pairing is False
+    finally:
+        await client.close()
+
+
+async def test_enter_pairing_mode_denied_without_control():
+    deps = make_deps(broker=ControlBroker(), robot_server=FakeRobotServer())
+    client, ws = await _ws(deps)
+    try:
+        await ws.send_json({"t": "enter_pairing_mode", "on": True})
         data = await _recv_json_until(ws, "err")
         assert data["error"] == "not-controlling"
     finally:

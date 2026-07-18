@@ -23,7 +23,7 @@ Milo upgrades the [Sesame quadruped robot](https://github.com/dorianborian/sesam
 | Intelligence | Remote HTTP commands | Detachable **Milo Brain** desktop app on any LAN GPU machine |
 | Face display | SSD1306 OLED, 37 bitmap faces | Same display + same face art, driven from Python |
 
-**Design principle — *Body + Memory on the robot, Compute on the brains*.** The Pi runs `milo-bridge` (drivers, gait inference, knowledge graph, discovery/auth, sleep mode). Any machine running the **Milo Brain** app advertises itself over mDNS; Milo pairs once via a PIN shown on its OLED, then streams camera/mic audio up and receives speech/face/movement commands back. Milo's identity (who it knows, what it remembers) always lives on the Pi — brains are stateless, interchangeable compute. No brain reachable and no one driving from the web dashboard → Milo sleeps (see §3.4).
+**Design principle — *Body + Memory on the robot, Compute on the brains*.** The Pi runs `milo-bridge` (drivers, gait inference, knowledge graph, WebSocket server + mDNS advertising, sleep mode). Milo itself advertises on the LAN and accepts connections; a brain machine discovers it and dials in. Pairing (once per brain, triggered from the robot's web dashboard) shows a PIN on Milo's OLED that's typed into the brain app; after that, streaming and reconnection are automatic. Milo's identity (who it knows, what it remembers) always lives on the Pi — brains are stateless, interchangeable compute. No brain connected → Milo stands by, self-leveling, waiting (see §3.4).
 
 ---
 
@@ -71,8 +71,10 @@ MILO-Robot/
 │   │   │   ├── store.py           # SQLite property graph + match_face (cosine)
 │   │   │   └── api.py             # {"t":"graph"} ops over the authenticated WS
 │   │   └── net/
-│   │       ├── discovery.py       # mDNS browse, rank paired brains, failover
-│   │       ├── session.py         # WS client session to the active brain
+│   │       ├── advertiser.py      # registers/updates the _milo-robot._tcp mDNS service
+│   │       ├── pairing.py         # generates+shows the OLED PIN, gates robot_handshake
+│   │       ├── server.py          # accepts the one connected brain, runs the handshake
+│   │       ├── session.py         # post-handshake dispatch loop (RobotSession)
 │   │       └── streams.py         # camera/mic → WS frames; TTS PCM → speaker
 │   ├── assets/faces/              # PNG face frames converted from face-bitmaps.h
 │   ├── tools/
@@ -85,8 +87,10 @@ MILO-Robot/
 │   ├── pyproject.toml             # package: milo-brain (depends on milo-common)
 │   ├── milo_brain/
 │   │   ├── __main__.py            # `python -m milo_brain`
-│   │   ├── server.py              # websockets server + zeroconf advertisement
 │   │   ├── config.py              # ~/.milo-brain/config.yaml (name, tier, models)
+│   │   ├── net/
+│   │   │   ├── discovery.py       # mDNS browse _milo-robot._tcp, rank paired robots
+│   │   │   └── connector.py       # discover→select→connect→session loop + manual connect
 │   │   ├── pipelines/
 │   │   │   ├── vad.py             # Silero VAD → speech segments
 │   │   │   ├── direction.py       # GCC-PHAT L/R delay → bearing
@@ -95,8 +99,8 @@ MILO-Robot/
 │   │   │   └── tts.py             # Piper → 16kHz PCM frames
 │   │   ├── llm/
 │   │   │   ├── agent.py           # cognition loop (Ollama, structured JSON out)
-│   │   │   └── extract.py         # fact extraction → graph writes
-│   │   └── ui/tray.py             # PyQt6 system-tray + debug window
+│   │   │   └── token_rate.py      # tokens/sec tracker shown on the dashboard
+│   │   └── tui/                   # Textual TUI: dashboard, Connect Robots, model picker
 │   └── tests/                     # models mocked; DSP math tested for real
 │
 ├── training/                      # ═══ RL GAIT TRAINING (GPU machine) ═══
@@ -135,12 +139,13 @@ MILO-Robot/
 │   │ camera ─┼── MJPEG ──────────────┐                      │ graph ops        │
 │   │ audio ──┼── PCM ────────────┐   │                      │                  │
 │   └─────────┘                   │   │                      │                  │
-│        ▲                     net/streams ── net/session ───┴── net/discovery  │
+│        ▲                net/streams ── net/server ───┴── net/advertiser       │
 │        │ poses/faces/tts        │   │            ▲                 │          │
 │     sleep.py ◄──────────────────┴───┴────────────┴─────────────────┘          │
 └────────────────────────────────────┬──────────────────────────────────────────┘
-                    WiFi LAN (2.4GHz)│ mDNS: _milo-brain._tcp   one authenticated
-                                     │                          WebSocket at a time
+                    WiFi LAN (2.4GHz)│ mDNS: _milo-robot._tcp   one authenticated
+                     (robot advertises,│ (robot advertised)      WebSocket at a time
+                      brains discover) │                          (robot is the server)
             ┌────────────────────────┴──────────────────────┐
             │                                               │
 ┌───────────▼─────── Brain A ──────────┐   ┌────────────────▼── Brain B ────────┐
@@ -149,7 +154,7 @@ MILO-Robot/
 │ VAD → direction → ASR(whisper-small) │   │ VAD → direction → ASR(whisper-medium)│
 │ InsightFace · Piper TTS              │   │ InsightFace · Piper TTS             │
 │ LLM: llama3.2:3b via Ollama          │   │ LLM: 8B-class via Ollama            │
-│ PyQt6 tray + debug window            │   │ PyQt6 tray + debug window           │
+│ Textual TUI (net/discovery+connector)│   │ Textual TUI (net/discovery+connector)│
 └──────────────────────────────────────┘   └─────────────────────────────────────┘
 ```
 
@@ -168,16 +173,19 @@ Binary frames immediately follow their JSON header frame; the header carries `se
 
 ### 3.3 Pairing & authentication (milo_common.auth)
 
-1. Unpaired brain connects → robot generates a 6-digit PIN and renders it on the OLED.
-2. User types the PIN into the brain's tray UI.
-3. Both sides derive `token = HKDF(PIN, salt=robot_id‖brain_id)` and persist it (`/etc/milo/paired.json` on the Pi, `~/.milo-brain/paired.json` on the brain).
-4. Every later session opens with an HMAC challenge–response over that token (fresh nonce per session; replays refused). Failure → disconnect. Unpaired machines never get past this.
+The robot is the WebSocket server and mDNS advertiser; a brain discovers it and dials in (`net/discovery.py` + `net/connector.py` on the brain side). Pairing is triggered from the **robot's web dashboard**, not the brain app:
 
-### 3.4 Brain selection, failover, sleep
+1. User clicks **Enter Pairing Mode** on the robot's web dashboard (Brain card) → the robot generates a 6-digit PIN, renders it on the OLED, and flips its mDNS `pairing` TXT flag on.
+2. In the brain app's **Connect Robots** tab, the user refreshes, sees the robot listed as pairing-available, and selects it.
+3. The brain dials in; the robot's handshake reactively requests the PIN, which pops a modal in the brain's TUI — the user types the code shown on the robot's face.
+4. Both sides derive `token = HKDF(PIN, salt=robot_id‖brain_id)` and persist it (`~/.milo/paired.json` on the Pi, `~/.milo-brain/paired.json` on the brain); the robot closes pairing mode automatically.
+5. Every later session opens with an HMAC challenge–response over that token (fresh nonce per session; replays refused) — no PIN prompt, no manual step. Failure → disconnect. Unpaired machines never get past this.
 
-- Brains advertise mDNS `_milo-brain._tcp.local.` with TXT records `name`, `gpu`, `tier` (small/large), `busy` (0/1).
-- `net/discovery.py` browses continuously, filters to *paired* brains, ranks by (not-busy, priority, latency), connects to the best; on drop it fails over within 10 s.
-- Sleep/wake is driven by `ControlBroker.on_change` (`main.py`'s `_make_control_change_handler`), not brain state alone: **no paired brain reachable AND no web dashboard client holding control** → `sleep.py`: rest pose, sleepy face, camera/mic streams stopped, discovery keeps scanning. A loud sound (cheap RMS threshold on a mic tap) makes Milo perk up and rescan. A brain connects, or a web client takes control → stand pose, excited face, streams resume — either one wakes Milo, and losing both puts it back to sleep.
+### 3.4 Robot discovery, failover, standby
+
+- The robot advertises mDNS `_milo-robot._tcp.local.` with TXT records `id`, `name`, `busy` (0/1), `pairing` (0/1) — **always on** from boot, independent of pairing mode, so an already-paired brain can reconnect automatically without anyone touching the dashboard again.
+- Each brain's `net/discovery.py` browses continuously; `net/connector.py` filters to a *paired, not-busy* robot, ranks by priority, connects, and retries on drop (~10 s). The robot only accepts one connected brain at a time; a second one is refused until the first disconnects — so two paired brains failing over to the same robot is safe (whichever reconnects first wins, the other keeps retrying).
+- The robot's idle/standby state is driven by `ControlBroker.on_change` (`main.py`'s `_make_control_change_handler`), not brain state alone: whenever **no brain is connected and no web dashboard client holds control**, the robot stands at standby with self-leveling engaged — not asleep or limp. A brain connecting, or a web client taking control, is what actually moves it (stand pose, excited face, streams resume); either one is enough, and losing both returns it to standing by.
 
 ### 3.5 Cognition loop (runs on the brain)
 
@@ -431,10 +439,10 @@ PWM: 50 Hz, 500–2500 µs pulse range, per-servo trim offsets, **20 ms staggere
 | Faces | InsightFace `buffalo_l` | GPU, or CPU if VRAM-tight (~0.5 GB) | GPU |
 | TTS | Piper (en, medium voice) | CPU | CPU |
 | Sound direction | GCC-PHAT (numpy/scipy) | CPU | CPU |
-| UI | PyQt6 system tray + debug window | same | same |
-| Server | `websockets` + `zeroconf` advertise | same | same |
+| UI | Textual TUI (dashboard, Connect Robots, model picker) | same | same |
+| Client | `websockets` + `zeroconf` discovery | same | same |
 
-Tier is set in `~/.milo-brain/config.yaml` (auto-detected from GPU at first run, user-overridable in the tray UI). VRAM budget on the 4050: whisper-small + InsightFace + 3B-Q4 LLM ≈ 4 GB — fits; InsightFace drops to CPU if tight.
+Tier is set in `~/.milo-brain/config.yaml` (auto-detected from GPU at first run, user-overridable in the TUI's model picker). VRAM budget on the 4050: whisper-small + InsightFace + 3B-Q4 LLM ≈ 4 GB — fits; InsightFace drops to CPU if tight.
 
 ### 6.3 Training — GPU box only
 

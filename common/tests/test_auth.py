@@ -48,7 +48,13 @@ def test_paired_store_roundtrip(tmp_path: Path):
     assert reloaded.is_paired("brain-1")
     assert reloaded.token_for("brain-1") == token
     assert reloaded.priority_for("brain-1") == 2
+    assert reloaded.name_for("brain-1") == "laptop"
     assert not reloaded.is_paired("brain-2")
 
     reloaded.remove("brain-1")
     assert not auth.PairedStore(tmp_path / "paired.json").is_paired("brain-1")
+
+
+def test_name_for_unknown_peer_falls_back_to_the_id():
+    store = auth.PairedStore(Path("unused-does-not-exist.json"))
+    assert store.name_for("stranger") == "stranger"

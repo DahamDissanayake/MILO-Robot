@@ -11,12 +11,15 @@ import shutil
 import socket
 import subprocess
 import uuid
-from dataclasses import dataclass, field, asdict
+import logging
+from dataclasses import dataclass, field, asdict, fields
 from pathlib import Path
 
 import yaml
 
 DEFAULT_DIR = Path.home() / ".milo-brain"
+
+log = logging.getLogger(__name__)
 
 TIER_DEFAULTS = {
     "small": {"llm_model": "llama3.2:3b", "whisper_model": "small"},
@@ -47,7 +50,6 @@ def tier_for_vram(vram_mib: int) -> str:
 class BrainConfig:
     brain_id: str = ""
     name: str = field(default_factory=socket.gethostname)
-    port: int = 8765
     tier: str = ""                # auto-detected when empty
     gpu: str = ""
     llm_model: str = ""
@@ -59,6 +61,10 @@ class BrainConfig:
     busy_gpu_percent: int = 85    # above this, advertise busy=1
     data_dir: str = str(DEFAULT_DIR)
 
+    # Robot<->brain link: the brain is the WebSocket client + mDNS browser
+    # (it discovers and dials robots -- see milo_brain/net/connector.py).
+    reconnect_seconds: float = 10.0
+
     @property
     def paired_path(self) -> Path:
         return Path(self.data_dir) / "paired.json"
@@ -66,8 +72,17 @@ class BrainConfig:
     @classmethod
     def load(cls, path: Path | None = None) -> "BrainConfig":
         path = path or DEFAULT_DIR / "config.yaml"
-        cfg = cls(**(yaml.safe_load(path.read_text(encoding="utf-8")) or {})) if path.exists() else cls()
-        changed = False
+        stale: list[str] = []
+        if path.exists():
+            data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+            known = {f.name for f in fields(cls)}
+            stale = sorted(set(data) - known)
+            if stale:
+                log.warning("dropping stale config keys (renamed/removed field): %s", stale)
+            cfg = cls(**{k: v for k, v in data.items() if k in known})
+        else:
+            cfg = cls()
+        changed = bool(stale)  # persist the cleaned-up schema so the stale key doesn't keep reappearing
         if not cfg.brain_id:
             cfg.brain_id = f"brain-{uuid.uuid4().hex[:12]}"
             changed = True

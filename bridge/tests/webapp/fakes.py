@@ -116,6 +116,47 @@ class FakeCamera:
         self.resolution = name
 
 
+class FakePeer:
+    def __init__(self, id, name):
+        self.id = id
+        self.name = name
+
+
+class FakeAdvertiser:
+    def __init__(self):
+        self.pairing = False
+
+
+class FakePairingController:
+    def __init__(self, advertiser):
+        self._advertiser = advertiser
+        self.current_pin: str | None = None
+        self.entered = 0
+        self.exited = 0
+
+    async def enter_pairing_mode(self):
+        self.entered += 1
+        self.current_pin = "123456"
+        self._advertiser.pairing = True
+        return self.current_pin
+
+    async def exit_pairing_mode(self):
+        self.exited += 1
+        self.current_pin = None
+        self._advertiser.pairing = False
+
+
+class FakeRobotServer:
+    def __init__(self, paired=None):
+        self.connected_brain = None
+        self.advertiser = FakeAdvertiser()
+        self.pairing = FakePairingController(self.advertiser)
+        self._paired = paired or []
+
+    def paired_brains(self):
+        return self._paired
+
+
 class FakeImu:
     """Mirrors the real Mpu6050 driver's interface exactly: an `update()`
     method (not `read()` — a prior mismatch here masked a production bug
