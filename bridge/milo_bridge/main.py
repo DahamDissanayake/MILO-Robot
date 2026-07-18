@@ -154,14 +154,19 @@ async def main() -> None:
 
     await display.show_status(hardware_status)
     # Boot gesture is the same look_down tilt Q/E trigger by hand, immediately
-    # followed by the same standby() recovery a released E does -- previously
+    # followed by the same stand recovery a released E does -- previously
     # this was a bespoke "wake_up" dip, which read as an unwanted extra pose
     # jump (stand -> dip -> stand) rather than a single deliberate gesture.
     # look_down has end_stand=False (it's meant to hold, not auto-recover), so
-    # standby() below is doing the real work of returning to stand, not just
-    # confirming what already happened.
+    # the awaited "stand" pose below is doing the real work of returning to
+    # stand, not just confirming what already happened. This must be
+    # *awaited* (not the fire-and-forget gait.standby(), which only sets a
+    # target and returns immediately) -- otherwise the immediate sleep check
+    # a few lines down retargets every servo toward "rest" before the stand
+    # recovery has moved at all, and the boot gesture reads as "sit down and
+    # go limp" instead of "bow, then stand."
     await runner.run("look_down")
-    gait.standby()
+    await runner.run("stand")
     # look_down doesn't call start_idle() itself (end_stand=False skips
     # PoseRunner's own recovery tail), so set the hardware-status-aware face
     # directly -- stop_idle() first is just defensive in case an idle loop is
