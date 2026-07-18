@@ -101,6 +101,45 @@ def test_stereo_helpers():
     assert mono.dtype == np.int16 and len(mono) == FRAME
 
 
+class _FakeSileroResult:
+    def __init__(self, value: float):
+        self._value = value
+
+    def item(self) -> float:
+        return self._value
+
+
+class _FakeSileroModel:
+    """Mimics the real Silero model's own minimum-chunk-length check (see
+    silero-vad's vad_annotator.forward: raises when sr / n_samples > 31.25,
+    i.e. under 512 samples at 16 kHz) so this test fails the same way
+    production did if the detector ever hands it a raw 20 ms frame."""
+
+    def __init__(self):
+        self.call_sizes: list[int] = []
+
+    def __call__(self, tensor, sr: int) -> _FakeSileroResult:
+        n = tensor.shape[-1]
+        if sr / n > 31.25:
+            raise ValueError("Input audio chunk is too short")
+        self.call_sizes.append(n)
+        return _FakeSileroResult(1.0)
+
+
+def test_silero_detector_buffers_20ms_frames_to_the_models_minimum_chunk():
+    from milo_brain.pipelines.vad import SileroSpeechDetector
+
+    model = _FakeSileroModel()
+    detector = SileroSpeechDetector(model=model)
+    frame = np.zeros(FRAME, dtype=np.int16)  # 320 samples: the wire protocol's 20 ms frame
+
+    for _ in range(5):
+        detector(frame)  # must never raise "Input audio chunk is too short"
+
+    assert model.call_sizes, "model was never invoked"
+    assert all(n >= 512 for n in model.call_sizes)
+
+
 # --- TTS helpers -------------------------------------------------------------
 
 def test_chunk_pcm_sizes_and_padding():

@@ -6,7 +6,7 @@ from milo_common.protocol import MiloSocket
 from milo_common.testing import FakeWebSocket
 
 from milo_brain.config import BrainConfig
-from milo_brain.net.connector import RobotConnectorManager
+from milo_brain.net.connector import RobotConnectorManager, _drop_backoff_seconds
 from milo_brain.net.discovery import RobotRecord
 
 
@@ -46,6 +46,29 @@ class _ConnectCM:
 
     async def __aexit__(self, *exc):
         return False
+
+
+class _RaisingConnectCM:
+    """Mimics websockets.connect(url) failing before a socket is ever
+    obtained -- e.g. a DNS lookup (gaierror) or refused connection."""
+
+    def __init__(self, exc: Exception):
+        self._exc = exc
+
+    async def __aenter__(self):
+        raise self._exc
+
+    async def __aexit__(self, *exc):
+        return False
+
+
+def test_drop_backoff_seconds_grows_and_caps():
+    assert _drop_backoff_seconds(1) == 1
+    assert _drop_backoff_seconds(2) == 2
+    assert _drop_backoff_seconds(3) == 4
+    assert _drop_backoff_seconds(4) == 8
+    assert _drop_backoff_seconds(6) == 30  # 2**5=32, capped at 30
+    assert _drop_backoff_seconds(10) == 30
 
 
 def test_tick_waits_when_nothing_discovered(tmp_path):
@@ -112,6 +135,57 @@ def test_tick_connects_to_a_selected_robot_and_runs_the_session_handler(tmp_path
         # last_connected survives the session ending -- it's what
         # request_reconnect() redials, not "currently connected".
         assert connector.last_connected == ("10.0.0.9", 8765)
+
+    asyncio.run(main())
+
+
+def test_consecutive_drops_counts_up_on_repeated_connect_failures(tmp_path):
+    # A gaierror (DNS blip) or any other failure to even obtain a socket
+    # should count as a drop and back off -- not hot-loop retrying.
+    cfg = BrainConfig(data_dir=str(tmp_path))
+    discovery = FakeDiscoveryWith(
+        [RobotRecord(robot_id="milo-1", name="milo", host="10.0.0.9", port=8765, pairing=True)]
+    )
+    connector = RobotConnectorManager(
+        cfg, request_pin=lambda name: None, session_handler=lambda sock, peer: None,
+        discovery=discovery,
+        connect=lambda url: _RaisingConnectCM(OSError("[Errno 11001] getaddrinfo failed")),
+    )
+    assert connector._consecutive_drops == 0
+    asyncio.run(connector._tick())  # backoff is 1s on the first drop
+    assert connector._consecutive_drops == 1
+
+
+def test_consecutive_drops_resets_after_a_successful_connect(tmp_path):
+    async def main():
+        cfg = BrainConfig(brain_id="brain-1", name="d", tier="large", data_dir=str(tmp_path))
+        token = derive_token("123456", "milo-1", "brain-1")
+        PairedStore(cfg.paired_path).add("milo-1", token)
+        robot_store = PairedStore(tmp_path / "robot" / "paired.json")
+        robot_store.add("brain-1", token)
+
+        raw_robot, raw_brain = FakeWebSocket(), FakeWebSocket()
+        raw_robot.peer, raw_brain.peer = raw_brain, raw_robot
+
+        async def handler(sock, peer):
+            pass
+
+        discovery = FakeDiscoveryWith(
+            [RobotRecord(robot_id="milo-1", name="milo", host="10.0.0.9", port=8765)]
+        )
+        connector = RobotConnectorManager(
+            cfg, session_handler=handler, discovery=discovery,
+            connect=lambda url: _ConnectCM(raw_brain),
+        )
+        connector._consecutive_drops = 3  # simulate a prior run of failures
+
+        robot_task = asyncio.create_task(
+            robot_handshake(MiloSocket(raw_robot), "milo-1", "milo", robot_store, mcp_port=0)
+        )
+        await connector._tick()
+        await robot_task
+
+        assert connector._consecutive_drops == 0
 
     asyncio.run(main())
 

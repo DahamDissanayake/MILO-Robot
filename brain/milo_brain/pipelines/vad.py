@@ -31,25 +31,56 @@ def downmix(stereo: np.ndarray) -> np.ndarray:
 
 
 class SileroSpeechDetector:
-    """Loads Silero VAD lazily (torch hub); callable(mono int16) -> bool."""
+    """Loads Silero VAD lazily (torch hub); callable(mono int16) -> bool.
 
-    def __init__(self, threshold: float = 0.5):
+    Silero's model rejects any chunk where sr / len(chunk) > 31.25 -- at
+    16 kHz that's anything under 512 samples (32 ms). The wire protocol
+    locks frames at 320 samples (20 ms, see
+    bridge/milo_bridge/drivers/audio.py's FRAME_SAMPLES), so raw frames are
+    buffered here and only handed to the model once 512 samples have
+    accumulated; the decision from the last full window is reused for the
+    frames in between.
+    """
+
+    REQUIRED_SAMPLES = 512  # sr / 31.25 at 16 kHz -- Silero's minimum chunk length
+
+    def __init__(self, threshold: float = 0.5, model=None):
         self._threshold = threshold
-        self._model = None
+        self._model = model
+        self._torch = None
+        self._buffer = np.empty(0, dtype=np.int16)
+        self._last_speaking = False
+
+    # Pinned so an upstream release can't silently change model behavior
+    # (or chunking rules) under us -- bump deliberately, re-verify
+    # REQUIRED_SAMPLES still holds, and note it in the commit.
+    _HUB_REPO = "snakers4/silero-vad:v6.2.1"
 
     def _load(self) -> None:
         import torch
 
         self._model, _ = torch.hub.load(
-            "snakers4/silero-vad", "silero_vad", trust_repo=True
+            self._HUB_REPO, "silero_vad", trust_repo=True
         )
         self._torch = torch
 
     def __call__(self, mono: np.ndarray) -> bool:
         if self._model is None:
             self._load()
-        audio = self._torch.from_numpy(mono.astype(np.float32) / 32768.0)
-        return float(self._model(audio, SAMPLE_RATE).item()) >= self._threshold
+        if self._torch is None:
+            import torch
+
+            self._torch = torch
+        self._buffer = np.concatenate([self._buffer, mono])
+        while len(self._buffer) >= self.REQUIRED_SAMPLES:
+            chunk, self._buffer = (
+                self._buffer[: self.REQUIRED_SAMPLES],
+                self._buffer[self.REQUIRED_SAMPLES :],
+            )
+            audio = self._torch.from_numpy(chunk.astype(np.float32) / 32768.0)
+            score = float(self._model(audio, SAMPLE_RATE).item())
+            self._last_speaking = score >= self._threshold
+        return self._last_speaking
 
 
 class VadSegmenter:

@@ -27,6 +27,7 @@ full = [
     "onnxruntime-gpu>=1.17; platform_system != 'Darwin'",
     "piper-tts>=1.2",
     "torch>=2.2",          # Silero VAD
+    "torchaudio>=2.2",     # Silero VAD's torch.hub repo imports this at load time
     "opencv-python>=4.9",
 ]
 dev = ["pytest>=8"]
