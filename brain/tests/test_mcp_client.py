@@ -1,6 +1,7 @@
+import asyncio
 from types import SimpleNamespace
 
-from milo_brain.mcp_client import _to_ollama_tool, _tool_result_to_dict
+from milo_brain.mcp_client import MiloMcpClient, _to_ollama_tool, _tool_result_to_dict
 
 
 def test_to_ollama_tool_maps_mcp_tool_shape():
@@ -45,3 +46,21 @@ def test_tool_result_falls_back_to_plain_text_when_not_json():
 def test_tool_result_empty_when_nothing_usable():
     result = SimpleNamespace(structuredContent=None, content=[])
     assert _tool_result_to_dict(result) == {}
+
+
+def test_connected_is_false_before_connect():
+    client = MiloMcpClient("http://x", token="t", peer_id="p")
+    assert client.connected is False
+
+
+def test_connected_is_true_once_a_session_exists():
+    client = MiloMcpClient("http://x", token="t", peer_id="p")
+    client._session = object()  # simulate what a completed connect() leaves behind
+    assert client.connected is True
+
+
+def test_connected_is_false_after_close():
+    client = MiloMcpClient("http://x", token="t", peer_id="p")
+    client._session = object()
+    asyncio.run(client.close())
+    assert client.connected is False
