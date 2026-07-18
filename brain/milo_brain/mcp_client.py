@@ -48,6 +48,10 @@ class MiloMcpClient:
         self._stack: contextlib.AsyncExitStack | None = None
         self._session: Any = None
 
+    @property
+    def connected(self) -> bool:
+        return self._session is not None
+
     async def connect(self) -> None:
         from mcp import ClientSession
         from mcp.client.streamable_http import streamablehttp_client
