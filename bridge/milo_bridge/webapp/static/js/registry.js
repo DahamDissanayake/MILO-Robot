@@ -12,9 +12,9 @@ import crashlog from "./panels/crashlog.js";
 import power from "./panels/power.js";
 
 export const registry = {
-  cockpitMove: [move],
+  cockpitMove: [move, brain],
   cockpitCamera: [camera, poses],
-  cockpitSide: [comm, sensors, brain],
+  cockpitSide: [comm, sensors],
   bridgeLog: [log, crashlog],
   graph: [graph],
   tools: [servos, power],
