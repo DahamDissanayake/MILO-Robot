@@ -7,6 +7,8 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from ._lazy import LazyLoad
+
 
 @dataclass(frozen=True)
 class Transcript:
@@ -14,8 +16,9 @@ class Transcript:
     confidence: float  # mean segment probability, 0-1
 
 
-class WhisperAsr:
+class WhisperAsr(LazyLoad):
     def __init__(self, model_size: str = "small", device: str = "auto"):
+        super().__init__()
         self._model_size = model_size
         self._device = device
         self._model = None
@@ -26,8 +29,7 @@ class WhisperAsr:
         self._model = WhisperModel(self._model_size, device=self._device, compute_type="auto")
 
     def transcribe(self, mono_int16: np.ndarray) -> Transcript:
-        if self._model is None:
-            self._load()
+        self.ensure_loaded()
         audio = mono_int16.astype(np.float32) / 32768.0
         segments, _info = self._model.transcribe(audio, language="en", beam_size=3)
         texts, probs = [], []

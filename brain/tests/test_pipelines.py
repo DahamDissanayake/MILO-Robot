@@ -284,3 +284,11 @@ def test_lazyload_ensure_loaded_retries_after_a_previous_error():
     assert loader.status == "ready"
     assert loader.error is None
     assert loader.load_calls == 2
+
+
+def test_whisper_asr_status_starts_not_loaded():
+    from milo_brain.pipelines.asr import WhisperAsr
+
+    asr = WhisperAsr()
+    assert asr.status == "not_loaded"
+    assert asr.error is None
