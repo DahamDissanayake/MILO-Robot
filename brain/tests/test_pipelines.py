@@ -140,6 +140,36 @@ def test_silero_detector_buffers_20ms_frames_to_the_models_minimum_chunk():
     assert all(n >= 512 for n in model.call_sizes)
 
 
+def test_silero_detector_status_starts_not_loaded_without_injected_model():
+    from milo_brain.pipelines.vad import SileroSpeechDetector
+
+    detector = SileroSpeechDetector()
+    assert detector.status == "not_loaded"
+    assert detector.error is None
+
+
+def test_silero_detector_status_is_ready_immediately_when_model_injected():
+    from milo_brain.pipelines.vad import SileroSpeechDetector
+
+    detector = SileroSpeechDetector(model=_FakeSileroModel())
+    assert detector.status == "ready"
+
+
+def test_vad_segmenter_status_defaults_to_ready_for_a_plain_fake_detector():
+    seg = VadSegmenter(is_speech=energy_detector, min_silence_ms=60)
+    assert seg.status == "ready"
+    assert seg.error is None
+
+
+def test_vad_segmenter_status_delegates_to_an_injected_silero_detector():
+    from milo_brain.pipelines.vad import SileroSpeechDetector
+
+    detector = SileroSpeechDetector(model=_FakeSileroModel())
+    seg = VadSegmenter(is_speech=detector, min_silence_ms=60)
+    assert seg.status == "ready"
+    assert seg.error is None
+
+
 # --- TTS helpers -------------------------------------------------------------
 
 def test_chunk_pcm_sizes_and_padding():

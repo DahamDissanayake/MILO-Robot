@@ -11,6 +11,8 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from ._lazy import LazyLoad
+
 SAMPLE_RATE = 16_000
 
 
@@ -30,7 +32,7 @@ def downmix(stereo: np.ndarray) -> np.ndarray:
     return (stereo.astype(np.int32).sum(axis=1) // 2).astype(np.int16)
 
 
-class SileroSpeechDetector:
+class SileroSpeechDetector(LazyLoad):
     """Loads Silero VAD lazily (torch hub); callable(mono int16) -> bool.
 
     Silero's model rejects any chunk where sr / len(chunk) > 31.25 -- at
@@ -45,11 +47,14 @@ class SileroSpeechDetector:
     REQUIRED_SAMPLES = 512  # sr / 31.25 at 16 kHz -- Silero's minimum chunk length
 
     def __init__(self, threshold: float = 0.5, model=None):
+        super().__init__()
         self._threshold = threshold
         self._model = model
         self._torch = None
         self._buffer = np.empty(0, dtype=np.int16)
         self._last_speaking = False
+        if model is not None:
+            self.status = "ready"
 
     # Pinned so an upstream release can't silently change model behavior
     # (or chunking rules) under us -- bump deliberately, re-verify
@@ -65,8 +70,7 @@ class SileroSpeechDetector:
         self._torch = torch
 
     def __call__(self, mono: np.ndarray) -> bool:
-        if self._model is None:
-            self._load()
+        self.ensure_loaded()
         if self._torch is None:
             import torch
 
@@ -106,6 +110,14 @@ class VadSegmenter:
         self._start_ts = 0.0
         self._silence_ms = 0.0
         self._last_ts = 0.0
+
+    @property
+    def status(self) -> str:
+        return getattr(self._is_speech, "status", "ready")
+
+    @property
+    def error(self) -> str | None:
+        return getattr(self._is_speech, "error", None)
 
     def push(self, frame: bytes, ts: float) -> SpeechSegment | None:
         stereo = stereo_from_bytes(frame)
