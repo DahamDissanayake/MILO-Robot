@@ -44,6 +44,7 @@ function ensureStyles() {
     }
     .slide-track:not(.dragging) .slide-thumb { transition: left 0.2s cubic-bezier(.2,.8,.2,1); }
     .slide-thumb:active { cursor: grabbing; }
+    .slide-thumb:focus-visible { outline: 3px solid var(--ok); outline-offset: 2px; }
     .slide-track.confirmed .slide-thumb { background: var(--ok); cursor: default; }
     .slide-track.confirmed .slide-label { color: var(--ok); font-weight: 700; }
   `;
@@ -53,6 +54,7 @@ function ensureStyles() {
 const THUMB_SIZE = 46;
 const EDGE = 3;
 const CONFIRM_THRESHOLD = 0.85; // iOS-style forgiving "close enough to the end" fraction
+const KEY_STEP_FRACTION = 0.15; // ~7 arrow-key presses to cross the confirm threshold
 
 function slideConfirm(el, { label, onConfirm }) {
   ensureStyles();
@@ -60,7 +62,8 @@ function slideConfirm(el, { label, onConfirm }) {
     <div class="slide-track">
       <div class="slide-fill"></div>
       <div class="slide-label">${label}</div>
-      <div class="slide-thumb" role="slider" aria-label="${label}">›</div>
+      <div class="slide-thumb" role="slider" tabindex="0"
+           aria-label="${label}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">›</div>
     </div>`;
   const track = el.querySelector(".slide-track");
   const fill = el.querySelector(".slide-fill");
@@ -71,6 +74,7 @@ function slideConfirm(el, { label, onConfirm }) {
   let dragging = false;
   let startX = 0;
   let thumbStartPx = 0;
+  let currentPx = 0;
 
   const ctl = { setStatus: (text) => { labelEl.textContent = text; } };
 
@@ -84,6 +88,8 @@ function slideConfirm(el, { label, onConfirm }) {
     const m = maxPx();
     const pct = m > 0 ? (clamped / m) * 100 : 0;
     fill.style.width = `${pct}%`;
+    currentPx = clamped;
+    thumb.setAttribute("aria-valuenow", String(Math.round(pct)));
     return clamped;
   }
 
@@ -101,12 +107,17 @@ function slideConfirm(el, { label, onConfirm }) {
     onConfirm(ctl);
   }
 
+  function confirmIfPastThreshold() {
+    const m = maxPx();
+    if (m > 0 && currentPx >= m * CONFIRM_THRESHOLD) confirm();
+  }
+
   thumb.addEventListener("pointerdown", (e) => {
     if (fired) return;
     dragging = true;
     track.classList.add("dragging");
     startX = e.clientX;
-    thumbStartPx = parseFloat(thumb.style.left || `${EDGE}`) - EDGE;
+    thumbStartPx = currentPx;
     thumb.setPointerCapture(e.pointerId);
   });
 
@@ -118,8 +129,8 @@ function slideConfirm(el, { label, onConfirm }) {
   function endDrag(e) {
     if (!dragging || fired) return;
     dragging = false;
-    const finalPx = place(thumbStartPx + (e.clientX - startX));
-    if (maxPx() > 0 && finalPx >= maxPx() * CONFIRM_THRESHOLD) {
+    place(thumbStartPx + (e.clientX - startX));
+    if (maxPx() > 0 && currentPx >= maxPx() * CONFIRM_THRESHOLD) {
       confirm();
     } else {
       reset();
@@ -131,6 +142,34 @@ function slideConfirm(el, { label, onConfirm }) {
     if (fired) return;
     dragging = false;
     reset();
+  });
+
+  // Keyboard equivalent (Tab to focus, arrows to move, Home/End to jump) --
+  // the native <input type="range"> this replaced was keyboard-operable and
+  // screen-reader-announced (role/aria-value*); this restores that.
+  thumb.addEventListener("keydown", (e) => {
+    if (fired) return;
+    const m = maxPx();
+    if (m <= 0) return;
+    const step = m * KEY_STEP_FRACTION;
+    if (e.key === "ArrowRight" || e.key === "ArrowUp") {
+      e.preventDefault();
+      place(currentPx + step);
+      confirmIfPastThreshold();
+    } else if (e.key === "ArrowLeft" || e.key === "ArrowDown") {
+      e.preventDefault();
+      place(currentPx - step);
+    } else if (e.key === "Home") {
+      e.preventDefault();
+      place(0);
+    } else if (e.key === "End") {
+      // Matches the native range input's own End-key behavior (jump straight
+      // to max), which already fired immediately in the version this
+      // replaced -- not a new risk introduced here.
+      e.preventDefault();
+      place(m);
+      confirmIfPastThreshold();
+    }
   });
 
   // Initial thumb position depends on the track's laid-out width, which
