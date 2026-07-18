@@ -8,6 +8,7 @@ import poses from "./panels/poses.js";
 import servos from "./panels/servos.js";
 import log from "./panels/log.js";
 import crashlog from "./panels/crashlog.js";
+import power from "./panels/power.js";
 
 export const registry = {
   cockpitMove: [move],
@@ -15,5 +16,5 @@ export const registry = {
   cockpitSide: [comm, sensors],
   bridgeLog: [log, crashlog],
   graph: [graph],
-  tools: [servos],
+  tools: [servos, power],
 };
