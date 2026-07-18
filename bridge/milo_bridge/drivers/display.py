@@ -117,8 +117,13 @@ class FaceDisplay:
             self._cache[name] = frames
         return self._cache[name]
 
-    def _show(self, image: Image.Image) -> None:
-        self._device.display(image)
+    async def _show(self, image: Image.Image) -> None:
+        # device.display() is a blocking I2C transfer of the full frame
+        # buffer -- measured ~100ms on hardware, roughly 5x the 20ms budget
+        # of the servo tick loop. Calling it directly here would stall the
+        # whole event loop (servo ticks, IMU reads, web requests) for that
+        # entire duration every time the face animates or changes.
+        await asyncio.to_thread(self._device.display, image)
 
     async def set_face(
         self, name: str, mode: AnimMode = AnimMode.ONCE, fps: float = DEFAULT_FPS
@@ -134,7 +139,7 @@ class FaceDisplay:
             name = FALLBACK_FACE
             frames = self._frames(name)
         self.current_face = name
-        self._show(frames[0])
+        await self._show(frames[0])
         if len(frames) > 1:
             self._anim_task = asyncio.create_task(self._animate(frames, mode, fps))
 
@@ -150,7 +155,7 @@ class FaceDisplay:
             while True:
                 for frame in order:
                     await asyncio.sleep(delay)
-                    self._show(frame)
+                    await self._show(frame)
                 if mode is AnimMode.ONCE:
                     return
                 if mode is AnimMode.BOOMERANG:
@@ -162,13 +167,13 @@ class FaceDisplay:
         self._cancel_anim()
         self.stop_idle()
         self.current_face = None
-        self._show(render_pin_image(pin))
+        await self._show(render_pin_image(pin))
 
     async def show_status(self, status: dict[str, bool], seconds: float = 3.0) -> None:
         self._cancel_anim()
         self.stop_idle()
         self.current_face = None
-        self._show(render_status_image(status))
+        await self._show(render_status_image(status))
         await asyncio.sleep(seconds)
 
     def start_idle(self, base_face: str = "idle") -> None:
@@ -194,7 +199,7 @@ class FaceDisplay:
     async def _blink(self) -> None:
         blink = self._frames("idle_blink")
         for frame in blink:
-            self._show(frame)
+            await self._show(frame)
             await asyncio.sleep(1.0 / DEFAULT_FPS / 2)
         await self.set_face(self._idle_base, AnimMode.BOOMERANG)
 

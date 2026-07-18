@@ -1,5 +1,6 @@
 import asyncio
 import random
+import threading
 from pathlib import Path
 
 import pytest
@@ -15,6 +16,20 @@ class RecordingDevice:
 
     def display(self, image):
         self.shown.append(image)
+
+
+class ThreadRecordingDevice:
+    """Records which thread each display() write actually ran on -- the
+    real luma.oled device.display() is a blocking I2C call (~100ms measured
+    on hardware); this catches a regression back to calling it directly on
+    the event loop thread, which would stall every other coroutine
+    (servo ticks, IMU reads, web requests) for that entire duration."""
+
+    def __init__(self):
+        self.threads: list[str] = []
+
+    def display(self, image):
+        self.threads.append(threading.current_thread().name)
 
 
 @pytest.fixture()
@@ -55,6 +70,19 @@ def test_set_face_shows_first_frame(assets: Path):
     asyncio.run(run())
     assert face.current_face == "happy"
     assert len(device.shown) == 1
+
+
+def test_show_runs_the_blocking_device_write_off_the_event_loop_thread(assets: Path):
+    device = ThreadRecordingDevice()
+    face = FaceDisplay(device, assets)
+    caller_thread = threading.current_thread().name
+
+    async def run():
+        await face.set_face("happy", AnimMode.ONCE)
+
+    asyncio.run(run())
+    assert device.threads == [device.threads[0]]  # exactly one write, single-frame face
+    assert device.threads[0] != caller_thread
 
 
 def test_unknown_face_falls_back_to_idle(assets: Path):
