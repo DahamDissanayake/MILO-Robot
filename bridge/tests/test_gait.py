@@ -323,6 +323,27 @@ def test_reset_in_balanced_mode_survives_the_next_tick():
     assert servos.angles == REST_ANGLES  # must NOT have snapped to STAND_ANGLES
 
 
+def test_reset_does_not_jerk_under_real_nonzero_imu_tilt():
+    # The actual field bug: with a real IMU (never exactly roll=pitch=0),
+    # hold-level used to keep re-deriving a *different* balance-corrected
+    # target from REST_ANGLES on every single tick, jerking the legs
+    # (worst on R1/R2) instead of settling. balance.correct()'s trim math
+    # is only valid for a standing leg geometry, not the folded rest pose,
+    # so reset() must disable self-leveling entirely rather than feed it a
+    # pose it can't correctly reason about.
+    servos = FakeServos()
+    imu = FakeImu(roll=6.0, pitch=-3.0)  # realistic nonzero tilt reading
+    engine = GaitEngine(servos, imu=imu, clock=lambda: 0.0)
+    engine.set_mode("balanced")
+    engine.reset()
+    assert servos.angles == REST_ANGLES
+    servos.writes = 0
+    for _ in range(10):  # simulate a run of background ticks
+        assert engine.tick() is None
+    assert servos.writes == 0  # never re-corrected/re-written
+    assert servos.angles == REST_ANGLES  # stayed put, no jerking
+
+
 def test_standby_in_balanced_mode_survives_the_next_tick():
     servos = FakeServos()
     imu = FakeImu(roll=0.0, pitch=0.0)
@@ -332,6 +353,20 @@ def test_standby_in_balanced_mode_survives_the_next_tick():
     assert servos.angles == _safe(STAND_ANGLES)
     engine.tick()
     assert servos.angles == _safe(STAND_ANGLES)
+
+
+def test_standby_still_self_levels_under_nonzero_imu_tilt():
+    # Levelable holds (standby's STAND_ANGLES) must keep correcting --
+    # only the folded/non-standing holds (reset's REST_ANGLES, a just-
+    # finished pose) should stop.
+    servos = FakeServos()
+    imu = FakeImu(roll=20.0, pitch=0.0)
+    engine = GaitEngine(servos, imu=imu, clock=lambda: 0.0)
+    engine.set_mode("balanced")
+    engine.standby()
+    written = engine.tick()
+    assert written is not None
+    assert written["L1"] != pytest.approx(STAND_ANGLES["L1"])  # correction applied
 
 
 def test_new_gait_command_clears_a_stale_holding_target():
@@ -391,7 +426,13 @@ def test_pose_completing_holds_current_servos_not_a_stale_target():
     # "dead"/"point", end_stand=False) must not get yanked back to
     # STAND_ANGLES the instant it finishes just because balanced mode's
     # hold-level treats "no active command" as its cue to self-level
-    # toward a stale target.
+    # toward a stale target. Nor should hold-level actively re-correct the
+    # pose's ending posture at all -- balance.correct()'s roll/pitch trim
+    # assumes a standing leg geometry, so applying it to an arbitrary
+    # pose-end posture (unknown whether it's standing-like) would jerk the
+    # legs the same way reset()'s REST_ANGLES hold used to. The fix leaves
+    # a just-finished pose's posture alone: no further writes until an
+    # explicit standby()/walk command takes over.
     servos = FakeServos()
     imu = FakeImu(roll=0.0, pitch=0.0)
     runner = FakeRunner()
@@ -402,11 +443,12 @@ def test_pose_completing_holds_current_servos_not_a_stale_target():
 
     off_stand_angles = {n: 45.0 for n in STAND_ANGLES}
     servos.angles = dict(off_stand_angles)  # simulates PoseRunner's writes
+    servos.writes = 0
     runner.is_running = False
-    written = engine.tick()  # pose just finished; hold-level takes over
-    assert written is not None
-    for name in STAND_ANGLES:
-        assert written[name] == pytest.approx(off_stand_angles[name])
+    written = engine.tick()  # pose just finished; must not be re-driven
+    assert written is None
+    assert servos.writes == 0
+    assert servos.angles == off_stand_angles  # left exactly where the pose ended it
 
 
 def test_gait_resumes_with_a_fresh_phase_after_a_pose_defers_it():

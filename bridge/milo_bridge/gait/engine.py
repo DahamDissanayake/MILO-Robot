@@ -66,6 +66,7 @@ class GaitEngine:
         self._active = False
         self._mode = "balanced"
         self._holding_target: dict[str, float] | None = None
+        self._holding_levelable = True
         self._manual_override = False
         self._suspended = False
         self._was_deferring = False
@@ -97,21 +98,28 @@ class GaitEngine:
 
     def reset(self) -> None:
         """Smoothly return every servo to the 90-degree rest angles."""
-        self._set_discrete_target(REST_ANGLES)
+        self._set_discrete_target(REST_ANGLES, levelable=False)
 
     def standby(self) -> None:
         """Smoothly return every servo to the stand pose."""
-        self._set_discrete_target(STAND_ANGLES)
+        self._set_discrete_target(STAND_ANGLES, levelable=True)
 
     def _write(self, name: str, angle: float) -> None:
-        # Keep every gait write inside the servos' safe band -- a full CPG
+        # Keep every gait write inside the safe band -- a full CPG
         # swing or a 0/180 discrete target must never reach a mechanical
         # hard-stop (ServoDriver enforces the same limit at the hardware gate).
         self._servos.set_angle(name, min(max(angle, SAFE_ANGLE_MIN), SAFE_ANGLE_MAX))
 
-    def _set_discrete_target(self, angles: dict[str, float]) -> None:
+    def _set_discrete_target(self, angles: dict[str, float], levelable: bool) -> None:
+        # ``levelable`` marks whether ``angles`` is a standing-like leg
+        # configuration that balance.correct()'s roll/pitch trim math (built
+        # for legs extended in a stand) can sensibly apply to. REST_ANGLES is
+        # a folded/crouched pose with no such geometry -- self-leveling on
+        # top of it just chases real (non-zero) IMU noise forever, visibly
+        # jerking the legs instead of settling.
         self._active = False
         self._holding_target = dict(angles)
+        self._holding_levelable = levelable
         for name, angle in angles.items():
             self._write(name, angle)
 
@@ -156,11 +164,16 @@ class GaitEngine:
                 # snapping hold-level's self-leveling back to a stale target
                 # (e.g. STAND_ANGLES) -- this is what was yanking poses like
                 # "dead"/"point" (which intentionally end off-stand) back to
-                # standing the instant they finished.
+                # standing the instant they finished. Not levelable: we don't
+                # know whether the pose ended in a standing-like posture, and
+                # applying self-leveling correction to an arbitrary one would
+                # jerk it the same way reset()'s REST_ANGLES hold used to --
+                # an explicit standby() is what re-enables correction.
                 self._holding_target = self._current_angles()
+                self._holding_levelable = False
         self._was_deferring = False
         if not self._active:
-            return self._hold_level() if self._mode in _BALANCE_MODES else None
+            return self._hold_level() if (self._mode in _BALANCE_MODES and self._holding_levelable) else None
         vx, vy, yaw = self._command
         need_imu = self._policy is not None or self._mode in _BALANCE_MODES
         state = self._imu.update() if (self._imu is not None and need_imu) else None
