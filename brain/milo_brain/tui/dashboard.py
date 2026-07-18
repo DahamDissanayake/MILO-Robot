@@ -1,6 +1,8 @@
-"""Main dashboard screen: identity, connection, and model panels."""
+"""Main dashboard screen: identity, connection, model, and pipeline panels."""
 
 from __future__ import annotations
+
+import time
 
 from textual.app import ComposeResult
 from textual.containers import Horizontal, Vertical
@@ -21,11 +23,32 @@ class IdentityPanel(Static):
 
 class ConnectionPanel(Static):
     def render_connection(
-        self, robot_name: str | None, paired_count: int, last_connected: tuple[str, int] | None,
+        self,
+        robot_name: str | None,
+        paired_count: int,
+        last_connected: tuple[str, int] | None,
+        link_state: str,
+        link_target: tuple[str, int] | None,
+        last_error: str | None,
+        retry_in: float | None,
+        attempt: int,
     ) -> None:
-        status = f"connected: {robot_name}" if robot_name else "no robot connected"
-        lines = ["[b]Connection[/b]", f"Robot: {status}", f"Paired robots: {paired_count}"]
-        if not robot_name and last_connected is not None:
+        lines = ["[b]Connection[/b]"]
+        if link_state == "connected" and robot_name:
+            lines.append(f"Robot: connected: {robot_name}")
+        elif link_state == "connecting" and link_target:
+            lines.append(f"Robot: connecting to {link_target[0]}:{link_target[1]}…")
+        elif link_state == "handshaking" and link_target:
+            lines.append(f"Robot: handshaking with {link_target[0]}:{link_target[1]}…")
+        elif link_state == "retrying":
+            countdown = f"{max(0, round(retry_in))}s" if retry_in is not None else "?"
+            lines.append(f"Robot: retrying in {countdown} (attempt {attempt})")
+            if last_error:
+                lines.append(f"  last error: {last_error}")
+        else:
+            lines.append("Robot: no robot connected")
+        lines.append(f"Paired robots: {paired_count}")
+        if link_state != "connected" and last_connected is not None:
             host, port = last_connected
             lines.append(f"Last seen: {host}:{port}  [dim](r to reconnect)[/dim]")
         lines.append("[dim](c to connect a robot)[/dim]")
@@ -45,6 +68,27 @@ class ModelPanel(Static):
             f"Tokens/s  in: {tokens_per_sec_in:.1f} ^   out: {tokens_per_sec_out:.1f} v\n"
             f"[dim](m to change model)[/dim]"
         )
+
+
+_PIPELINE_ORDER = ("asr", "tts", "vision", "vad", "mcp")
+
+
+class PipelinesPanel(Static):
+    def render_pipelines(self, status: dict[str, tuple[str, str | None]]) -> None:
+        lines = ["[b]Pipelines[/b]"]
+        if not status:
+            lines.append("(unavailable)")
+        else:
+            for name in _PIPELINE_ORDER:
+                if name not in status:
+                    continue
+                state, error = status[name]
+                label = name.upper()
+                if state == "error" and error:
+                    lines.append(f"{label}: error — {error}")
+                else:
+                    lines.append(f"{label}: {state}")
+        self.update("\n".join(lines))
 
 
 class DashboardScreen(Screen):
@@ -76,16 +120,30 @@ class DashboardScreen(Screen):
                 yield IdentityPanel(id="identity-panel")
                 yield ConnectionPanel(id="connection-panel")
             yield ModelPanel(id="model-panel")
+            yield PipelinesPanel(id="pipelines-panel")
         yield Static("by DAMA", id="credit")
         yield Footer()
 
-    def refresh_from(self, connector, cfg, rate_tracker) -> None:
+    def refresh_from(self, connector, cfg, rate_tracker, factory=None) -> None:
         robot = connector.connected_robot
         self.query_one(IdentityPanel).render_identity(cfg.name, cfg.brain_id, cfg.tier, cfg.gpu)
+        retry_in = None
+        if connector.retry_at is not None:
+            retry_in = connector.retry_at - time.monotonic()
         self.query_one(ConnectionPanel).render_connection(
-            robot.name if robot else None, len(connector.paired_ids()), connector.last_connected,
+            robot.name if robot else None,
+            len(connector.paired_ids()),
+            connector.last_connected,
+            connector.link_state,
+            connector.link_target,
+            connector.last_error,
+            retry_in,
+            connector.consecutive_drops,
         )
         self.query_one(ModelPanel).render_model(
             cfg.llm_model, cfg.whisper_model, cfg.piper_voice,
             rate_tracker.tokens_per_sec_in, rate_tracker.tokens_per_sec_out,
+        )
+        self.query_one(PipelinesPanel).render_pipelines(
+            factory.pipeline_status() if factory is not None else {}
         )
