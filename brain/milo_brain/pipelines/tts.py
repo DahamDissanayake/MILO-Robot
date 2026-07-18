@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import numpy as np
 
+from ._lazy import LazyLoad
+
 TARGET_RATE = 16_000
 FRAME_MS = 20
 
@@ -30,8 +32,9 @@ def resample_s16(pcm: np.ndarray, src_rate: int, dst_rate: int = TARGET_RATE) ->
     return np.interp(dst_t, src_t, pcm.astype(np.float64)).astype(np.int16)
 
 
-class PiperTts:
+class PiperTts(LazyLoad):
     def __init__(self, voice: str = "en_US-lessac-medium"):
+        super().__init__()
         self._voice_name = voice
         self._voice = None
 
@@ -42,8 +45,7 @@ class PiperTts:
 
     def synthesize(self, text: str) -> bytes:
         """16 kHz mono s16le for ``{"t":"tts"}`` frames."""
-        if self._voice is None:
-            self._load()
+        self.ensure_loaded()
         samples: list[np.ndarray] = []
         src_rate = TARGET_RATE
         for chunk in self._voice.synthesize(text):

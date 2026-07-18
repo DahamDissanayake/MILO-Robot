@@ -292,3 +292,11 @@ def test_whisper_asr_status_starts_not_loaded():
     asr = WhisperAsr()
     assert asr.status == "not_loaded"
     assert asr.error is None
+
+
+def test_piper_tts_status_starts_not_loaded():
+    from milo_brain.pipelines.tts import PiperTts
+
+    tts = PiperTts()
+    assert tts.status == "not_loaded"
+    assert tts.error is None
