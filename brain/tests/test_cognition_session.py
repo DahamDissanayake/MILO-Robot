@@ -46,6 +46,7 @@ class FakeMcp:
     def __init__(self):
         self.calls: list[tuple[str, dict]] = []
         self.status = {"ok": True, "current_face": "happy"}
+        self.connected = True
 
     async def list_tools(self):
         return []
@@ -295,3 +296,93 @@ def test_factory_wires_rate_tracker_into_the_ollama_client(tmp_path, monkeypatch
     tracker = TokenRateTracker()
     factory = CognitionSessionFactory(cfg, rate_tracker=tracker)
     assert factory._llm._rate_tracker is tracker
+
+
+def test_session_pipeline_status_reports_vad_and_mcp():
+    session, robot_sock, robot, mcp = build_session(lambda op, header: {})
+    status = session.pipeline_status()
+    assert status["vad"] == ("ready", None)  # energy_detector fake -> LazyLoad default
+    assert status["mcp"] == ("ready", None)
+
+
+def test_session_pipeline_status_omits_mcp_when_none():
+    brain_sock, _robot_sock = socket_pair()
+    graph = GraphClient(brain_sock)
+    session = RobotCognitionSession(
+        brain_sock,
+        Peer(id="milo-1", name="milo"),
+        vad=VadSegmenter(is_speech=energy_detector, min_silence_ms=60),
+        asr=FakeAsr(),
+        vision=FakeVision(),
+        tts=FakeTts(),
+        agent=CognitionAgent(FakeLlm(), graph, None),
+        graph=graph,
+        mcp=None,
+    )
+    assert "mcp" not in session.pipeline_status()
+
+
+def test_factory_pipeline_status_before_any_session(tmp_path, monkeypatch):
+    import milo_brain.pipelines.asr as asr_mod
+    import milo_brain.pipelines.tts as tts_mod
+    import milo_brain.pipelines.vision as vision_mod
+    from milo_brain.config import BrainConfig
+    from milo_brain.llm.token_rate import TokenRateTracker
+    from milo_brain.session import CognitionSessionFactory
+
+    class FakePipeline:
+        def __init__(self, *a, **kw):
+            self.status = "not_loaded"
+            self.error = None
+
+    monkeypatch.setattr(asr_mod, "WhisperAsr", FakePipeline)
+    monkeypatch.setattr(tts_mod, "PiperTts", FakePipeline)
+    monkeypatch.setattr(vision_mod, "FaceVision", FakePipeline)
+
+    cfg = BrainConfig(brain_id="b", name="n", tier="small", data_dir=str(tmp_path))
+    factory = CognitionSessionFactory(cfg, rate_tracker=TokenRateTracker())
+
+    assert factory.current_session is None
+    status = factory.pipeline_status()
+    assert set(status) == {"asr", "tts", "vision"}
+    assert status["asr"] == ("not_loaded", None)
+
+
+def test_factory_current_session_is_tracked_during_handle_and_cleared_after(tmp_path, monkeypatch):
+    import milo_brain.pipelines.asr as asr_mod
+    import milo_brain.pipelines.tts as tts_mod
+    import milo_brain.pipelines.vision as vision_mod
+    from milo_brain.config import BrainConfig
+    from milo_brain.llm.token_rate import TokenRateTracker
+    from milo_brain.session import CognitionSessionFactory
+
+    class FakePipeline:
+        def __init__(self, *a, **kw):
+            self.status = "ready"
+            self.error = None
+
+    monkeypatch.setattr(asr_mod, "WhisperAsr", FakePipeline)
+    monkeypatch.setattr(tts_mod, "PiperTts", FakePipeline)
+    monkeypatch.setattr(vision_mod, "FaceVision", FakePipeline)
+
+    cfg = BrainConfig(brain_id="b", name="n", tier="small", data_dir=str(tmp_path))
+    factory = CognitionSessionFactory(cfg, rate_tracker=TokenRateTracker())
+
+    brain_sock, _robot_sock = socket_pair()
+    peer = Peer(id="milo-1", name="milo")  # no mcp_url -> handle() skips MCP entirely
+
+    async def main():
+        handle_task = asyncio.create_task(factory.handle(brain_sock, peer))
+        await asyncio.sleep(0)  # let handle() construct the session and reach session.run()'s recv()
+        assert factory.current_session is not None
+        status = factory.pipeline_status()
+        assert "vad" in status
+        assert "mcp" not in status
+        handle_task.cancel()
+        try:
+            await handle_task
+        except asyncio.CancelledError:
+            pass
+        assert factory.current_session is None
+
+    asyncio.run(main())

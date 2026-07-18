@@ -85,6 +85,12 @@ class RobotCognitionSession:
         self._video_task: asyncio.Task | None = None
         self._segment_task: asyncio.Task | None = None
 
+    def pipeline_status(self) -> dict[str, tuple[str, str | None]]:
+        status: dict[str, tuple[str, str | None]] = {"vad": (self._vad.status, self._vad.error)}
+        if self._mcp is not None:
+            status["mcp"] = ("ready" if self._mcp.connected else "not_loaded", None)
+        return status
+
     async def run(self) -> None:
         """Recv loop. Handlers that call back into the graph run as background
         tasks — awaiting them here would deadlock the graph_result routing."""
@@ -180,6 +186,17 @@ class CognitionSessionFactory:
         self._vision = FaceVision(analysis_fps=cfg.vision_fps)
         self._tts = PiperTts(cfg.piper_voice)
         self._llm = OllamaClient(cfg.ollama_url, cfg.llm_model, rate_tracker=rate_tracker)
+        self.current_session: RobotCognitionSession | None = None
+
+    def pipeline_status(self) -> dict[str, tuple[str, str | None]]:
+        status: dict[str, tuple[str, str | None]] = {
+            "asr": (self._asr.status, self._asr.error),
+            "tts": (self._tts.status, self._tts.error),
+            "vision": (self._vision.status, self._vision.error),
+        }
+        if self.current_session is not None:
+            status.update(self.current_session.pipeline_status())
+        return status
 
     async def handle(self, sock: MiloSocket, peer: Peer) -> None:
         from .mcp_client import MiloMcpClient
@@ -206,7 +223,11 @@ class CognitionSessionFactory:
                 mcp=mcp,
                 face_match_threshold=self._cfg.face_match_threshold,
             )
-            await session.run()
+            self.current_session = session
+            try:
+                await session.run()
+            finally:
+                self.current_session = None
         finally:
             if mcp is not None:
                 await mcp.close()
