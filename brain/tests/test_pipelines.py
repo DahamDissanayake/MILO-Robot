@@ -193,3 +193,64 @@ def test_vision_throttles_to_analysis_fps():
     assert vision.process_jpeg(jpeg) is not None   # past the interval
     assert analyzer.calls == 2
     assert len(vision.last_faces) == 1
+
+
+# --- LazyLoad ------------------------------------------------------------
+
+from milo_brain.pipelines._lazy import LazyLoad
+
+
+class _Loader(LazyLoad):
+    def __init__(self, fail: bool = False):
+        super().__init__()
+        self.fail = fail
+        self.load_calls = 0
+
+    def _load(self) -> None:
+        self.load_calls += 1
+        if self.fail:
+            raise RuntimeError("boom")
+
+
+def test_lazyload_starts_not_loaded():
+    loader = _Loader()
+    assert loader.status == "not_loaded"
+    assert loader.error is None
+
+
+def test_lazyload_ensure_loaded_transitions_to_ready():
+    loader = _Loader()
+    loader.ensure_loaded()
+    assert loader.status == "ready"
+    assert loader.error is None
+    assert loader.load_calls == 1
+
+
+def test_lazyload_ensure_loaded_is_a_noop_once_ready():
+    loader = _Loader()
+    loader.ensure_loaded()
+    loader.ensure_loaded()
+    assert loader.load_calls == 1
+
+
+def test_lazyload_ensure_loaded_transitions_to_error_and_reraises():
+    loader = _Loader(fail=True)
+    import pytest as _pytest
+
+    with _pytest.raises(RuntimeError, match="boom"):
+        loader.ensure_loaded()
+    assert loader.status == "error"
+    assert loader.error == "boom"
+
+
+def test_lazyload_ensure_loaded_retries_after_a_previous_error():
+    loader = _Loader(fail=True)
+    import pytest as _pytest
+
+    with _pytest.raises(RuntimeError):
+        loader.ensure_loaded()
+    loader.fail = False
+    loader.ensure_loaded()
+    assert loader.status == "ready"
+    assert loader.error is None
+    assert loader.load_calls == 2
