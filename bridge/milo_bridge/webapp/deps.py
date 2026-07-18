@@ -26,5 +26,6 @@ class WebDeps:
     broker: Any | None     # ControlBroker (Task 2)
     media_hub: Any | None  # MediaHub (Task 4)
     log_buffer: Any | None # RingBufferLogHandler (Task 7)
+    crash_log: Any          # CrashLog -- always constructed, never None
     hardware_status: dict[str, bool]  # servos/display/imu/camera/audio presence at boot
     get_link_state: Callable[[], str]

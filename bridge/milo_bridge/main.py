@@ -25,6 +25,7 @@ import logging
 from pathlib import Path
 
 from .config import BridgeConfig
+from .crashlog import CrashLog
 from .drivers.audio import AudioIO
 from .drivers.camera import CameraStreamer
 from .drivers.display import FaceDisplay
@@ -66,6 +67,20 @@ def _make_control_change_handler(sleep_controller):
         else:
             asyncio.ensure_future(sleep_controller.ensure_awake())
     return on_control_change
+
+
+def _make_crash_exception_handler(crash_log: CrashLog):
+    """asyncio's default handler for a background task's unhandled exception
+    just logs it once and forgets -- this also persists it to CrashLog so it
+    survives in the dashboard's Crash Log panel, without changing the
+    existing journal-visible logging behavior (default_exception_handler
+    still runs)."""
+    def handler(loop, context):
+        exc = context.get("exception")
+        if exc is not None:
+            crash_log.record("task", exc, context.get("message", ""))
+        loop.default_exception_handler(context)
+    return handler
 
 
 async def main() -> None:
@@ -114,6 +129,9 @@ async def main() -> None:
     log_buffer = RingBufferLogHandler()
     logging.getLogger().addHandler(log_buffer)
 
+    crash_log = CrashLog(Path(cfg.data_dir) / "crashes.log")
+    asyncio.get_running_loop().set_exception_handler(_make_crash_exception_handler(crash_log))
+
     sleep_controller = SleepController(
         runner, display, loud_rms_threshold=cfg.loud_rms_threshold, servos=motion_servos
     )
@@ -127,7 +145,7 @@ async def main() -> None:
         config=cfg, runner=runner, display=display, servos=motion_servos,
         camera=camera, audio=audio, imu=imu, gait=gait,
         graph_api=graph_api, graph_store=graph,
-        broker=broker, media_hub=hub, log_buffer=log_buffer,
+        broker=broker, media_hub=hub, log_buffer=log_buffer, crash_log=crash_log,
         hardware_status=hardware_status,
         # manager is assigned below; guard the startup window before it exists
         get_link_state=lambda: manager.link_state if manager is not None else "disconnected",
@@ -223,7 +241,13 @@ async def _nightly_backup(graph: GraphStore, dest_dir: Path) -> None:
 
 
 def run() -> None:
-    asyncio.run(main())
+    cfg = BridgeConfig.load()
+    crash_log = CrashLog(Path(cfg.data_dir) / "crashes.log")
+    try:
+        asyncio.run(main())
+    except BaseException as exc:
+        crash_log.record("process", exc)
+        raise
 
 
 if __name__ == "__main__":

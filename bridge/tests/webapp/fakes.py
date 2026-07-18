@@ -2,9 +2,11 @@
 from __future__ import annotations
 
 import asyncio
+import tempfile
 from pathlib import Path
 
 from milo_bridge.config import BridgeConfig
+from milo_bridge.crashlog import CrashLog
 from milo_bridge.drivers.imu import ImuState
 from milo_bridge.graph.api import GraphApi
 from milo_bridge.graph.store import GraphStore
@@ -149,6 +151,7 @@ def make_deps(**overrides) -> WebDeps:
         broker=None,
         media_hub=None,
         log_buffer=None,
+        crash_log=CrashLog(Path(tempfile.mkdtemp()) / "crashes.log"),
         hardware_status={"servos": True, "display": True, "imu": True, "camera": True, "audio": True},
         get_link_state=lambda: "disconnected",
     )
