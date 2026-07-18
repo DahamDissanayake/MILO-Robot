@@ -132,3 +132,16 @@ def test_provided_log_buffer_is_used_as_is():
     log_buffer = RingBufferLogHandler()
     app = MiloBrainApp(connector, cfg, TokenRateTracker(), log_buffer)
     assert app.log_buffer is log_buffer
+
+
+def test_factory_defaults_to_none_when_not_provided():
+    app, _connector = make_app()
+    assert app.factory is None
+
+
+def test_provided_factory_is_used_as_is():
+    connector = FakeConnector()
+    cfg = BrainConfig(brain_id="b", name="n", tier="small")
+    factory = object()
+    app = MiloBrainApp(connector, cfg, TokenRateTracker(), factory=factory)
+    assert app.factory is factory

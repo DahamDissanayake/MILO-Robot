@@ -39,12 +39,14 @@ class MiloBrainApp(App):
         cfg: BrainConfig,
         rate_tracker: TokenRateTracker,
         log_buffer: RingBufferLogHandler | None = None,
+        factory=None,
     ):
         super().__init__()
         self.connector = connector
         self.cfg = cfg
         self.rate_tracker = rate_tracker
         self.log_buffer = log_buffer or RingBufferLogHandler()
+        self.factory = factory
         # Same pattern the old tray UI used (server._request_pin = ...),
         # just pointed at a modal screen instead of a QInputDialog.
         self.connector._request_pin = self.request_pin_from_user
@@ -57,7 +59,7 @@ class MiloBrainApp(App):
     def _refresh_dashboard(self) -> None:
         dashboard = self._dashboard()
         if dashboard is not None:
-            dashboard.refresh_from(self.connector, self.cfg, self.rate_tracker)
+            dashboard.refresh_from(self.connector, self.cfg, self.rate_tracker, self.factory)
 
     def _dashboard(self) -> DashboardScreen | None:
         for screen in self.screen_stack:
