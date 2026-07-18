@@ -24,6 +24,15 @@ RobotHandler = Callable[[MiloSocket, Peer], Awaitable[None]]
 
 DEFAULT_ROBOT_PORT = 8765  # matches BridgeConfig.robot_ws_port's default
 
+MAX_DROP_BACKOFF_SECONDS = 30.0
+
+
+def _drop_backoff_seconds(consecutive_drops: int) -> float:
+    """Capped exponential backoff after a connection drop: 1, 2, 4, 8, 16,
+    30, 30, ... -- fast retry for a one-off blip, capped so a real outage
+    doesn't turn into a retry storm hammering DNS/the network every second."""
+    return min(2.0 ** (consecutive_drops - 1), MAX_DROP_BACKOFF_SECONDS)
+
 
 def _parse_host_port(url: str) -> tuple[str, int]:
     """Every url this module builds is exactly "ws://host:port" (record.url
@@ -74,6 +83,10 @@ class RobotConnectorManager:
         # of waiting for the next scheduled retry or a fresh discovery scan.
         self.last_connected: tuple[str, int] | None = None
         self._wake = asyncio.Event()
+        # Consecutive connection drops since the last successful connect --
+        # drives _drop_backoff_seconds(); reset to 0 as soon as a connect
+        # succeeds again.
+        self._consecutive_drops = 0
 
     def paired_ids(self) -> list[str]:
         return self._store.peer_ids()
@@ -169,6 +182,7 @@ class RobotConnectorManager:
                 self.connected_robot = peer
                 self.link_state = "connected"
                 self.last_connected = _parse_host_port(url)
+                self._consecutive_drops = 0
                 try:
                     await self._session_handler(sock, peer)
                 finally:
@@ -178,5 +192,10 @@ class RobotConnectorManager:
             log.warning("handshake with %s failed: %s", url, exc)
             await self._wait_before_retry(self._cfg.reconnect_seconds)
         except Exception as exc:  # connection drop -> fail over on next tick
-            log.info("robot link lost (%s: %s), rescanning", type(exc).__name__, exc)
-            await asyncio.sleep(1.0)
+            self._consecutive_drops += 1
+            backoff = _drop_backoff_seconds(self._consecutive_drops)
+            log.info(
+                "robot link lost (%s: %s), rescanning in %.0fs",
+                type(exc).__name__, exc, backoff,
+            )
+            await self._wait_before_retry(backoff)
