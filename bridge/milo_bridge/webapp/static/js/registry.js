@@ -7,12 +7,13 @@ import graph from "./panels/graph.js";
 import poses from "./panels/poses.js";
 import servos from "./panels/servos.js";
 import log from "./panels/log.js";
+import crashlog from "./panels/crashlog.js";
 
 export const registry = {
   cockpitMove: [move],
   cockpitCamera: [camera, poses],
   cockpitSide: [comm, sensors],
-  bridgeLog: [log],
+  bridgeLog: [log, crashlog],
   graph: [graph],
   tools: [servos],
 };
