@@ -27,6 +27,7 @@ class MiloBrainApp(App):
     SUB_TITLE = "Brain"
     BINDINGS = [
         ("c", "connect_robots", "Connect Robots"),
+        ("r", "reconnect", "Reconnect"),
         ("m", "pick_model", "Model"),
         ("l", "logs", "Logs"),
         ("q", "quit", "Quit"),
@@ -69,6 +70,13 @@ class MiloBrainApp(App):
 
     def action_connect_robots(self) -> None:
         self.push_screen(ConnectRobotsScreen(self.connector))
+
+    def action_reconnect(self) -> None:
+        """Redial the last robot this process connected to, right now --
+        skips discovery and cuts short whatever retry wait the connector's
+        background tick loop is currently sitting in."""
+        if not self.connector.request_reconnect():
+            self.notify("No previous connection to reconnect to yet", severity="warning")
 
     def action_logs(self) -> None:
         self.push_screen(LogsScreen(self.log_buffer))

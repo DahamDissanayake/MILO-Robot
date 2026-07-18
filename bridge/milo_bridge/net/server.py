@@ -13,7 +13,7 @@ import logging
 import socket as socketlib
 
 from milo_common.auth import PairedStore
-from milo_common.handshake import HandshakeError, robot_handshake
+from milo_common.handshake import HandshakeError, Peer, robot_handshake
 from milo_common.protocol import MiloSocket
 
 from .advertiser import RobotAdvertiser
@@ -75,8 +75,44 @@ class RobotServer:
         self._store = PairedStore(cfg.paired_path)
         self.advertiser = advertiser or RobotAdvertiser(cfg)
         self.pairing = PairingController(self.advertiser, display)
-        self.connected_brain = None
-        self.link_state: str = "disconnected"
+        # Multiple brains may be connected at once (e.g. a phone-tier brain
+        # and a desktop-tier brain); only one of them -- active_brain_id --
+        # actually gets to move the robot at a time (see mcp/server.py's
+        # per-tool gate), the rest just observe. The first brain to connect
+        # becomes active automatically; the webapp can switch it explicitly
+        # (see webapp/motion.py's switch_active_brain).
+        self.connected_brains: dict[str, Peer] = {}
+        self.active_brain_id: str | None = None
+
+    @property
+    def connected_brain(self):
+        """Back-compat single-brain accessor for callers that only care
+        whether *any* brain is connected (e.g. tests, simple status
+        checks) -- prefer connected_brains/active_brain_id for anything
+        that needs to reason about more than one."""
+        if self.active_brain_id is not None:
+            return self.connected_brains.get(self.active_brain_id)
+        return next(iter(self.connected_brains.values()), None)
+
+    @property
+    def link_state(self) -> str:
+        return "connected" if self.connected_brains else "disconnected"
+
+    def connected_brains_info(self) -> list[dict]:
+        """[{'id':..., 'name':..., 'active': bool}] for the webapp's Brain
+        card -- every brain connected right now, not just the active one."""
+        return [
+            {"id": peer.id, "name": peer.name, "active": peer.id == self.active_brain_id}
+            for peer in self.connected_brains.values()
+        ]
+
+    def set_active_brain(self, peer_id: str) -> bool:
+        """Switch which connected brain is allowed to move the robot.
+        Returns False (no-op) if that brain isn't actually connected."""
+        if peer_id not in self.connected_brains:
+            return False
+        self.active_brain_id = peer_id
+        return True
 
     @property
     def port(self) -> int:
@@ -93,14 +129,6 @@ class RobotServer:
         return [{"id": pid, "name": self._store.name_for(pid)} for pid in self._store.peer_ids()]
 
     async def _on_connection(self, ws) -> None:
-        if self.connected_brain is not None:
-            # One controlling brain at a time -- reject before even running
-            # the handshake so a busy robot doesn't waste either side's time.
-            log.warning(
-                "rejecting connection: already connected to %s", self.connected_brain.id
-            )
-            await ws.close(code=4002, reason="robot already has a brain connected")
-            return
         sock = MiloSocket(ws)
         pin = self.pairing.pin_for_incoming()
         try:
@@ -112,6 +140,14 @@ class RobotServer:
             log.warning("refused connection: %s", exc)
             await sock.close(4001, "auth failed")
             return
+        if peer.id in self.connected_brains:
+            # Same brain identity already has a live session (e.g. a stale
+            # connection that hasn't torn down yet) -- refuse the duplicate
+            # rather than running two sessions for one brain. Different
+            # brains are fine; several may be connected at once.
+            log.warning("rejecting duplicate connection: %s already connected", peer.id)
+            await sock.close(4002, "this brain already has a connection open")
+            return
         if pin is not None:
             # A connection completed while pairing mode was on -- whether
             # it was this exact PIN's new pairing or an already-paired
@@ -119,8 +155,12 @@ class RobotServer:
             # its purpose; close it so the PIN stops being valid/shown.
             await self.pairing.exit_pairing_mode()
         log.info("brain connected: %s (%s)", peer.name, peer.id)
-        self.connected_brain = peer
-        self.link_state = "connected"
+        self.connected_brains[peer.id] = peer
+        if self.active_brain_id is None:
+            # First brain in gets motion rights automatically; anyone who
+            # joins after that just observes until the webapp switches them
+            # in (see webapp/motion.py's switch_active_brain).
+            self.active_brain_id = peer.id
         await asyncio.to_thread(self.advertiser.update, busy=True)
         if self._broker is not None:
             self._broker.set_brain_connected(True)
@@ -133,11 +173,14 @@ class RobotServer:
         except Exception as exc:
             log.info("brain session ended: %s: %s", type(exc).__name__, exc)
         finally:
-            self.connected_brain = None
-            self.link_state = "disconnected"
-            await asyncio.to_thread(self.advertiser.update, busy=False)
+            self.connected_brains.pop(peer.id, None)
+            if self.active_brain_id == peer.id:
+                # Hand motion rights to whoever else is still here, if anyone.
+                self.active_brain_id = next(iter(self.connected_brains), None)
+            still_busy = bool(self.connected_brains)
+            await asyncio.to_thread(self.advertiser.update, busy=still_busy)
             if self._broker is not None:
-                self._broker.set_brain_connected(False)
+                self._broker.set_brain_connected(still_busy)
 
     async def serve_forever(self) -> None:
         import websockets

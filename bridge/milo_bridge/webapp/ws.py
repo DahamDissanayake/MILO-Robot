@@ -89,6 +89,11 @@ async def _handle_text(app, ws, client_id: str, data: dict) -> None:
         else:
             _broadcast_pairing(app, res["on"])
         return
+    if t == "switch_active_brain":
+        res = await motion.switch_active_brain(client_id, str(data.get("id", "")))
+        if "error" in res:
+            await ws.send_json({"t": "err", "for": "switch_active_brain", "error": res["error"]})
+        return
     if t == "audio":
         ws_state = app["ws_state"][ws]
         ws_state["audio_on"] = bool(data.get("on"))

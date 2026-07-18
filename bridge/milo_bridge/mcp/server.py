@@ -8,6 +8,9 @@ from __future__ import annotations
 
 import logging
 
+from mcp.server.fastmcp import Context, FastMCP
+from mcp.server.transport_security import TransportSecuritySettings
+
 from ..drivers.display import AnimMode
 from ..poses import POSES
 from ..webapp.api.speak import synth_pcm, tts_available
@@ -23,10 +26,36 @@ def _clamp(value: float, lo: float, hi: float) -> float:
     return max(lo, min(hi, float(value)))
 
 
-def build_mcp_server(deps: McpDeps):
-    from mcp.server.fastmcp import FastMCP
-    from mcp.server.transport_security import TransportSecuritySettings
+def _caller_peer_id(ctx) -> str | None:
+    """The X-Milo-Peer header BearerAuthMiddleware already validated for
+    this request -- streamable_http hands FastMCP the raw Starlette
+    Request via ctx.request_context.request, so tools can read the same
+    header the auth layer did instead of re-deriving identity. Outside of
+    a real request (in-process tool calls, tests) request_context itself
+    raises rather than returning None -- treat that the same as "unknown
+    caller" instead of letting it escape as a tool error."""
+    try:
+        request = ctx.request_context.request
+    except ValueError:
+        return None
+    return request.headers.get("X-Milo-Peer") if request is not None else None
 
+
+def _motion_denied(ctx, deps: McpDeps) -> dict | None:
+    """None if this call may move the robot, else the {"ok": False, ...}
+    to return as-is. Two independent gates: the existing web-vs-brain
+    ControlBroker, and (when multiple brains are connected) whether this
+    particular brain is the one currently holding motion rights -- see
+    RobotServer.active_brain_id / set_active_brain."""
+    if not deps.broker.allow_brain_motion():
+        return {"ok": False, "error": "web-control-active"}
+    active = deps.active_brain_id()
+    if active is not None and _caller_peer_id(ctx) != active:
+        return {"ok": False, "error": "not-active-brain"}
+    return None
+
+
+def build_mcp_server(deps: McpDeps):
     # FastMCP's constructor auto-enables Host-header DNS-rebinding
     # protection restricted to 127.0.0.1/localhost whenever `host` isn't
     # given (it defaults to "127.0.0.1"). That protection guards against a
@@ -46,24 +75,24 @@ def build_mcp_server(deps: McpDeps):
     )
 
     @server.tool()
-    async def walk(vx: float, vy: float, yaw_rate: float) -> dict:
+    async def walk(ctx: Context, vx: float, vy: float, yaw_rate: float) -> dict:
         """Continuous velocity walk: vx/vy in m/s, yaw_rate in deg/s. (0,0,0) stops walking."""
-        if not deps.broker.allow_brain_motion():
-            return {"ok": False, "error": "web-control-active"}
+        if denied := _motion_denied(ctx, deps):
+            return denied
         deps.gait.set_velocity_command(
             _clamp(vx, -VX_LIM, VX_LIM), _clamp(vy, -VY_LIM, VY_LIM), _clamp(yaw_rate, -YAW_LIM, YAW_LIM)
         )
         return {"ok": True}
 
     @server.tool()
-    async def run_pose(name: str, cycles: int | None = None) -> dict:
+    async def run_pose(ctx: Context, name: str, cycles: int | None = None) -> dict:
         """Run a scripted pose/gait by name (wave, dance, bow, point, pushup,
         swim, cute, freaky, worm, shake, shrug, dead, wake_up, crab, look_up,
         look_down, rest, stand, walk, walk_backward, turn_left, turn_right)."""
         if name not in POSES:
             return {"ok": False, "error": f"unknown pose {name!r}"}
-        if not deps.broker.allow_brain_motion():
-            return {"ok": False, "error": "web-control-active"}
+        if denied := _motion_denied(ctx, deps):
+            return denied
         if deps.movement_guard.busy():
             return {"ok": False, "error": "movement-in-progress"}
         kwargs = {} if cycles is None else {"cycles": cycles}
@@ -71,22 +100,22 @@ def build_mcp_server(deps: McpDeps):
         return {"ok": True}
 
     @server.tool()
-    async def turn(direction: str) -> dict:
+    async def turn(ctx: Context, direction: str) -> dict:
         """Turn continuously left or right until stop() is called."""
         if direction not in ("left", "right"):
             return {"ok": False, "error": f"unknown direction {direction!r}"}
-        if not deps.broker.allow_brain_motion():
-            return {"ok": False, "error": "web-control-active"}
+        if denied := _motion_denied(ctx, deps):
+            return denied
         if deps.movement_guard.busy():
             return {"ok": False, "error": "movement-in-progress"}
         deps.movement_guard.start(deps.runner.run(f"turn_{direction}", cycles=TURN_HOLD_CYCLES))
         return {"ok": True}
 
     @server.tool()
-    async def set_mode(name: str) -> dict:
+    async def set_mode(ctx: Context, name: str) -> dict:
         """Set the gait mode: raw, balanced, or angled."""
-        if not deps.broker.allow_brain_motion():
-            return {"ok": False, "error": "web-control-active"}
+        if denied := _motion_denied(ctx, deps):
+            return denied
         try:
             deps.gait.set_mode(name)
         except ValueError as exc:
@@ -94,34 +123,34 @@ def build_mcp_server(deps: McpDeps):
         return {"ok": True, "mode": name}
 
     @server.tool()
-    async def reset() -> dict:
+    async def reset(ctx: Context) -> dict:
         """Smoothly return every servo to the 90-degree rest angles."""
-        if not deps.broker.allow_brain_motion():
-            return {"ok": False, "error": "web-control-active"}
+        if denied := _motion_denied(ctx, deps):
+            return denied
         deps.gait.reset()
         return {"ok": True}
 
     @server.tool()
-    async def standby() -> dict:
+    async def standby(ctx: Context) -> dict:
         """Smoothly return every servo to the stand pose."""
-        if not deps.broker.allow_brain_motion():
-            return {"ok": False, "error": "web-control-active"}
+        if denied := _motion_denied(ctx, deps):
+            return denied
         deps.gait.standby()
         return {"ok": True}
 
     @server.tool()
-    async def relax() -> dict:
+    async def relax(ctx: Context) -> dict:
         """Stop driving all servos (they go limp)."""
-        if not deps.broker.allow_brain_motion():
-            return {"ok": False, "error": "web-control-active"}
+        if denied := _motion_denied(ctx, deps):
+            return denied
         deps.servos.relax()
         return {"ok": True}
 
     @server.tool()
-    async def hold() -> dict:
+    async def hold(ctx: Context) -> dict:
         """Re-engage every servo at the angle it was commanded to right before the last relax()."""
-        if not deps.broker.allow_brain_motion():
-            return {"ok": False, "error": "web-control-active"}
+        if denied := _motion_denied(ctx, deps):
+            return denied
         deps.servos.hold()
         return {"ok": True}
 
@@ -157,21 +186,21 @@ def build_mcp_server(deps: McpDeps):
         }
 
     @server.tool()
-    async def set_face(name: str) -> dict:
+    async def set_face(ctx: Context, name: str) -> dict:
         """Show a preset face expression: happy, sad, angry, surprised,
         sleepy, love, excited, confused, thinking, or idle."""
-        if not deps.broker.allow_brain_motion():
-            return {"ok": False, "error": "web-control-active"}
+        if denied := _motion_denied(ctx, deps):
+            return denied
         mode = AnimMode.LOOP if name.startswith("talk_") else AnimMode.ONCE
         await deps.display.set_face(name, mode)
         return {"ok": True, "face": deps.display.current_face}
 
     @server.tool()
-    async def speak(text: str) -> dict:
+    async def speak(ctx: Context, text: str) -> dict:
         """Say something out loud right now, independent of the normal
         spoken conversational reply -- for something unprompted."""
-        if not deps.broker.allow_brain_motion():
-            return {"ok": False, "error": "web-control-active"}
+        if denied := _motion_denied(ctx, deps):
+            return denied
         if deps.audio is None:
             return {"ok": False, "error": "audio unavailable"}
         if not tts_available():

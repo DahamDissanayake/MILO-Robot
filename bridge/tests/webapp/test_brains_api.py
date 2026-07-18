@@ -12,7 +12,7 @@ async def test_brains_reports_no_connection_and_no_paired_by_default():
         assert resp.status == 200
         data = await resp.json()
         assert data == {
-            "connected": None, "paired": [], "pairing": False,
+            "connected": [], "active_id": None, "paired": [], "pairing": False,
             "ip": "192.168.1.15", "port": 8765,
         }
     finally:
@@ -34,14 +34,32 @@ async def test_brains_reports_ip_and_port_regardless_of_pairing_state():
 
 async def test_brains_reports_connected_brain_and_paired_list():
     rs = FakeRobotServer(paired=[{"id": "brain-1", "name": "desk"}])
-    rs.connected_brain = FakePeer("brain-1", "desk")
+    rs.connect(FakePeer("brain-1", "desk"))
     deps = make_deps(robot_server=rs)
     client = await _client(deps)
     try:
         data = await (await client.get("/api/brains")).json()
-        assert data["connected"] == {"id": "brain-1", "name": "desk"}
+        assert data["connected"] == [{"id": "brain-1", "name": "desk", "active": True}]
+        assert data["active_id"] == "brain-1"
         assert data["paired"] == [{"id": "brain-1", "name": "desk"}]
         assert data["pairing"] is False
+    finally:
+        await client.close()
+
+
+async def test_brains_reports_multiple_connected_brains_with_one_active():
+    rs = FakeRobotServer(paired=[{"id": "brain-1", "name": "desk"}, {"id": "brain-2", "name": "laptop"}])
+    rs.connect(FakePeer("brain-1", "desk"))
+    rs.connect(FakePeer("brain-2", "laptop"))
+    deps = make_deps(robot_server=rs)
+    client = await _client(deps)
+    try:
+        data = await (await client.get("/api/brains")).json()
+        assert data["connected"] == [
+            {"id": "brain-1", "name": "desk", "active": True},
+            {"id": "brain-2", "name": "laptop", "active": False},
+        ]
+        assert data["active_id"] == "brain-1"
     finally:
         await client.close()
 
@@ -78,7 +96,7 @@ async def test_brains_degrades_gracefully_when_robot_server_is_absent():
         resp = await client.get("/api/brains")
         assert resp.status == 200
         assert await resp.json() == {
-            "connected": None, "paired": [], "pairing": False, "ip": "", "port": 0,
+            "connected": [], "active_id": None, "paired": [], "pairing": False, "ip": "", "port": 0,
         }
     finally:
         await client.close()

@@ -273,17 +273,24 @@ Keybindings: `c` opens **Connect Robots** (refreshable discovered-device
 list; inside it, `i` opens **Connect by IP** to dial a robot directly,
 bypassing mDNS discovery entirely -- for networks where multicast doesn't
 reach between devices, e.g. some routers don't forward it between WiFi
-clients even on the same network), `m` opens the model picker (lists
-whatever's installed in Ollama), `l` opens **Logs** (live tail of
-everything logged, including background-task errors like a failed
-handshake or a dropped connection that would otherwise be invisible
-once the TUI has taken over the terminal), `q` quits. Use `--headless` on a
-genuinely headless box (no terminal attached at all, e.g. run under a
-service manager) -- it'll print a plain `PIN:` prompt on stdin instead of
-a TUI modal when a robot it dials into needs pairing.
+clients even on the same network), `r` on the dashboard **Reconnects**
+immediately to whichever robot this session last connected to -- skips
+discovery and any remaining retry wait, for when the link drops and you
+don't want to wait for the automatic retry or go through Connect Robots
+again, `m` opens the model picker (lists whatever's installed in Ollama),
+`l` opens **Logs** (live tail of everything logged, including
+background-task errors like a failed handshake or a dropped connection
+that would otherwise be invisible once the TUI has taken over the
+terminal), `q` quits. Use `--headless` on a genuinely headless box (no
+terminal attached at all, e.g. run under a service manager) -- it'll
+print a plain `PIN:` prompt on stdin instead of a TUI modal when a robot
+it dials into needs pairing.
 
 It stays running, discovering robots on the LAN, and idle until it connects
-to (or is told to connect to) one.
+to (or is told to connect to) one. A robot accepts more than one brain at
+once -- the first to connect gets motion/tool rights ("active"), the rest
+just observe until the robot's webapp switches control to a different one
+(Brain card, "Make Active").
 
 ## Pairing with the robot
 

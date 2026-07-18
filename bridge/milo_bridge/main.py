@@ -184,7 +184,7 @@ async def main() -> None:
 
     gait_task = asyncio.create_task(gait.run())
     mcp_task = asyncio.create_task(
-        _start_mcp(cfg, gait, runner, imu, broker, motion_servos, display, audio)
+        _start_mcp(cfg, gait, runner, imu, broker, motion_servos, display, audio, robot_server)
     )
     backup_task = asyncio.create_task(_nightly_backup(graph, Path(cfg.data_dir) / "backups"))
     try:
@@ -199,7 +199,7 @@ async def main() -> None:
         graph.close()
 
 
-async def _start_mcp(cfg, gait, runner, imu, broker, servos, display, audio) -> None:
+async def _start_mcp(cfg, gait, runner, imu, broker, servos, display, audio, robot_server) -> None:
     """Start the movement/face/speech/IMU MCP server; logs and swallows any
     startup failure, matching every other optional subsystem in this file."""
     try:
@@ -214,6 +214,7 @@ async def _start_mcp(cfg, gait, runner, imu, broker, servos, display, audio) -> 
         deps = McpDeps(
             gait=gait, runner=runner, imu=imu, broker=broker,
             servos=servos, display=display, audio=audio,
+            active_brain_id=lambda: robot_server.active_brain_id,
         )
         app = build_mcp_server(deps).streamable_http_app()
         wrapped = BearerAuthMiddleware(app, store)

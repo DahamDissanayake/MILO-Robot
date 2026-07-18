@@ -8,7 +8,11 @@ Selection policy:
     1. A manual_target (set by the Connect Robots tab) preempts everything
        else for exactly one match -- lets the user pick a specific robot
        among several without a second competing connector.
-    2. Highest-priority *paired*, *not busy* robot wins.
+    2. Highest-priority *paired* robot wins, busy or not -- the robot now
+       accepts multiple simultaneous brains (see
+       bridge/milo_bridge/net/server.py's connected_brains), so "busy"
+       (someone else already connected) no longer disqualifies an
+       already-paired brain from joining too.
     3. No usable paired robot, but an unpaired one is in pairing mode -> pair it.
     4. Otherwise none -> keep waiting.
 """
@@ -63,10 +67,10 @@ def select_robot(
 ) -> tuple[RobotRecord, bool] | None:
     """Returns (record, needs_pairing) or None if there's nothing to connect to."""
     if manual_target is not None:
-        match = next((r for r in records if r.robot_id == manual_target and not r.busy), None)
+        match = next((r for r in records if r.robot_id == manual_target), None)
         if match is not None:
             return match, not store.is_paired(match.robot_id)
-    usable = [r for r in records if store.is_paired(r.robot_id) and not r.busy]
+    usable = [r for r in records if store.is_paired(r.robot_id)]
     if usable:
         best = max(usable, key=lambda r: (store.priority_for(r.robot_id), r.name))
         return best, False

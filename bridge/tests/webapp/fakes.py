@@ -149,7 +149,8 @@ class FakePairingController:
 
 class FakeRobotServer:
     def __init__(self, paired=None):
-        self.connected_brain = None
+        self.connected_brains: dict[str, FakePeer] = {}
+        self.active_brain_id: str | None = None
         self.advertiser = FakeAdvertiser()
         self.pairing = FakePairingController(self.advertiser)
         self.port = 8765
@@ -157,6 +158,25 @@ class FakeRobotServer:
 
     def paired_brains(self):
         return self._paired
+
+    def connected_brains_info(self):
+        return [
+            {"id": peer.id, "name": peer.name, "active": peer.id == self.active_brain_id}
+            for peer in self.connected_brains.values()
+        ]
+
+    def set_active_brain(self, peer_id):
+        if peer_id not in self.connected_brains:
+            return False
+        self.active_brain_id = peer_id
+        return True
+
+    def connect(self, peer: "FakePeer") -> None:
+        """Test helper: simulate a brain connecting (mirrors what
+        RobotServer._on_connection does on a successful handshake)."""
+        self.connected_brains[peer.id] = peer
+        if self.active_brain_id is None:
+            self.active_brain_id = peer.id
 
 
 class FakeImu:

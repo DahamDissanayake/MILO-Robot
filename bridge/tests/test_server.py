@@ -162,7 +162,7 @@ def test_full_pairing_flow_shows_pin_before_connection_and_persists_token(tmp_pa
     asyncio.run(main())
 
 
-def test_second_brain_is_rejected_while_one_is_connected(tmp_path):
+def test_two_different_brains_can_be_connected_at_once(tmp_path):
     async def main():
         # PairedStore reads its file once at construction time -- tokens
         # must land on disk *before* the server (and its own PairedStore)
@@ -183,12 +183,90 @@ def test_second_brain_is_rejected_while_one_is_connected(tmp_path):
             async with websockets.connect(f"ws://127.0.0.1:{port}") as ws_a:
                 sock_a = MiloSocket(ws_a)
                 await brain_handshake(sock_a, "brain-a", "a", "small", brain_a_store)
-                await wait_until(lambda: server.connected_brain is not None)
+                await wait_until(lambda: "brain-a" in server.connected_brains)
 
-                with pytest.raises((HandshakeError, websockets.ConnectionClosed, OSError)):
-                    async with websockets.connect(f"ws://127.0.0.1:{port}") as ws_b:
-                        sock_b = MiloSocket(ws_b)
-                        await brain_handshake(sock_b, "brain-b", "b", "small", brain_b_store)
+                async with websockets.connect(f"ws://127.0.0.1:{port}") as ws_b:
+                    sock_b = MiloSocket(ws_b)
+                    await brain_handshake(sock_b, "brain-b", "b", "small", brain_b_store)
+                    await wait_until(lambda: "brain-b" in server.connected_brains)
+
+                    # First in keeps motion rights; the second just observes
+                    # until the webapp explicitly switches them in.
+                    assert server.active_brain_id == "brain-a"
+                    assert set(server.connected_brains) == {"brain-a", "brain-b"}
+        finally:
+            ws_server.close()
+            await ws_server.wait_closed()
+
+    asyncio.run(main())
+
+
+def test_same_brain_identity_cannot_connect_twice_concurrently(tmp_path):
+    async def main():
+        robot_store = PairedStore(tmp_path / "robot" / "paired.json")
+        token = derive_token("111111", "milo-1", "brain-a")
+        robot_store.add("brain-a", token)
+        brain_store = PairedStore(tmp_path / "a" / "paired.json")
+        brain_store.add("milo-1", token)
+
+        server = make_server(tmp_path)
+        ws_server, port = await serve(server)
+        try:
+            async with websockets.connect(f"ws://127.0.0.1:{port}") as ws_first:
+                sock_first = MiloSocket(ws_first)
+                await brain_handshake(sock_first, "brain-a", "a", "small", brain_store)
+                await wait_until(lambda: "brain-a" in server.connected_brains)
+
+                async with websockets.connect(f"ws://127.0.0.1:{port}") as ws_dup:
+                    sock_dup = MiloSocket(ws_dup)
+                    # The handshake itself succeeds (the duplicate check
+                    # only runs once the server knows the connecting peer's
+                    # id) -- the server closes it right after instead.
+                    await brain_handshake(sock_dup, "brain-a", "a", "small", brain_store)
+                    with pytest.raises((HandshakeError, websockets.ConnectionClosed, OSError)):
+                        await sock_dup.recv()
+        finally:
+            ws_server.close()
+            await ws_server.wait_closed()
+
+    asyncio.run(main())
+
+
+def test_active_brain_hands_off_to_the_remaining_one_on_disconnect(tmp_path):
+    async def main():
+        robot_store = PairedStore(tmp_path / "robot" / "paired.json")
+        token_a = derive_token("111111", "milo-1", "brain-a")
+        robot_store.add("brain-a", token_a)
+        token_b = derive_token("222222", "milo-1", "brain-b")
+        robot_store.add("brain-b", token_b)
+        brain_a_store = PairedStore(tmp_path / "a" / "paired.json")
+        brain_a_store.add("milo-1", token_a)
+        brain_b_store = PairedStore(tmp_path / "b" / "paired.json")
+        brain_b_store.add("milo-1", token_b)
+
+        server = make_server(tmp_path)
+        ws_server, port = await serve(server)
+        try:
+            ws_a = await websockets.connect(f"ws://127.0.0.1:{port}")
+            sock_a = MiloSocket(ws_a)
+            await brain_handshake(sock_a, "brain-a", "a", "small", brain_a_store)
+            await wait_until(lambda: "brain-a" in server.connected_brains)
+
+            async with websockets.connect(f"ws://127.0.0.1:{port}") as ws_b:
+                sock_b = MiloSocket(ws_b)
+                await brain_handshake(sock_b, "brain-b", "b", "small", brain_b_store)
+                await wait_until(lambda: "brain-b" in server.connected_brains)
+                assert server.active_brain_id == "brain-a"
+
+                # The *active* brain leaves -- brain-b (still connected)
+                # should inherit motion rights rather than being left with
+                # none active at all.
+                await ws_a.close()
+                await wait_until(lambda: "brain-a" not in server.connected_brains)
+                assert server.active_brain_id == "brain-b"
+
+            await wait_until(lambda: not server.connected_brains)
+            assert server.active_brain_id is None
         finally:
             ws_server.close()
             await ws_server.wait_closed()

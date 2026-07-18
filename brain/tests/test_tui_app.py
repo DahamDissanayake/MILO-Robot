@@ -22,8 +22,11 @@ class FakeConnector:
     def __init__(self):
         self.discovery = FakeDiscovery()
         self.connected_robot = None
+        self.last_connected = None
         self._request_pin = None
         self._manual_targets: list[str] = []
+        self.reconnect_requested = 0
+        self._reconnect_result = True
         self.ran = asyncio.Event()
 
     def paired_ids(self):
@@ -34,6 +37,10 @@ class FakeConnector:
 
     def request_manual_connect(self, robot_id):
         self._manual_targets.append(robot_id)
+
+    def request_reconnect(self):
+        self.reconnect_requested += 1
+        return self._reconnect_result
 
     async def run_forever(self):
         self.ran.set()
@@ -73,6 +80,32 @@ def test_connect_robots_action_pushes_the_screen():
             return isinstance(app.screen, ConnectRobotsScreen)
 
     assert asyncio.run(scenario()) is True
+
+
+def test_reconnect_action_calls_through_to_the_connector():
+    async def scenario():
+        app, connector = make_app()
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            app.action_reconnect()
+            await pilot.pause()
+            return connector.reconnect_requested
+
+    assert asyncio.run(scenario()) == 1
+
+
+def test_reconnect_action_notifies_when_nothing_to_reconnect_to():
+    async def scenario():
+        app, connector = make_app()
+        connector._reconnect_result = False
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            app.action_reconnect()
+            await pilot.pause()
+            return [n.message for n in app._notifications]
+
+    messages = asyncio.run(scenario())
+    assert any("No previous connection" in m for m in messages)
 
 
 def test_logs_action_pushes_the_screen():

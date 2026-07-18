@@ -4,7 +4,7 @@ import json
 import pytest
 
 from milo_bridge.mcp.deps import McpDeps
-from milo_bridge.mcp.server import build_mcp_server
+from milo_bridge.mcp.server import _caller_peer_id, _motion_denied, build_mcp_server
 
 
 class FakeGait:
@@ -67,10 +67,11 @@ class FakeServos:
         self.held = True
 
 
-def make_deps(allow=True):
+def make_deps(allow=True, active_brain_id=None):
     return McpDeps(
         gait=FakeGait(), runner=FakeRunner(), imu=None, broker=FakeBroker(allow),
         servos=FakeServos(), display=None, audio=None,
+        active_brain_id=(lambda: active_brain_id),
     )
 
 
@@ -104,6 +105,48 @@ async def _call(server, tool_name, **kwargs):
     return json.loads(block.text)
 
 
+class _FakeRequest:
+    def __init__(self, headers: dict):
+        self.headers = headers
+
+
+class _FakeRequestContext:
+    def __init__(self, request):
+        self.request = request
+
+
+class _FakeCtx:
+    """Stands in for FastMCP's Context -- exercises _caller_peer_id/
+    _motion_denied directly with a real (fake) Starlette-shaped request,
+    which server.call_tool()'s in-process harness can't produce (it never
+    carries an HTTP request at all -- see test_walk_denied_when_a_different_
+    brain_is_active's comment)."""
+
+    def __init__(self, peer_id: str | None):
+        headers = {"X-Milo-Peer": peer_id} if peer_id is not None else {}
+        self.request_context = _FakeRequestContext(_FakeRequest(headers))
+
+
+def test_caller_peer_id_reads_the_x_milo_peer_header():
+    assert _caller_peer_id(_FakeCtx("brain-1")) == "brain-1"
+    assert _caller_peer_id(_FakeCtx(None)) is None
+
+
+def test_motion_denied_allows_the_active_brain_through():
+    deps = make_deps(active_brain_id="brain-1")
+    assert _motion_denied(_FakeCtx("brain-1"), deps) is None
+
+
+def test_motion_denied_blocks_a_non_active_brain():
+    deps = make_deps(active_brain_id="brain-1")
+    assert _motion_denied(_FakeCtx("brain-2"), deps) == {"ok": False, "error": "not-active-brain"}
+
+
+def test_motion_denied_checks_web_control_before_active_brain():
+    deps = make_deps(allow=False, active_brain_id="brain-1")
+    assert _motion_denied(_FakeCtx("brain-1"), deps) == {"ok": False, "error": "web-control-active"}
+
+
 def test_walk_clamps_and_forwards_velocity():
     async def main():
         deps = make_deps()
@@ -122,6 +165,33 @@ def test_walk_denied_while_web_controls():
         result = await _call(server, "walk", vx=0.1, vy=0.0, yaw_rate=0.0)
         assert result == {"ok": False, "error": "web-control-active"}
         assert deps.gait.velocity is None
+
+    asyncio.run(main())
+
+
+def test_walk_denied_when_a_different_brain_is_active():
+    async def main():
+        # call_tool()'s in-process context carries no real HTTP request, so
+        # the caller is always "unidentified" here -- exactly like a brain
+        # whose X-Milo-Peer doesn't match whoever's currently active.
+        deps = make_deps(active_brain_id="someone-else")
+        server = build_mcp_server(deps)
+        result = await _call(server, "walk", vx=0.1, vy=0.0, yaw_rate=0.0)
+        assert result == {"ok": False, "error": "not-active-brain"}
+        assert deps.gait.velocity is None
+
+    asyncio.run(main())
+
+
+def test_walk_allowed_when_no_active_brain_is_configured():
+    async def main():
+        # Default wiring (single-brain / tests that don't care): no
+        # active-brain concept at all, so the gate falls back to whatever
+        # the ControlBroker already allows.
+        deps = make_deps(active_brain_id=None)
+        server = build_mcp_server(deps)
+        result = await _call(server, "walk", vx=0.1, vy=0.0, yaw_rate=0.0)
+        assert result["ok"] is True
 
     asyncio.run(main())
 

@@ -17,9 +17,10 @@ class _FakePeer:
 
 
 class _FakeConnector:
-    def __init__(self, connected_robot=None, paired=()):
+    def __init__(self, connected_robot=None, paired=(), last_connected=None):
         self.connected_robot = connected_robot
         self._paired = list(paired)
+        self.last_connected = last_connected
 
     def paired_ids(self):
         return self._paired
@@ -66,5 +67,36 @@ def test_refresh_from_shows_no_robot_connected():
             screen.refresh_from(connector, cfg, TokenRateTracker())
             connection = str(screen.query_one(ConnectionPanel).content)
             assert "no robot connected" in connection
+
+    asyncio.run(scenario())
+
+
+def test_refresh_from_hints_reconnect_when_a_previous_target_is_known():
+    async def scenario():
+        cfg = BrainConfig(brain_id="b", name="n", tier="small")
+        connector = _FakeConnector(connected_robot=None, paired=[], last_connected=("10.0.0.9", 8765))
+        app = _HostApp()
+        async with app.run_test():
+            screen = app.query_one(DashboardScreen)
+            screen.refresh_from(connector, cfg, TokenRateTracker())
+            connection = str(screen.query_one(ConnectionPanel).content)
+            assert "10.0.0.9:8765" in connection
+            assert "r to reconnect" in connection
+
+    asyncio.run(scenario())
+
+
+def test_refresh_from_omits_reconnect_hint_once_actually_connected():
+    async def scenario():
+        cfg = BrainConfig(brain_id="b", name="n", tier="small")
+        connector = _FakeConnector(
+            connected_robot=_FakePeer("milo-1"), paired=["milo-1"], last_connected=("10.0.0.9", 8765),
+        )
+        app = _HostApp()
+        async with app.run_test():
+            screen = app.query_one(DashboardScreen)
+            screen.refresh_from(connector, cfg, TokenRateTracker())
+            connection = str(screen.query_one(ConnectionPanel).content)
+            assert "10.0.0.9" not in connection
 
     asyncio.run(scenario())

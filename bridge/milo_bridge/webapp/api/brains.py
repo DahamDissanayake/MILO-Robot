@@ -13,10 +13,16 @@ async def get_brains(request: web.Request) -> web.Response:
     deps = request.app["deps"]
     rs = deps.robot_server
     if rs is None:
-        return web.json_response({"connected": None, "paired": [], "pairing": False, "ip": "", "port": 0})
-    connected = rs.connected_brain
+        return web.json_response({
+            "connected": [], "active_id": None, "paired": [], "pairing": False, "ip": "", "port": 0,
+        })
     return web.json_response({
-        "connected": {"id": connected.id, "name": connected.name} if connected else None,
+        # Every brain connected right now, not just the active one -- the
+        # robot accepts several at once (see net/server.py's
+        # connected_brains); "active" marks which one currently has motion
+        # rights.
+        "connected": rs.connected_brains_info(),
+        "active_id": rs.active_brain_id,
         "paired": rs.paired_brains(),
         "pairing": rs.advertiser.pairing,
         # For manually connecting when mDNS discovery doesn't reach the

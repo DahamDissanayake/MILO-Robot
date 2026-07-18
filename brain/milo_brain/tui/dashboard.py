@@ -20,14 +20,16 @@ class IdentityPanel(Static):
 
 
 class ConnectionPanel(Static):
-    def render_connection(self, robot_name: str | None, paired_count: int) -> None:
+    def render_connection(
+        self, robot_name: str | None, paired_count: int, last_connected: tuple[str, int] | None,
+    ) -> None:
         status = f"connected: {robot_name}" if robot_name else "no robot connected"
-        self.update(
-            f"[b]Connection[/b]\n"
-            f"Robot: {status}\n"
-            f"Paired robots: {paired_count}\n"
-            f"[dim](c to connect a robot)[/dim]"
-        )
+        lines = ["[b]Connection[/b]", f"Robot: {status}", f"Paired robots: {paired_count}"]
+        if not robot_name and last_connected is not None:
+            host, port = last_connected
+            lines.append(f"Last seen: {host}:{port}  [dim](r to reconnect)[/dim]")
+        lines.append("[dim](c to connect a robot)[/dim]")
+        self.update("\n".join(lines))
 
 
 class ModelPanel(Static):
@@ -81,7 +83,7 @@ class DashboardScreen(Screen):
         robot = connector.connected_robot
         self.query_one(IdentityPanel).render_identity(cfg.name, cfg.brain_id, cfg.tier, cfg.gpu)
         self.query_one(ConnectionPanel).render_connection(
-            robot.name if robot else None, len(connector.paired_ids())
+            robot.name if robot else None, len(connector.paired_ids()), connector.last_connected,
         )
         self.query_one(ModelPanel).render_model(
             cfg.llm_model, cfg.whisper_model, cfg.piper_voice,

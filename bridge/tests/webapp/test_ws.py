@@ -6,7 +6,7 @@ import aiohttp
 from milo_bridge.webapp.control import ControlBroker
 from milo_bridge.webapp.media_hub import MediaHub
 from .client_helpers import authed_client
-from .fakes import FakeAudio, FakeRobotServer, make_deps
+from .fakes import FakeAudio, FakePeer, FakeRobotServer, make_deps
 
 
 async def _ws(deps):
@@ -332,6 +332,52 @@ async def test_enter_pairing_mode_denied_without_control():
         await ws.send_json({"t": "enter_pairing_mode", "on": True})
         data = await _recv_json_until(ws, "err")
         assert data["error"] == "not-controlling"
+    finally:
+        await client.close()
+
+
+async def test_switch_active_brain_updates_the_robot_servers_active_id():
+    rs = FakeRobotServer()
+    rs.connect(FakePeer("brain-1", "desk"))
+    rs.connect(FakePeer("brain-2", "laptop"))
+    deps = make_deps(broker=ControlBroker(), robot_server=rs)
+    client, ws = await _ws(deps)
+    try:
+        await ws.send_json({"t": "control", "take": True})
+        await _recv_json_until(ws, "control")
+        assert rs.active_brain_id == "brain-1"
+        await ws.send_json({"t": "switch_active_brain", "id": "brain-2"})
+        await asyncio.sleep(0.05)  # no ack broadcast -- just assert the side effect landed
+        assert rs.active_brain_id == "brain-2"
+    finally:
+        await client.close()
+
+
+async def test_switch_active_brain_denied_without_control():
+    rs = FakeRobotServer()
+    rs.connect(FakePeer("brain-1", "desk"))
+    deps = make_deps(broker=ControlBroker(), robot_server=rs)
+    client, ws = await _ws(deps)
+    try:
+        await ws.send_json({"t": "switch_active_brain", "id": "brain-1"})
+        data = await _recv_json_until(ws, "err")
+        assert data["error"] == "not-controlling"
+    finally:
+        await client.close()
+
+
+async def test_switch_active_brain_rejects_an_unconnected_id():
+    rs = FakeRobotServer()
+    rs.connect(FakePeer("brain-1", "desk"))
+    deps = make_deps(broker=ControlBroker(), robot_server=rs)
+    client, ws = await _ws(deps)
+    try:
+        await ws.send_json({"t": "control", "take": True})
+        await _recv_json_until(ws, "control")
+        await ws.send_json({"t": "switch_active_brain", "id": "brain-ghost"})
+        data = await _recv_json_until(ws, "err")
+        assert "isn't connected" in data["error"]
+        assert rs.active_brain_id == "brain-1"
     finally:
         await client.close()
 

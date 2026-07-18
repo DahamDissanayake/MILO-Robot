@@ -25,6 +25,14 @@ RobotHandler = Callable[[MiloSocket, Peer], Awaitable[None]]
 DEFAULT_ROBOT_PORT = 8765  # matches BridgeConfig.robot_ws_port's default
 
 
+def _parse_host_port(url: str) -> tuple[str, int]:
+    """Every url this module builds is exactly "ws://host:port" (record.url
+    or request_manual_ip_connect's f-string) -- no path, no IPv6 host, so a
+    plain rsplit is enough to recover (host, port) for last_connected."""
+    host, port = url.removeprefix("ws://").rsplit(":", 1)
+    return host, int(port)
+
+
 async def default_handler(sock: MiloSocket, peer: Peer) -> None:
     """Phase C debug handler: log stream arrival rates until the robot leaves."""
     frames = 0
@@ -61,6 +69,11 @@ class RobotConnectorManager:
         self.link_state: str = "disconnected"
         self._manual_target: str | None = None
         self._manual_host_target: tuple[str, int] | None = None
+        # Last robot this process actually completed a handshake with --
+        # lets the dashboard's one-key Reconnect redial immediately instead
+        # of waiting for the next scheduled retry or a fresh discovery scan.
+        self.last_connected: tuple[str, int] | None = None
+        self._wake = asyncio.Event()
 
     def paired_ids(self) -> list[str]:
         return self._store.peer_ids()
@@ -73,6 +86,7 @@ class RobotConnectorManager:
         that discovery actually found. One-shot: consumed by the very next
         _tick(), whether it succeeds or not."""
         self._manual_target = robot_id
+        self._wake.set()
 
     def request_manual_ip_connect(self, host: str, port: int = DEFAULT_ROBOT_PORT) -> None:
         """Bypass discovery entirely and dial host:port directly on the
@@ -84,6 +98,19 @@ class RobotConnectorManager:
         brain_handshake() only calls it on a reactive T_PAIR_BEGIN, which a
         paired robot never sends). One-shot, same as request_manual_connect."""
         self._manual_host_target = (host, port)
+        self._wake.set()
+
+    def request_reconnect(self) -> bool:
+        """Redial the last robot this process actually connected to, right
+        now -- the dashboard's one-key Reconnect action. Skips discovery
+        and cuts short whatever reconnect_seconds wait _tick() is
+        currently sitting in. Returns False (no-op) if nothing has
+        connected yet this run, e.g. right after startup."""
+        if self.last_connected is None:
+            return False
+        self._manual_host_target = self.last_connected
+        self._wake.set()
+        return True
 
     async def run_forever(self) -> None:
         if self._connect is None:
@@ -107,10 +134,21 @@ class RobotConnectorManager:
         manual_target, self._manual_target = self._manual_target, None
         choice = select_robot(self.discovery.snapshot(), self._store, manual_target=manual_target)
         if choice is None:
-            await asyncio.sleep(self._cfg.reconnect_seconds)
+            await self._wait_before_retry(self._cfg.reconnect_seconds)
             return
         record, needs_pairing = choice
         await self._connect_and_run(record.url, offer_pairing=needs_pairing)
+
+    async def _wait_before_retry(self, seconds: float) -> None:
+        """Like asyncio.sleep(seconds), but request_reconnect()/
+        request_manual_connect()/request_manual_ip_connect() can cut it
+        short -- otherwise a manual reconnect request would just sit queued
+        behind whatever wait _tick() happened to already be in."""
+        try:
+            await asyncio.wait_for(self._wake.wait(), timeout=seconds)
+        except asyncio.TimeoutError:
+            pass
+        self._wake.clear()
 
     async def _connect_and_run(self, url: str, *, offer_pairing: bool) -> None:
         try:
@@ -130,6 +168,7 @@ class RobotConnectorManager:
                 log.info("connected to robot %s (%s)", peer.name, peer.id)
                 self.connected_robot = peer
                 self.link_state = "connected"
+                self.last_connected = _parse_host_port(url)
                 try:
                     await self._session_handler(sock, peer)
                 finally:
@@ -137,7 +176,7 @@ class RobotConnectorManager:
                     self.link_state = "disconnected"
         except HandshakeError as exc:
             log.warning("handshake with %s failed: %s", url, exc)
-            await asyncio.sleep(self._cfg.reconnect_seconds)
+            await self._wait_before_retry(self._cfg.reconnect_seconds)
         except Exception as exc:  # connection drop -> fail over on next tick
             log.info("robot link lost (%s: %s), rescanning", type(exc).__name__, exc)
             await asyncio.sleep(1.0)

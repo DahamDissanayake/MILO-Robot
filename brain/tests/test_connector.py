@@ -109,6 +109,74 @@ def test_tick_connects_to_a_selected_robot_and_runs_the_session_handler(tmp_path
         # connection is cleaned up.
         assert connector.connected_robot is None
         assert connector.link_state == "disconnected"
+        # last_connected survives the session ending -- it's what
+        # request_reconnect() redials, not "currently connected".
+        assert connector.last_connected == ("10.0.0.9", 8765)
+
+    asyncio.run(main())
+
+
+def test_request_reconnect_is_a_noop_before_any_connection(tmp_path):
+    cfg = BrainConfig(data_dir=str(tmp_path))
+    connector = RobotConnectorManager(
+        cfg, session_handler=lambda sock, peer: None, discovery=FakeDiscoveryEmpty(),
+    )
+    assert connector.request_reconnect() is False
+    assert connector._manual_host_target is None
+
+
+def test_request_reconnect_redials_the_last_connected_robot(tmp_path):
+    async def main():
+        cfg = BrainConfig(brain_id="brain-1", name="d", tier="large", data_dir=str(tmp_path))
+        token = derive_token("123456", "milo-1", "brain-1")
+        PairedStore(cfg.paired_path).add("milo-1", token)
+        robot_store = PairedStore(tmp_path / "robot" / "paired.json")
+        robot_store.add("brain-1", token)
+
+        raw_robot, raw_brain = FakeWebSocket(), FakeWebSocket()
+        raw_robot.peer, raw_brain.peer = raw_brain, raw_robot
+
+        async def handler(sock, peer):
+            pass
+
+        discovery = FakeDiscoveryWith(
+            [RobotRecord(robot_id="milo-1", name="milo", host="10.0.0.9", port=8765)]
+        )
+        connector = RobotConnectorManager(
+            cfg, session_handler=handler, discovery=discovery,
+            connect=lambda url: _ConnectCM(raw_brain),
+        )
+        robot_task = asyncio.create_task(
+            robot_handshake(MiloSocket(raw_robot), "milo-1", "milo", robot_store, mcp_port=0)
+        )
+        await connector._tick()
+        await robot_task
+
+        assert connector.request_reconnect() is True
+        assert connector._manual_host_target == ("10.0.0.9", 8765)
+
+    asyncio.run(main())
+
+
+def test_request_reconnect_wakes_a_tick_that_is_waiting_between_retries(tmp_path):
+    # Prove the manual reconnect doesn't just get queued behind a long
+    # reconnect_seconds wait -- it should cut it short instead.
+    cfg = BrainConfig(data_dir=str(tmp_path), reconnect_seconds=30.0)
+
+    async def handler(sock, peer):
+        raise AssertionError("must never be reached -- discovery is empty")
+
+    connector = RobotConnectorManager(
+        cfg, session_handler=handler, discovery=FakeDiscoveryEmpty(),
+    )
+    connector.last_connected = ("10.0.0.9", 8765)
+
+    async def main():
+        tick_task = asyncio.create_task(connector._tick())
+        await asyncio.sleep(0.05)  # let _tick() settle into its wait
+        assert not tick_task.done()
+        connector.request_reconnect()
+        await asyncio.wait_for(tick_task, timeout=1.0)  # would time out at 30s if not woken
 
     asyncio.run(main())
 

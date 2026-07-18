@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Callable
 
 
 class MovementGuard:
@@ -35,3 +35,10 @@ class McpDeps:
     display: Any           # FaceDisplay
     audio: Any | None      # AudioIO
     movement_guard: MovementGuard = field(default_factory=MovementGuard)
+    # Multiple brains may hold an MCP connection at once, but only the
+    # robot's currently-active one may actually move it (see server.py's
+    # per-tool gate) -- this reaches back into RobotServer.active_brain_id
+    # without this module needing to import it (avoids a net<->mcp cycle).
+    # Defaults to "no active-brain concept" (single-brain / test wiring),
+    # which the gate treats as "allow anyone the broker already allows".
+    active_brain_id: Callable[[], str | None] = field(default=lambda: None)

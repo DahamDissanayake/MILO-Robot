@@ -43,10 +43,14 @@ def test_select_prefers_highest_priority_paired(tmp_path):
     assert record.robot_id == "desktop" and not needs_pairing
 
 
-def test_select_skips_busy_paired(tmp_path):
+def test_select_paired_wins_even_if_busy(tmp_path):
+    # busy no longer disqualifies an already-paired robot -- the robot
+    # accepts multiple simultaneous brains now (see
+    # bridge/milo_bridge/net/server.py's connected_brains), so the highest
+    # -priority paired robot still wins regardless of busy.
     store = store_with(tmp_path, ("laptop", 1), ("desktop", 5))
     record, _ = select_robot([rec("laptop"), rec("desktop", busy=True)], store)
-    assert record.robot_id == "laptop"
+    assert record.robot_id == "desktop"
 
 
 def test_select_falls_back_to_pairing_mode_robot(tmp_path):
@@ -57,9 +61,16 @@ def test_select_falls_back_to_pairing_mode_robot(tmp_path):
     assert record.robot_id == "newbie" and needs_pairing
 
 
-def test_select_none_when_only_busy_or_strangers(tmp_path):
+def test_select_a_busy_paired_robot_instead_of_none(tmp_path):
     store = store_with(tmp_path, ("desktop", 5))
-    assert select_robot([rec("desktop", busy=True), rec("stranger")], store) is None
+    choice = select_robot([rec("desktop", busy=True), rec("stranger")], store)
+    assert choice is not None
+    assert choice[0].robot_id == "desktop"
+
+
+def test_select_none_when_nothing_paired_or_pairing(tmp_path):
+    store = store_with(tmp_path)  # nothing paired
+    assert select_robot([rec("stranger")], store) is None
     assert select_robot([], store) is None
 
 
@@ -83,13 +94,15 @@ def test_select_manual_target_on_an_unpaired_robot_needs_pairing(tmp_path):
     assert record.robot_id == "newbie" and needs_pairing
 
 
-def test_select_manual_target_ignored_if_busy_or_absent(tmp_path):
+def test_select_manual_target_works_even_if_busy(tmp_path):
     store = store_with(tmp_path, ("desktop", 5))
-    # Busy manual target falls through to the normal policy instead.
     choice = select_robot(
         [rec("desktop", busy=True), rec("laptop")], store, manual_target="desktop"
     )
-    assert choice is None  # laptop isn't paired/pairing, desktop is busy
-    # Absent manual target likewise falls through.
+    assert choice is not None and choice[0].robot_id == "desktop"
+
+
+def test_select_manual_target_falls_through_if_absent(tmp_path):
+    store = store_with(tmp_path, ("desktop", 5))
     choice = select_robot([rec("desktop")], store, manual_target="ghost")
     assert choice is not None and choice[0].robot_id == "desktop"

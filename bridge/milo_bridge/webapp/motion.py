@@ -201,6 +201,16 @@ class MotionService:
         # from under us between the request and this point.
         return {"ok": True, "on": robot_server.advertiser.pairing}
 
+    async def switch_active_brain(self, client_id: str, peer_id: str) -> dict:
+        if err := self._denied(client_id):
+            return err
+        robot_server = self._deps.robot_server
+        if robot_server is None:
+            return {"error": "unavailable"}
+        if not robot_server.set_active_brain(peer_id):
+            return {"error": f"brain {peer_id!r} isn't connected"}
+        return {"ok": True, "active_id": robot_server.active_brain_id}
+
     async def turn(self, client_id: str, direction: str) -> dict:
         if err := self._denied(client_id):
             return err
