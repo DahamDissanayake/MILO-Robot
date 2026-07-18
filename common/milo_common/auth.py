@@ -1,10 +1,13 @@
 """Pairing and session authentication.
 
 Pairing (once per robot/brain pair):
-    1. Robot shows a 6-digit PIN on its OLED.
+    1. Robot shows a 4-digit PIN on its OLED (short by design -- pairing
+       already requires knowing the robot's IP, shown alongside it on the
+       web dashboard, so the PIN only needs to guard against someone who
+       already has that).
     2. User types the PIN into the brain UI.
     3. Both sides derive ``token = HKDF-SHA256(PIN, salt=robot_id||brain_id)``
-       and persist it (``/etc/milo/paired.json`` on the Pi,
+       and persist it (``~/.milo/paired.json`` on the Pi,
        ``~/.milo-brain/paired.json`` on the brain).
 
 Session handshake (every connection):
@@ -23,13 +26,13 @@ import json
 import secrets
 from pathlib import Path
 
-PIN_LENGTH = 6
+PIN_LENGTH = 4
 TOKEN_BYTES = 32
 NONCE_BYTES = 16
 
 
 def generate_pin() -> str:
-    """6-digit pairing PIN, zero-padded, from a CSPRNG."""
+    """4-digit pairing PIN, zero-padded, from a CSPRNG."""
     return f"{secrets.randbelow(10 ** PIN_LENGTH):0{PIN_LENGTH}d}"
 
 

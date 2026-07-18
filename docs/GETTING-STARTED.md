@@ -315,9 +315,11 @@ python -m milo_brain                                   # TUI opens
 
 Pairing dance (once per machine, <2 min):
 
-1. ☐ On the robot's web dashboard (`http://milo.local/`), open the **Brain** card and click **Enter Pairing Mode**. The robot starts advertising itself on the LAN and **shows a 6-digit code on its face**.
+1. ☐ On the robot's web dashboard (`http://milo.local/`), open the **Brain** card and click **Enter Pairing Mode**. The robot starts advertising itself on the LAN and **shows a 4-digit code on its face**.
 2. ☐ In the brain app's TUI, press **`c`** for **Connect Robots**, then **`r`** to refresh the list — Milo appears as `[pairing]`.
-3. ☐ Select it and press Enter. A modal pops up asking for the 6-digit PIN — type the code from Milo's face. Done — the trust token is stored on both sides forever (`~/.milo/paired.json` on the Pi ↔ `~/.milo-brain/paired.json` on the brain), and pairing mode closes itself automatically.
+3. ☐ Select it and press Enter. A modal pops up asking for the 4-digit PIN — type the code from Milo's face. Done — the trust token is stored on both sides forever (`~/.milo/paired.json` on the Pi ↔ `~/.milo-brain/paired.json` on the brain), and pairing mode closes itself automatically.
+
+If Milo never shows up in step 2 (some routers don't forward mDNS multicast between WiFi clients even on the same network), press **`i`** for **Connect by IP** instead and type the IP shown on the robot's Brain card directly — this bypasses discovery entirely and still pairs normally.
 
 Then verify the resilience story:
 

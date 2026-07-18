@@ -22,6 +22,8 @@ log = logging.getLogger(__name__)
 
 RobotHandler = Callable[[MiloSocket, Peer], Awaitable[None]]
 
+DEFAULT_ROBOT_PORT = 8765  # matches BridgeConfig.robot_ws_port's default
+
 
 async def default_handler(sock: MiloSocket, peer: Peer) -> None:
     """Phase C debug handler: log stream arrival rates until the robot leaves."""
@@ -58,6 +60,7 @@ class RobotConnectorManager:
         self.connected_robot: Peer | None = None
         self.link_state: str = "disconnected"
         self._manual_target: str | None = None
+        self._manual_host_target: tuple[str, int] | None = None
 
     def paired_ids(self) -> list[str]:
         return self._store.peer_ids()
@@ -66,9 +69,21 @@ class RobotConnectorManager:
         return self._store.is_paired(robot_id)
 
     def request_manual_connect(self, robot_id: str) -> None:
-        """The "Connect" action from the Connect Robots tab. One-shot:
-        consumed by the very next _tick(), whether it succeeds or not."""
+        """The "Connect" action from the Connect Robots tab, for a robot
+        that discovery actually found. One-shot: consumed by the very next
+        _tick(), whether it succeeds or not."""
         self._manual_target = robot_id
+
+    def request_manual_ip_connect(self, host: str, port: int = DEFAULT_ROBOT_PORT) -> None:
+        """Bypass discovery entirely and dial host:port directly on the
+        next tick -- for networks where mDNS multicast doesn't reach
+        between devices (some routers don't forward it between WiFi
+        clients) but plain unicast still works. The robot's identity isn't
+        known until the handshake's T_HELLO, so this always offers
+        request_pin (harmless if it turns out to already be paired --
+        brain_handshake() only calls it on a reactive T_PAIR_BEGIN, which a
+        paired robot never sends). One-shot, same as request_manual_connect."""
+        self._manual_host_target = (host, port)
 
     async def run_forever(self) -> None:
         if self._connect is None:
@@ -83,14 +98,23 @@ class RobotConnectorManager:
             self.discovery.stop()
 
     async def _tick(self) -> None:
+        manual_host_target, self._manual_host_target = self._manual_host_target, None
+        if manual_host_target is not None:
+            host, port = manual_host_target
+            await self._connect_and_run(f"ws://{host}:{port}", offer_pairing=True)
+            return
+
         manual_target, self._manual_target = self._manual_target, None
         choice = select_robot(self.discovery.snapshot(), self._store, manual_target=manual_target)
         if choice is None:
             await asyncio.sleep(self._cfg.reconnect_seconds)
             return
         record, needs_pairing = choice
+        await self._connect_and_run(record.url, offer_pairing=needs_pairing)
+
+    async def _connect_and_run(self, url: str, *, offer_pairing: bool) -> None:
         try:
-            async with self._connect(record.url) as ws:
+            async with self._connect(url) as ws:
                 sock = MiloSocket(ws)
                 peer = await brain_handshake(
                     sock,
@@ -98,7 +122,7 @@ class RobotConnectorManager:
                     self._cfg.name,
                     self._cfg.tier,
                     self._store,
-                    request_pin=self._request_pin if needs_pairing else None,
+                    request_pin=self._request_pin if offer_pairing else None,
                 )
                 if peer.mcp_port:
                     host = ws.remote_address[0]  # websockets client connections expose this too
@@ -112,7 +136,7 @@ class RobotConnectorManager:
                     self.connected_robot = None
                     self.link_state = "disconnected"
         except HandshakeError as exc:
-            log.warning("handshake with %s failed: %s", record.robot_id, exc)
+            log.warning("handshake with %s failed: %s", url, exc)
             await asyncio.sleep(self._cfg.reconnect_seconds)
         except Exception as exc:  # connection drop -> fail over on next tick
             log.info("robot link lost (%s: %s), rescanning", type(exc).__name__, exc)

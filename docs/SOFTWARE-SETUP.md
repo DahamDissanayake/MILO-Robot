@@ -265,10 +265,12 @@ python -m milo_brain
 
 The TUI opens. Then:
 
-1. On the robot's web dashboard (`http://milo.local/`), open the **Brain** card and click **Enter Pairing Mode** — Milo starts advertising on the LAN and shows a **6-digit PIN on its OLED face**.
+1. On the robot's web dashboard (`http://milo.local/`), open the **Brain** card and click **Enter Pairing Mode** — Milo starts advertising on the LAN and shows a **4-digit PIN on its OLED face**.
 2. In the brain app, press **`c`** for **Connect Robots**, press **`r`** to refresh, and select Milo (shown as `[pairing]`).
-3. A modal asks for the 6-digit PIN — type the code from Milo's face.
+3. A modal asks for the 4-digit PIN — type the code from Milo's face.
 4. Done permanently — the trust token is stored on both sides (`~/.milo/paired.json` on the Pi, `~/.milo-brain/paired.json` on the PC), and pairing mode closes itself automatically.
+
+If Milo doesn't show up in step 2, some routers don't forward mDNS multicast between WiFi clients even on the same network. Press **`i`** for **Connect by IP** instead and type the IP shown on the robot's Brain card directly — this bypasses discovery entirely.
 
 Pair every brain machine the same way. Verify: live video and mic levels appear in the brain's debug window; kill one brain and Milo fails over to the other within ~10 s (the surviving brain's own reconnect loop picks it up); kill both and Milo sleeps.
 

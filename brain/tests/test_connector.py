@@ -113,6 +113,48 @@ def test_tick_connects_to_a_selected_robot_and_runs_the_session_handler(tmp_path
     asyncio.run(main())
 
 
+def test_manual_ip_connect_bypasses_discovery_and_pairs(tmp_path):
+    # The whole point: this must work with an *empty* discovery snapshot
+    # (mDNS doesn't reach this network) and an unpaired robot -- pairing
+    # is always offered for a manual IP target since we don't know the
+    # robot's identity/paired status until the handshake's T_HELLO.
+    async def main():
+        cfg = BrainConfig(brain_id="brain-1", name="d", tier="large", data_dir=str(tmp_path))
+        robot_store = PairedStore(tmp_path / "robot" / "paired.json")
+
+        raw_robot, raw_brain = FakeWebSocket(), FakeWebSocket()
+        raw_robot.peer, raw_brain.peer = raw_brain, raw_robot
+
+        pin = "1234"
+
+        async def request_pin(_robot_name: str) -> str:
+            return pin
+
+        received: dict = {}
+
+        async def handler(sock, peer):
+            received["peer"] = peer
+
+        connector = RobotConnectorManager(
+            cfg, request_pin=request_pin, session_handler=handler,
+            discovery=FakeDiscoveryEmpty(), connect=lambda url: _ConnectCM(raw_brain),
+        )
+        connector.request_manual_ip_connect("10.0.0.9", 8765)
+        assert connector._manual_host_target == ("10.0.0.9", 8765)
+
+        robot_task = asyncio.create_task(
+            robot_handshake(MiloSocket(raw_robot), "milo-1", "milo", robot_store, pending_pin=pin)
+        )
+        await connector._tick()
+        await robot_task
+
+        assert connector._manual_host_target is None  # one-shot, consumed
+        assert received["peer"].id == "milo-1"
+        assert robot_store.is_paired("brain-1")  # token persisted, like any other pairing
+
+    asyncio.run(main())
+
+
 def test_manual_target_is_consumed_after_one_tick(tmp_path):
     cfg = BrainConfig(data_dir=str(tmp_path), reconnect_seconds=0.0)
 

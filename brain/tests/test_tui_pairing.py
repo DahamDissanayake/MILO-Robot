@@ -25,12 +25,12 @@ def test_submitting_the_pin_dismisses_with_its_value():
             app.run_worker(app.run_pairing())
             await pilot.pause()
             await pilot.click("#pin-input")
-            await pilot.press(*"123456")
+            await pilot.press(*"1234")
             await pilot.press("enter")
             await pilot.pause()
         return app.result
 
-    assert asyncio.run(scenario()) == "123456"
+    assert asyncio.run(scenario()) == "1234"
 
 
 def test_escape_dismisses_with_none():

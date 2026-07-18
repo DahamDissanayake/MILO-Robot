@@ -113,7 +113,7 @@ sudo systemctl enable --now milo-bridge
 ```
 
 First contact: click **Enter Pairing Mode** on Milo's web dashboard → it displays a
-6-digit PIN on its face → in the brain's TUI, press `c` for Connect Robots, refresh,
+4-digit PIN on its face → in the brain's TUI, press `c` for Connect Robots, refresh,
 select Milo, and type the PIN → paired for good.
 
 ### Developing without hardware

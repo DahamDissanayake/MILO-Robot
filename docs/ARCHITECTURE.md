@@ -175,7 +175,7 @@ Binary frames immediately follow their JSON header frame; the header carries `se
 
 The robot is the WebSocket server and mDNS advertiser; a brain discovers it and dials in (`net/discovery.py` + `net/connector.py` on the brain side). Pairing is triggered from the **robot's web dashboard**, not the brain app:
 
-1. User clicks **Enter Pairing Mode** on the robot's web dashboard (Brain card) → the robot generates a 6-digit PIN, renders it on the OLED, and flips its mDNS `pairing` TXT flag on.
+1. User clicks **Enter Pairing Mode** on the robot's web dashboard (Brain card) → the robot generates a 4-digit PIN, renders it on the OLED, and flips its mDNS `pairing` TXT flag on.
 2. In the brain app's **Connect Robots** tab, the user refreshes, sees the robot listed as pairing-available, and selects it.
 3. The brain dials in; the robot's handshake reactively requests the PIN, which pops a modal in the brain's TUI — the user types the code shown on the robot's face.
 4. Both sides derive `token = HKDF(PIN, salt=robot_id‖brain_id)` and persist it (`~/.milo/paired.json` on the Pi, `~/.milo-brain/paired.json` on the brain); the robot closes pairing mode automatically.

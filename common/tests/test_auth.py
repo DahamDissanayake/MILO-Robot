@@ -3,10 +3,10 @@ from pathlib import Path
 from milo_common import auth
 
 
-def test_pin_is_six_digits():
+def test_pin_is_four_digits():
     for _ in range(50):
         pin = auth.generate_pin()
-        assert len(pin) == 6 and pin.isdigit()
+        assert len(pin) == 4 and pin.isdigit()
 
 
 def test_token_derivation_is_deterministic_and_id_bound():

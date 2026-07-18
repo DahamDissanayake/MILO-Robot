@@ -78,6 +78,15 @@ class RobotServer:
         self.connected_brain = None
         self.link_state: str = "disconnected"
 
+    @property
+    def port(self) -> int:
+        """The actual bound WS port (may differ from the configured
+        preference -- see pick_port()); for the webapp's Brain card, so a
+        brain can be told exactly where to connect when mDNS discovery
+        doesn't reach it (some routers don't forward multicast between
+        WiFi clients even on the same network)."""
+        return self._cfg.robot_ws_port
+
     def paired_brains(self) -> list[dict]:
         """[{'id':..., 'name':...}] for the webapp's Brain card -- brains
         this robot knows about, whether or not one is online right now."""

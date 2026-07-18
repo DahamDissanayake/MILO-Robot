@@ -35,8 +35,8 @@ class PairingPinScreen(ModalScreen[str | None]):
     def compose(self) -> ComposeResult:
         with Vertical(id="pairing-box"):
             yield Static(f"Robot [b]{self.robot_name}[/b] wants to pair.")
-            yield Static("Enter the 6-digit PIN shown on its face:")
-            yield Input(placeholder="123456", id="pin-input", max_length=6)
+            yield Static("Enter the 4-digit PIN shown on its face:")
+            yield Input(placeholder="1234", id="pin-input", max_length=4)
 
     def on_mount(self) -> None:
         self.query_one("#pin-input", Input).focus()

@@ -15,7 +15,7 @@ def stores(tmp_path: Path, paired: bool) -> tuple[PairedStore, PairedStore]:
     robot_store = PairedStore(tmp_path / "robot.json")
     brain_store = PairedStore(tmp_path / "brain.json")
     if paired:
-        token = auth.derive_token("123456", ROBOT_ID, BRAIN_ID)
+        token = auth.derive_token("1234", ROBOT_ID, BRAIN_ID)
         robot_store.add(BRAIN_ID, token, name="desk")
         brain_store.add(ROBOT_ID, token, name="milo")
     return robot_store, brain_store
@@ -43,7 +43,7 @@ def test_paired_mutual_auth_succeeds(tmp_path):
 
 def test_brain_with_wrong_token_refused(tmp_path):
     robot_store, brain_store = stores(tmp_path, paired=True)
-    brain_store.add(ROBOT_ID, auth.derive_token("999999", ROBOT_ID, BRAIN_ID))
+    brain_store.add(ROBOT_ID, auth.derive_token("9999", ROBOT_ID, BRAIN_ID))
     rs, bs = socket_pair()
     robot_result, brain_result = run_both(
         robot_handshake(rs, ROBOT_ID, "milo", robot_store),
@@ -69,7 +69,7 @@ def test_pairing_with_correct_pin(tmp_path):
     # before the connection even happens -- the handshake just verifies
     # whichever brain shows up against it.
     robot_store, brain_store = stores(tmp_path, paired=False)
-    pin = "654321"
+    pin = "6543"
 
     async def request_pin(robot_name: str):
         return pin  # "user" reads the OLED and types it in
@@ -90,11 +90,11 @@ def test_pairing_with_wrong_pin_refused(tmp_path):
     robot_store, brain_store = stores(tmp_path, paired=False)
 
     async def request_pin(robot_name: str):
-        return "000000"  # user typo (worst case: guessing attacker)
+        return "0000"  # user typo (worst case: guessing attacker)
 
     rs, bs = socket_pair()
     robot_result, brain_result = run_both(
-        robot_handshake(rs, ROBOT_ID, "milo", robot_store, pending_pin="123456"),
+        robot_handshake(rs, ROBOT_ID, "milo", robot_store, pending_pin="1234"),
         brain_handshake(bs, BRAIN_ID, "desk", "large", brain_store, request_pin=request_pin),
     )
     assert isinstance(robot_result, HandshakeError)
@@ -110,7 +110,7 @@ def test_pairing_cancelled_by_user(tmp_path):
 
     rs, bs = socket_pair()
     robot_result, brain_result = run_both(
-        robot_handshake(rs, ROBOT_ID, "milo", robot_store, pending_pin="123456"),
+        robot_handshake(rs, ROBOT_ID, "milo", robot_store, pending_pin="1234"),
         brain_handshake(bs, BRAIN_ID, "desk", "large", brain_store, request_pin=request_pin),
     )
     assert isinstance(robot_result, HandshakeError)

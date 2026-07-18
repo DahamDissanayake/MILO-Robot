@@ -9,7 +9,7 @@ machine (laptop or desktop), not on the Pi.
 Milo (the robot, running `milo-bridge`) advertises itself over mDNS and
 accepts one connected brain at a time; `milo-brain` discovers robots on the
 LAN and dials in. Pairing (once per robot/brain pair, triggered from the
-robot's web dashboard) uses a 6-digit PIN shown on the robot's face; after
+robot's web dashboard) uses a 4-digit PIN shown on the robot's face; after
 that, the brain streams camera + microphone audio from whichever robot it's
 connected to. The brain listens, looks, thinks, and replies — TTS audio and
 movement/face tool calls go back over the same connection. Kill the brain
@@ -270,11 +270,14 @@ python -m milo_brain --headless   # no TUI, just logs -- for headless/server box
 
 The TUI runs in any terminal on Windows or Linux -- no GUI session required.
 Keybindings: `c` opens **Connect Robots** (refreshable discovered-device
-list), `m` opens the model picker (lists whatever's installed in Ollama),
-`q` quits. Use `--headless` on a genuinely headless box (no terminal
-attached at all, e.g. run under a service manager) -- it'll print a plain
-`PIN:` prompt on stdin instead of a TUI modal when a robot it dials into
-needs pairing.
+list; inside it, `i` opens **Connect by IP** to dial a robot directly,
+bypassing mDNS discovery entirely -- for networks where multicast doesn't
+reach between devices, e.g. some routers don't forward it between WiFi
+clients even on the same network), `m` opens the model picker (lists
+whatever's installed in Ollama), `q` quits. Use `--headless` on a
+genuinely headless box (no terminal attached at all, e.g. run under a
+service manager) -- it'll print a plain `PIN:` prompt on stdin instead of
+a TUI modal when a robot it dials into needs pairing.
 
 It stays running, discovering robots on the LAN, and idle until it connects
 to (or is told to connect to) one.
@@ -285,11 +288,15 @@ to (or is told to connect to) one.
    [top-level README](../README.md) or
    [`docs/SOFTWARE-SETUP.md`](../docs/SOFTWARE-SETUP.md)).
 2. On the robot's **web dashboard**, open the Brain card and click
-   **Enter Pairing Mode**. Milo's face shows a **6-digit PIN**.
+   **Enter Pairing Mode**. Milo's face shows a **4-digit PIN**.
 3. In the brain's TUI, press `c` for **Connect Robots**, then `r` to
-   refresh -- Milo appears in the list (marked pairing-available).
-4. Select it. A modal appears asking for the PIN (or the `--headless`
-   prompt in the terminal) -- type the code from Milo's face.
+   refresh -- Milo appears in the list (marked pairing-available). If it
+   doesn't show up (some routers don't forward mDNS multicast between WiFi
+   clients even on the same network), press `i` for **Connect by IP**
+   instead and type the IP shown on the robot's Brain card directly.
+4. Select it (or, for Connect by IP, just submit the address). A modal
+   appears asking for the PIN (or the `--headless` prompt in the
+   terminal) -- type the code from Milo's face.
 5. Done — the trust token is stored in `~/.milo-brain/paired.json`, and
    the robot closes pairing mode automatically. You won't need the PIN
    again for this robot/brain pair; every future connection
@@ -399,15 +406,28 @@ connection error. On Windows, check the Ollama tray icon is present (it
 starts automatically on login); on native Linux, `sudo systemctl status
 ollama` or run `ollama serve` in a terminal directly.
 
-**Robot never shows up in Connect Robots** — both sides need multicast DNS
+**Robot never shows up in Connect Robots** — the quickest fix is to skip
+discovery: press `i` for **Connect by IP** and type the IP shown on the
+robot's web dashboard's Brain card directly. This is expected and not a
+bug on some networks/routers that simply don't forward mDNS multicast
+between WiFi clients, even on the same network -- plain unicast (which
+Connect by IP uses) still works fine there. `brain/tools/mdns_probe.py`
+confirms this in isolation: run it while the robot is in pairing mode; if
+it finds nothing, that's your router, not milo-brain.
+
+If you want discovery itself working: both sides need multicast DNS
 reachability on the same LAN segment, and the robot needs to actually be
 advertising (check its web dashboard's Brain card, or that pairing mode is
-on if it's a brand-new/unpaired robot). On Windows, the most common cause is
-the **Windows Defender Firewall** prompt being dismissed or missed on first
+on if it's a brand-new/unpaired robot). On Windows, check the
+**Windows Defender Firewall** prompt wasn't dismissed or missed on first
 run — see [Windows Firewall](#6-windows-firewall) above; also confirm the
 network is set to **Private**, not **Public** (Public profile blocks
 discovery traffic by default). On native Linux, check your firewall isn't
-blocking UDP 5353 (mDNS).
+blocking UDP 5353 (mDNS). If none of that helps, it's likely the router
+itself silently dropping multicast between wireless clients (sometimes
+called client/AP isolation) — often not something exposed in the router's
+own settings, in which case Connect by IP is the permanent answer, not a
+workaround.
 
 **PowerShell says running scripts is disabled** — when activating the venv
 (`.venv\Scripts\Activate.ps1`), run

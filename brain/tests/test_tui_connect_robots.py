@@ -24,12 +24,16 @@ class FakeConnector:
         self.connected_robot = connected_robot
         self._paired = set(paired)
         self.manual_connect_requests: list[str] = []
+        self.manual_ip_requests: list[tuple[str, int]] = []
 
     def is_paired(self, robot_id):
         return robot_id in self._paired
 
     def request_manual_connect(self, robot_id):
         self.manual_connect_requests.append(robot_id)
+
+    def request_manual_ip_connect(self, host, port=8765):
+        self.manual_ip_requests.append((host, port))
 
 
 class _Peer:
@@ -131,6 +135,58 @@ def test_escape_returns_to_the_previous_screen():
             return isinstance(app.screen, ConnectRobotsScreen)
 
     assert asyncio.run(scenario()) is False
+
+
+def test_connect_by_ip_key_prompts_and_forwards_host_and_port():
+    connector = FakeConnector(records=[])
+
+    async def scenario():
+        app = _HostApp(connector)
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            await pilot.press("i")
+            await pilot.pause()
+            await pilot.click("#ip-input")
+            await pilot.press(*"10.0.0.9:9000")
+            await pilot.press("enter")
+            await pilot.pause()
+
+    asyncio.run(scenario())
+    assert connector.manual_ip_requests == [("10.0.0.9", 9000)]
+
+
+def test_connect_by_ip_defaults_to_the_standard_port_when_omitted():
+    connector = FakeConnector(records=[])
+
+    async def scenario():
+        app = _HostApp(connector)
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            await pilot.press("i")
+            await pilot.pause()
+            await pilot.click("#ip-input")
+            await pilot.press(*"10.0.0.9")
+            await pilot.press("enter")
+            await pilot.pause()
+
+    asyncio.run(scenario())
+    assert connector.manual_ip_requests == [("10.0.0.9", 8765)]
+
+
+def test_connect_by_ip_cancelled_requests_nothing():
+    connector = FakeConnector(records=[])
+
+    async def scenario():
+        app = _HostApp(connector)
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            await pilot.press("i")
+            await pilot.pause()
+            await pilot.press("escape")
+            await pilot.pause()
+
+    asyncio.run(scenario())
+    assert connector.manual_ip_requests == []
 
 
 def test_refresh_key_re_reads_the_discovery_snapshot():

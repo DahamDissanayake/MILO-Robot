@@ -4,13 +4,15 @@
 // architecture -- it can only report what it truthfully knows (currently
 // connected, or previously paired), never a fabricated "scanning" list.
 export default {
-  id: "brain", title: "Brain",
+  id: "brain", title: "Brain", needsControl: true,
   mount(el, { bus }) {
     el.innerHTML = `
       <div id="brain-status" class="muted">Loading…</div>
+      <div id="brain-ip" class="muted"></div>
       <ul id="paired-list" style="list-style:none;padding:0;margin:8px 0"></ul>
       <button class="btn" id="pair-btn">Enter Pairing Mode</button>`;
     const statusEl = el.querySelector("#brain-status");
+    const ipEl = el.querySelector("#brain-ip");
     const listEl = el.querySelector("#paired-list");
     const btn = el.querySelector("#pair-btn");
 
@@ -23,6 +25,13 @@ export default {
       const r = await fetch("/api/brains").then((res) => res.json()).catch(() => null);
       if (!r) return;
       statusEl.textContent = r.connected ? `Connected: ${r.connected.name}` : "No brain connected";
+      // Shown regardless of pairing state -- also useful for manually
+      // reconnecting an already-paired brain when mDNS discovery doesn't
+      // reach it (some routers don't forward multicast between WiFi
+      // clients), not just for a fresh pairing.
+      ipEl.innerHTML = r.ip
+        ? (r.pairing ? `<b>Connect to: ${r.ip}:${r.port}</b>` : `IP: ${r.ip}:${r.port}`)
+        : "";
       listEl.innerHTML = r.paired.length
         ? r.paired.map((b) => `<li>${b.name}${r.connected && r.connected.id === b.id ? " (online)" : ""}</li>`).join("")
         : `<li class="muted">No paired brains yet</li>`;

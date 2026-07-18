@@ -35,7 +35,7 @@ def test_enter_pairing_mode_shows_pin_and_flips_advertiser_flag():
     pin = asyncio.run(ctl.enter_pairing_mode())
 
     assert display.shown_pins == [pin]
-    assert len(pin) == 6 and pin.isdigit()
+    assert len(pin) == 4 and pin.isdigit()
     assert advertiser.pairing is True
     assert ctl.current_pin == pin
 

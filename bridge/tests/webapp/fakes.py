@@ -125,6 +125,7 @@ class FakePeer:
 class FakeAdvertiser:
     def __init__(self):
         self.pairing = False
+        self.advertised_ip = "192.168.1.15"
 
 
 class FakePairingController:
@@ -136,7 +137,7 @@ class FakePairingController:
 
     async def enter_pairing_mode(self):
         self.entered += 1
-        self.current_pin = "123456"
+        self.current_pin = "1234"
         self._advertiser.pairing = True
         return self.current_pin
 
@@ -151,6 +152,7 @@ class FakeRobotServer:
         self.connected_brain = None
         self.advertiser = FakeAdvertiser()
         self.pairing = FakePairingController(self.advertiser)
+        self.port = 8765
         self._paired = paired or []
 
     def paired_brains(self):
