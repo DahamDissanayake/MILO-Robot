@@ -6,12 +6,12 @@ controller, show a startup hardware checklist, play the boot tilt gesture
 stand with a hardware-status-aware idle face, then hand control to the
 SessionManager (discovery -> pairing/auth -> streams -> dispatch).
 
-Sleep/wake is driven entirely by ControlBroker.on_change (see
-_make_control_change_handler): asleep whenever neither a brain nor a web
-client holds control, awake the instant either one does. Since nobody has
-taken control yet immediately after boot in the near-universal case, the
-robot goes to sleep right after the boot gesture rather than waiting for
-some brain that may never connect.
+The robot's default idle state is standing at standby with self-leveling
+engaged -- not asleep -- whether that's right after boot or after any
+later disconnect. This is driven entirely by ControlBroker.on_change (see
+_make_control_change_handler): standby whenever neither a brain nor a web
+client holds control, awake (a no-op if it was never actually asleep) the
+instant either one does.
 
 Every peripheral degrades gracefully — a missing camera, policy file, PCA9685,
 or OLED logs a warning and falls back to a null stand-in instead of killing
@@ -56,14 +56,16 @@ def _optional(factory, what: str) -> tuple[object | None, bool]:
 
 def _make_control_change_handler(sleep_controller):
     """ControlBroker.on_change callback: the single, unified trigger for
-    sleep/wake. Fires whenever owner actually changes ("none" <-> "brain"/
-    "web") -- covers a brain connecting/disconnecting and a web client
-    taking/releasing/losing control identically, since both update the same
-    broker. ensure_awake()/ensure_asleep() are each idempotent-guarded, so a
-    handler running concurrently with an in-flight one is harmless."""
+    the robot's idle/standby vs controlled state. Fires whenever owner
+    actually changes ("none" <-> "brain"/"web") -- covers a brain
+    connecting/disconnecting and a web client taking/releasing/losing
+    control identically, since both update the same broker. No owner ->
+    stand at standby (self-leveling engaged, not asleep/limp); ensure_standby()/
+    ensure_awake() are each idempotent-guarded, so a handler running
+    concurrently with an in-flight one is harmless."""
     def on_control_change(owner: str) -> None:
         if owner == "none":
-            asyncio.ensure_future(sleep_controller.ensure_asleep())
+            asyncio.ensure_future(sleep_controller.ensure_standby())
         else:
             asyncio.ensure_future(sleep_controller.ensure_awake())
     return on_control_change
@@ -153,18 +155,19 @@ async def main() -> None:
     web_task = asyncio.create_task(start_web(web_deps)) if cfg.web_enabled else None
 
     await display.show_status(hardware_status)
-    # Boot gesture is the same look_down tilt Q/E trigger by hand, immediately
-    # followed by the same stand recovery a released E does -- previously
-    # this was a bespoke "wake_up" dip, which read as an unwanted extra pose
-    # jump (stand -> dip -> stand) rather than a single deliberate gesture.
-    # look_down has end_stand=False (it's meant to hold, not auto-recover), so
-    # the awaited "stand" pose below is doing the real work of returning to
-    # stand, not just confirming what already happened. This must be
-    # *awaited* (not the fire-and-forget gait.standby(), which only sets a
-    # target and returns immediately) -- otherwise the immediate sleep check
-    # a few lines down retargets every servo toward "rest" before the stand
-    # recovery has moved at all, and the boot gesture reads as "sit down and
-    # go limp" instead of "bow, then stand."
+    # Boot gesture: drop any leftover pose state from a prior run, then the
+    # look_down tilt Q/E trigger by hand, immediately followed by the same
+    # stand recovery a released E does -- previously this was a bespoke
+    # "wake_up" dip, which read as an unwanted extra pose jump (stand -> dip
+    # -> stand) rather than a single deliberate gesture. look_down has
+    # end_stand=False (it's meant to hold, not auto-recover), so the awaited
+    # "stand" pose below is doing the real work of returning to stand, not
+    # just confirming what already happened. Both awaits (not the
+    # fire-and-forget gait.standby(), which only sets a target and returns
+    # immediately) so the recovery actually completes before boot continues
+    # -- the robot's resting state is standing at standby, not limp, so
+    # there's no further "go to sleep" step after this.
+    runner.abort()
     await runner.run("look_down")
     await runner.run("stand")
     # look_down doesn't call start_idle() itself (end_stand=False skips
@@ -173,13 +176,6 @@ async def main() -> None:
     # already running from an earlier boot path.
     display.stop_idle()
     display.start_idle(base_face="idle" if all(hardware_status.values()) else "confused")
-    # No brain and no web client has taken control yet at this instant in the
-    # near-universal case, so go to sleep immediately rather than waiting for
-    # some future event -- broker.on_change only fires on a *transition*, and
-    # owner has been "none" since construction, so nothing would otherwise
-    # trigger this first sleep.
-    if broker.owner == "none":
-        await sleep_controller.ensure_asleep()
     log.info("boot sequence complete; scanning for brains")
 
     manager = SessionManager(

@@ -1,4 +1,4 @@
-import { createPilotController } from "../pilot.js";
+import { createPilotController, getAutoStandby, setAutoStandby, onAutoStandbyChange } from "../pilot.js";
 
 const MODES = ["raw", "balanced", "angled"];
 const MODE_LABEL = { raw: "Raw", balanced: "Balanced", angled: "Angled" };
@@ -24,12 +24,26 @@ export default {
         <div style="display:flex;flex-direction:column;gap:10px;width:100%;max-width:220px">
           <label>Speed <input id="speed" type="range" min="10" max="100" value="60"></label>
           <div class="muted">or WASD / arrows, A/D to turn, hold Q/E to look up/down</div>
+          <button class="btn" id="auto-standby">Auto Standby: Off</button>
           <button class="btn danger" id="mstop">STOP</button>
         </div>
       </div>`;
     const speed = el.querySelector("#speed");
     const modeStatus = el.querySelector("#mode-status");
     const pilot = createPilotController(bus, () => speed.value);
+
+    // -- Auto Standby: flipping this only updates the shared flag (see
+    // pilot.js) and this button's own look -- it never sends a bus message,
+    // so toggling it never moves the robot by itself. It just arms every
+    // future movement release (walk/turn) to explicitly return to standby. --
+    const autoStandbyBtn = el.querySelector("#auto-standby");
+    function setAutoStandbyButton(on) {
+      autoStandbyBtn.textContent = `Auto Standby: ${on ? "On" : "Off"}`;
+      autoStandbyBtn.classList.toggle("active", on);
+    }
+    setAutoStandbyButton(getAutoStandby());
+    const offAutoStandby = onAutoStandbyChange(setAutoStandbyButton);
+    autoStandbyBtn.onclick = () => setAutoStandby(!getAutoStandby());
 
     function setModeButtons(name) {
       el.querySelectorAll("[data-mode]").forEach((b) => b.classList.toggle("active", b.dataset.mode === name));
@@ -115,6 +129,7 @@ export default {
       pilot.stop();
       offMode();
       offTelemetry();
+      offAutoStandby();
       window.removeEventListener("keydown", kd);
       window.removeEventListener("keyup", ku);
       window.removeEventListener("keydown", skd);

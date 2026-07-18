@@ -1,8 +1,12 @@
-"""Sleep/wake controller.
+"""Idle/standby controller.
 
-No paired brain reachable (or all busy) -> rest pose, sleepy face, streams off,
-keep scanning. A loud sound perks Milo up briefly (surprised face + immediate
-rescan). Brain connects -> stand, excited face, streams resume.
+Default state whenever no brain/web client is connected: stand at standby
+with self-leveling engaged, not asleep -- the robot stays visibly ready
+and waiting rather than crouching down and going limp. The deeper
+"asleep" state (rest pose, limp servos, sleepy face) and its loud-sound
+perk-up are still available via ensure_asleep()/handle_audio_level() for
+whatever wires them up (e.g. a future idle timeout); nothing currently
+triggers ensure_asleep() automatically.
 """
 
 from __future__ import annotations
@@ -32,12 +36,32 @@ class SleepController:
         self._threshold = loud_rms_threshold
         self._on_perk = on_perk
         self.asleep = False
+        self.standing_by = False
         self._perk_task: asyncio.Task | None = None
+
+    async def ensure_standby(self) -> None:
+        """Default idle state whenever no brain/web client is connected:
+        stand and stay engaged (self-leveling), not asleep/limp. Replaces
+        the old auto-sleep-on-disconnect behavior. Idempotent-guarded like
+        ensure_asleep()/ensure_awake() so a handler firing concurrently
+        with an in-flight one is harmless."""
+        if self.standing_by:
+            return
+        self.standing_by = True
+        self.asleep = False
+        self._cancel_perk()
+        if self._gait is not None:
+            self._gait.set_suspended(False)
+        self._runner.abort()
+        self._display.stop_idle()
+        await self._runner.run("stand")
+        self._display.start_idle()
 
     async def ensure_asleep(self) -> None:
         if self.asleep:
             return
         self.asleep = True
+        self.standing_by = False
         self._runner.abort()
         self._display.stop_idle()
         await self._runner.run("rest")
@@ -51,6 +75,7 @@ class SleepController:
             self._servos.relax()  # limp servos save battery while asleep
 
     async def ensure_awake(self) -> None:
+        self.standing_by = False  # a controller taking over ends any standby hold
         if not self.asleep:
             return
         self.asleep = False

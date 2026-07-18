@@ -88,6 +88,42 @@ def test_ensure_asleep_suspends_gait_before_relaxing_and_wake_resumes_it():
     asyncio.run(run())
 
 
+def test_ensure_standby_stands_and_stays_engaged_not_asleep():
+    runner, display, servos, gait = FakeRunner(), FakeDisplay(), FakeServos(), FakeGait()
+    ctl = SleepController(runner, display, servos=servos, gait=gait)
+
+    async def run():
+        await ctl.ensure_standby()
+        assert ctl.standing_by
+        assert not ctl.asleep
+        assert runner.ran == ["stand"]
+        assert servos.relaxed == 0  # never goes limp
+        assert gait.suspended_calls == [False]
+        assert display.idle
+        await ctl.ensure_standby()  # idempotent
+        assert runner.ran == ["stand"]
+
+    asyncio.run(run())
+
+
+def test_ensure_awake_clears_a_stale_standby_hold_even_if_never_asleep():
+    # A controller connecting after a standby hold (never actually asleep)
+    # must re-arm ensure_standby() for the *next* disconnect -- otherwise
+    # its idempotency guard would incorrectly skip the second standby.
+    runner, display = FakeRunner(), FakeDisplay()
+    ctl = SleepController(runner, display)
+
+    async def run():
+        await ctl.ensure_standby()
+        assert ctl.standing_by
+        await ctl.ensure_awake()  # not asleep -- but must still clear standing_by
+        assert not ctl.standing_by
+        await ctl.ensure_standby()  # a later disconnect must stand again
+        assert runner.ran == ["stand", "stand"]
+
+    asyncio.run(run())
+
+
 def test_loud_sound_perks_up_only_while_asleep():
     runner, display = FakeRunner(), FakeDisplay()
     perks: list[int] = []

@@ -24,22 +24,22 @@ def test_optional_returns_none_and_false_on_failure():
 
 class FakeSleepController:
     def __init__(self):
-        self.asleep_calls = 0
+        self.standby_calls = 0
         self.awake_calls = 0
 
-    async def ensure_asleep(self):
-        self.asleep_calls += 1
+    async def ensure_standby(self):
+        self.standby_calls += 1
 
     async def ensure_awake(self):
         self.awake_calls += 1
 
 
-async def test_control_change_handler_sleeps_when_owner_becomes_none():
+async def test_control_change_handler_stands_by_when_owner_becomes_none():
     sleep_controller = FakeSleepController()
     on_change = _make_control_change_handler(sleep_controller)
     on_change("none")
     await asyncio.sleep(0)  # let the fire-and-forget task run
-    assert sleep_controller.asleep_calls == 1
+    assert sleep_controller.standby_calls == 1
     assert sleep_controller.awake_calls == 0
 
 
@@ -53,4 +53,4 @@ async def test_control_change_handler_wakes_for_web_or_brain_owner():
     on_change("brain")
     await asyncio.sleep(0)
     assert sleep_controller.awake_calls == 2
-    assert sleep_controller.asleep_calls == 0
+    assert sleep_controller.standby_calls == 0

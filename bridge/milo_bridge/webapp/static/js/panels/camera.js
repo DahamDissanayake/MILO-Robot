@@ -1,4 +1,4 @@
-import { createPilotController } from "../pilot.js";
+import { createPilotController, getAutoStandby, setAutoStandby, onAutoStandbyChange } from "../pilot.js";
 import { mountEmotePopover } from "./poses.js";
 import { mountImuPlate } from "./sensors.js";
 import { mountCommunication, getAudioSession } from "./comm.js";
@@ -27,6 +27,9 @@ export default {
             <div class="cam-overlay-row cam-pilot-control">
               <button class="btn" data-dpad="lookup">Look Up</button>
               <button class="btn" data-dpad="lookdown">Look Down</button>
+            </div>
+            <div class="cam-overlay-row cam-pilot-control">
+              <button class="btn" id="ov-auto-standby">Auto Standby: Off</button>
             </div>
             <div class="cam-overlay-divider"></div>
             <div class="cam-overlay-row seg-row">
@@ -88,6 +91,18 @@ export default {
     pilot.bindTurnButton(overlayLeft.querySelector('[data-dpad="right"]'), "right");
     pilot.bindLookButton(overlayLeft.querySelector('[data-dpad="lookup"]'), "up");
     pilot.bindLookButton(overlayLeft.querySelector('[data-dpad="lookdown"]'), "down");
+
+    // Same shared Auto Standby flag as the Move panel (see pilot.js) --
+    // toggling it here only updates this button's own look, never sends a
+    // bus message by itself.
+    const ovAutoStandbyBtn = overlayLeft.querySelector("#ov-auto-standby");
+    function setOvAutoStandbyButton(on) {
+      ovAutoStandbyBtn.textContent = `Auto Standby: ${on ? "On" : "Off"}`;
+      ovAutoStandbyBtn.classList.toggle("active", on);
+    }
+    setOvAutoStandbyButton(getAutoStandby());
+    const offOvAutoStandby = onAutoStandbyChange(setOvAutoStandbyButton);
+    ovAutoStandbyBtn.onclick = () => setAutoStandby(!getAutoStandby());
 
     const ovControl = overlayRight.querySelector("#ov-control");
     ovControl.onclick = () => bus.send({ t: "control", take: !bus.controlled });
@@ -203,6 +218,7 @@ export default {
       offTelemetry();
       offControl();
       offMode();
+      offOvAutoStandby();
       offComm();
       offImu();
       pilot.stop();
