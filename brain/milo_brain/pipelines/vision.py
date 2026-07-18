@@ -11,6 +11,8 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from ._lazy import LazyLoad
+
 
 @dataclass(frozen=True)
 class FaceObservation:
@@ -18,8 +20,9 @@ class FaceObservation:
     embedding: np.ndarray  # (512,) float32
 
 
-class InsightFaceAnalyzer:
+class InsightFaceAnalyzer(LazyLoad):
     def __init__(self, use_gpu: bool = True):
+        super().__init__()
         self._use_gpu = use_gpu
         self._app = None
 
@@ -35,8 +38,7 @@ class InsightFaceAnalyzer:
         self._app.prepare(ctx_id=0 if self._use_gpu else -1, det_size=(640, 640))
 
     def __call__(self, bgr_image: np.ndarray) -> list[FaceObservation]:
-        if self._app is None:
-            self._load()
+        self.ensure_loaded()
         return [
             FaceObservation(
                 bbox=tuple(float(v) for v in face.bbox),
@@ -55,6 +57,14 @@ class FaceVision:
         self._clock = clock
         self._last_run = -1e9
         self.last_faces: list[FaceObservation] = []
+
+    @property
+    def status(self) -> str:
+        return getattr(self._analyzer, "status", "ready")
+
+    @property
+    def error(self) -> str | None:
+        return getattr(self._analyzer, "error", None)
 
     def process_jpeg(self, jpeg: bytes) -> list[FaceObservation] | None:
         """Returns fresh observations, or None when throttled/undecodable."""

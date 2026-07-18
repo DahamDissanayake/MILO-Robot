@@ -300,3 +300,35 @@ def test_piper_tts_status_starts_not_loaded():
     tts = PiperTts()
     assert tts.status == "not_loaded"
     assert tts.error is None
+
+
+# --- vision status delegation -----------------------------------------------
+
+
+def test_face_vision_status_defaults_to_ready_for_a_plain_fake_analyzer():
+    vision = FaceVision(analyzer=lambda img: [], clock=lambda: 0.0)
+    assert vision.status == "ready"
+    assert vision.error is None
+
+
+def test_face_vision_status_delegates_to_a_lazyload_analyzer():
+    class FakeAnalyzerLoader(LazyLoad):
+        def _load(self):
+            pass
+
+        def __call__(self, img):
+            return []
+
+    analyzer = FakeAnalyzerLoader()
+    vision = FaceVision(analyzer=analyzer, clock=lambda: 0.0)
+    assert vision.status == "not_loaded"
+    analyzer.ensure_loaded()
+    assert vision.status == "ready"
+
+
+def test_insightface_analyzer_status_starts_not_loaded():
+    from milo_brain.pipelines.vision import InsightFaceAnalyzer
+
+    analyzer = InsightFaceAnalyzer()
+    assert analyzer.status == "not_loaded"
+    assert analyzer.error is None
