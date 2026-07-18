@@ -17,15 +17,19 @@ async def _headless_request_pin(robot_name: str) -> str | None:
     return await asyncio.to_thread(input, "PIN: ")
 
 
-def _build_handler(cfg: BrainConfig, rate_tracker: TokenRateTracker) -> RobotHandler:
+def _build_handler(cfg: BrainConfig, rate_tracker: TokenRateTracker):
+    """Returns (factory_or_none, handler). factory is None in the
+    ImportError fallback (full pipeline deps not installed) -- the
+    dashboard's pipeline-status panel is omitted in that case."""
     try:  # full cognition pipeline; falls back to the debug handler without it
         from .session import CognitionSessionFactory
 
-        return CognitionSessionFactory(cfg, rate_tracker=rate_tracker).handle
+        factory = CognitionSessionFactory(cfg, rate_tracker=rate_tracker)
+        return factory, factory.handle
     except ImportError:
         from .net.connector import default_handler
 
-        return default_handler
+        return None, default_handler
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -51,7 +55,7 @@ def main(argv: list[str] | None = None) -> None:
 
     cfg = BrainConfig.load()
     rate_tracker = TokenRateTracker()
-    session_handler = _build_handler(cfg, rate_tracker)
+    factory, session_handler = _build_handler(cfg, rate_tracker)
 
     connector = RobotConnectorManager(cfg, request_pin=_headless_request_pin, session_handler=session_handler)
 
@@ -61,7 +65,7 @@ def main(argv: list[str] | None = None) -> None:
 
     from .tui.app import MiloBrainApp
 
-    MiloBrainApp(connector, cfg, rate_tracker, log_buffer).run()
+    MiloBrainApp(connector, cfg, rate_tracker, log_buffer, factory).run()
 
 
 if __name__ == "__main__":
