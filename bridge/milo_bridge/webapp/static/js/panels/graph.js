@@ -120,12 +120,23 @@ export default {
       downX = ev.clientX; downY = ev.clientY;
       lastPX = ev.clientX; lastPY = ev.clientY;
       moved = false;
-      if (hit) { dragNode = hit; cv.setPointerCapture(ev.pointerId); }
-      else { panning = true; }
+      // Capture in both cases so a fast drag that leaves the canvas keeps
+      // tracking (a pan that exited the bounds would otherwise freeze).
+      cv.setPointerCapture(ev.pointerId);
+      if (hit) dragNode = hit;
+      else panning = true;
     };
+
+    // A click that jitters a pixel or two must still count as a click, not a
+    // drag -- only treat it as movement once it passes a small threshold.
+    const DRAG_THRESHOLD = 4;
+    function pastThreshold(ev) {
+      return Math.abs(ev.clientX - downX) > DRAG_THRESHOLD || Math.abs(ev.clientY - downY) > DRAG_THRESHOLD;
+    }
 
     cv.onpointermove = (ev) => {
       if (dragNode) {
+        if (!moved && !pastThreshold(ev)) return;
         const r = cv.getBoundingClientRect();
         dragNode.x = ev.clientX - r.left - offsetX;
         dragNode.y = ev.clientY - r.top - offsetY;
@@ -133,6 +144,7 @@ export default {
         moved = true;
         if (!raf) tick();
       } else if (panning) {
+        if (!moved && !pastThreshold(ev)) return;
         offsetX += ev.clientX - lastPX; offsetY += ev.clientY - lastPY;
         lastPX = ev.clientX; lastPY = ev.clientY;
         moved = true;
