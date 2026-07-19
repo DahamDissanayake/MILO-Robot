@@ -14,7 +14,7 @@ from __future__ import annotations
 import json
 import logging
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 from .token_rate import TokenRateTracker
 
@@ -144,21 +144,17 @@ def sanitize(data: dict) -> AgentResult:
 
 
 def extract_name(transcript: str) -> str | None:
-    """Pull a name out of an answer to 'what's your name?'."""
+    """Pull a name only from an explicit self-introduction. Ordinary short
+    phrases are NOT treated as names (that created junk person nodes)."""
     text = transcript.strip().rstrip(".!?")
     if not text:
         return None
-    patterns = [
-        r"(?:my name is|i am|i'm|it's|its|call me|this is)\s+([A-Za-z][\w'-]*(?:\s+[A-Z][\w'-]*)?)",
-    ]
-    for pattern in patterns:
-        match = re.search(pattern, text, flags=re.I)
-        if match:
-            return match.group(1).strip().title()
-    words = text.split()
-    if len(words) <= 2 and all(w[:1].isalpha() for w in words):
-        return text.title()
-    return None
+    match = re.search(
+        r"(?:my name is|i am|i'm|call me|this is)\s+([A-Za-z][\w'-]*(?:\s+[A-Z][\w'-]*)?)",
+        text,
+        flags=re.I,
+    )
+    return match.group(1).strip().title() if match else None
 
 
 class CognitionAgent:
@@ -173,8 +169,7 @@ class CognitionAgent:
         self._mcp = mcp
         self._tools: list[dict] | None = None
         self._tools_loaded = False
-        self._awaiting_name = False
-        self._pending_embedding: str | None = None
+        self._session_person: dict | None = None
         self._history: list[dict] = []
 
     async def _get_tools(self) -> list[dict] | None:
@@ -194,41 +189,15 @@ class CognitionAgent:
         if not transcript.strip():
             return AgentResult(reply="")
 
-        if self._awaiting_name:
-            name = extract_name(transcript)
-            if name:
-                pending = self._pending_embedding
-                self._awaiting_name = False
-                self._pending_embedding = None
-                request = {"type": "person", "props": {"name": name}}
-                if pending:
-                    request["embedding"] = pending
-                created = await self._graph.call("upsert_node", **request)
-                node_id = created.get("node", {}).get("id")
-                await self._graph.call(
-                    "upsert_node", type="event",
-                    props={"text": f"met {name} for the first time"},
-                )
-                log.info("new person: %s (node %s)", name, node_id)
-                if self._mcp is not None:
-                    await self._mcp.call_tool("set_face", name="excited")
-                    await self._mcp.call_tool("run_pose", name="wave")
-                return AgentResult(
-                    reply=f"Nice to meet you, {name}! I'll remember you.",
-                    new_person_name=name,
-                )
-            if self._mcp is not None:
-                await self._mcp.call_tool("set_face", name="confused")
-            return AgentResult(reply="Sorry, I didn't catch your name — what should I call you?")
+        # Face recognition, when it succeeds, identifies the speaker; otherwise
+        # fall back to whoever we've been talking with this session (a name
+        # learned earlier), else an unknown guest. Conversation is NEVER gated
+        # on identity -- the LLM always replies.
+        if person is not None:
+            self._session_person = person
+        speaker = person if person is not None else self._session_person
 
-        if person is None:
-            self._awaiting_name = True
-            self._pending_embedding = face_embedding_b64
-            if self._mcp is not None:
-                await self._mcp.call_tool("set_face", name="surprised")
-            return AgentResult(reply="Hi! I don't think we've met — what's your name?")
-
-        context = await self._build_context(person)
+        context = await self._build_context(speaker)
         self._history.append({"role": "user", "content": transcript})
         self._history = self._history[-12:]
         messages = [
@@ -256,10 +225,42 @@ class CognitionAgent:
                 messages.append({"role": "tool", "name": name, "content": json.dumps(tool_result)})
 
         self._history.append({"role": "assistant", "content": result.reply})
-        await self._write_facts(person, result.facts)
-        return result
+        new_name = await self._maybe_learn_name(transcript, speaker, face_embedding_b64)
+        await self._write_facts(self._session_person, result.facts)
+        return replace(result, new_person_name=new_name) if new_name else result
 
-    async def _build_context(self, person: dict) -> str:
+    async def _maybe_learn_name(
+        self, transcript: str, speaker: dict | None, face_embedding_b64: str | None
+    ) -> str | None:
+        """Capture a name only when the speaker explicitly introduces themselves
+        AND we don't already have them identified -- so ordinary chatter never
+        creates junk person nodes."""
+        if speaker is not None:
+            return None
+        name = extract_name(transcript)
+        if not name:
+            return None
+        request: dict = {"type": "person", "props": {"name": name}}
+        if face_embedding_b64:
+            request["embedding"] = face_embedding_b64
+        created = await self._graph.call("upsert_node", **request)
+        node = created.get("node")
+        if not node:
+            return None
+        self._session_person = node
+        await self._graph.call(
+            "upsert_node", type="event", props={"text": f"met {name}"}
+        )
+        log.info("learned speaker name: %s (node %s)", name, node.get("id"))
+        return name
+
+    async def _build_context(self, person: dict | None) -> str:
+        if person is None:
+            return (
+                "You are talking to someone you have not identified yet. Chat "
+                "naturally; you may ask their name once if it feels right, but "
+                "don't insist."
+            )
         lines = [f"Speaker: {person.get('props', {}).get('name', 'unknown')}"]
         node_id = person.get("id")
         if node_id is not None:
@@ -277,8 +278,8 @@ class CognitionAgent:
                 lines.append(f"- recent event: {text}")
         return "\n".join(lines)
 
-    async def _write_facts(self, person: dict, facts: list[str]) -> None:
-        node_id = person.get("id")
+    async def _write_facts(self, person: dict | None, facts: list[str]) -> None:
+        node_id = person.get("id") if person else None
         for fact in facts:
             created = await self._graph.call("upsert_node", type="fact", props={"text": fact})
             fact_id = created.get("node", {}).get("id")

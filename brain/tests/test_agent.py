@@ -214,7 +214,7 @@ def test_extract_name_variants():
     assert extract_name("My name is Daham") == "Daham"
     assert extract_name("I'm Sarah!") == "Sarah"
     assert extract_name("call me Bob") == "Bob"
-    assert extract_name("Daham") == "Daham"
+    assert extract_name("Daham") is None  # a bare word is no longer treated as a name
     assert extract_name("well that is a very long sentence about nothing") is None
 
 
@@ -296,29 +296,57 @@ def test_tool_schemas_are_fetched_once_and_cached_across_utterances():
     assert mcp.list_tools_calls == 1  # fetched once at first use, not per utterance
 
 
-def test_unknown_person_flow_sets_face_directly_via_mcp():
-    mcp = FakeMcp()
-    agent = CognitionAgent(FakeLlm(), FakeGraph(), mcp)
+def test_unknown_speaker_still_gets_an_llm_reply():
+    """The whole bug: an unidentified speaker must still reach the LLM,
+    not a canned name-gate."""
+    llm = FakeLlm([{"role": "assistant", "content": '{"reply": "Hey there!", "facts": []}'}])
+    graph = FakeGraph()
+    agent = CognitionAgent(llm, graph, FakeMcp())
 
-    first = asyncio.run(agent.on_utterance("hello there", None, "ZmFrZQ=="))
-    assert "name" in first.reply.lower()
-    assert ("set_face", {"name": "surprised"}) in mcp.calls
+    result = asyncio.run(agent.on_utterance("hello there", None, "ZmFrZQ=="))
+    assert result.reply == "Hey there!"
+    assert len(llm.calls) == 1          # LLM WAS called despite person=None
+    # ordinary greeting is not an introduction -> no person node
+    person_upserts = [kw for op, kw in graph.calls
+                      if op == "upsert_node" and kw.get("type") == "person"]
+    assert person_upserts == []
 
-    second = asyncio.run(agent.on_utterance("My name is Sarah", None, "ZmFrZQ=="))
-    assert second.new_person_name == "Sarah"
-    assert ("set_face", {"name": "excited"}) in mcp.calls
-    assert ("run_pose", {"name": "wave"}) in mcp.calls
+
+def test_unknown_speaker_who_introduces_themselves_is_learned_and_remembered():
+    llm = FakeLlm([
+        {"role": "assistant", "content": '{"reply": "Nice to meet you!", "facts": []}'},
+        {"role": "assistant", "content": '{"reply": "You said you like robots.", "facts": []}'},
+    ])
+    graph = FakeGraph()
+    agent = CognitionAgent(llm, graph, FakeMcp())
+
+    named = asyncio.run(agent.on_utterance("My name is Sarah", None, "ZmFrZQ=="))
+    assert named.new_person_name == "Sarah"
+    person_upserts = [kw for op, kw in graph.calls
+                      if op == "upsert_node" and kw.get("type") == "person"]
+    assert person_upserts and person_upserts[0]["props"]["name"] == "Sarah"
+    assert person_upserts[0].get("embedding") == "ZmFrZQ=="  # face embedding attached
+
+    # Next utterance: still no face match (person=None), but Sarah is the
+    # session speaker now, so the LLM gets her as context -- not re-asked.
+    graph.calls.clear()
+    follow = asyncio.run(agent.on_utterance("do you remember me", None, None))
+    assert follow.new_person_name is None
+    new_people = [kw for op, kw in graph.calls
+                  if op == "upsert_node" and kw.get("type") == "person"]
+    assert new_people == []            # not created again
 
 
-def test_naming_flow_reprompts_and_sets_confused_face():
-    mcp = FakeMcp()
-    agent = CognitionAgent(FakeLlm(), FakeGraph(), mcp)
-    asyncio.run(agent.on_utterance("hi", None, None))
-    retry = asyncio.run(agent.on_utterance("ehh whatever who cares honestly like", None, None))
-    assert "name" in retry.reply.lower()
-    assert ("set_face", {"name": "confused"}) in mcp.calls
-    done = asyncio.run(agent.on_utterance("I'm Bob", None, None))
-    assert done.new_person_name == "Bob"
+def test_unknown_speaker_chatter_creates_no_person_nodes():
+    llm = FakeLlm([{"role": "assistant", "content": '{"reply": "Haha okay.", "facts": []}'}])
+    graph = FakeGraph()
+    agent = CognitionAgent(llm, graph, FakeMcp())
+    result = asyncio.run(agent.on_utterance("ehh whatever who cares honestly", None, None))
+    assert result.reply == "Haha okay."
+    assert result.new_person_name is None
+    person_upserts = [kw for op, kw in graph.calls
+                      if op == "upsert_node" and kw.get("type") == "person"]
+    assert person_upserts == []
 
 
 def test_empty_transcript_is_ignored():
