@@ -48,6 +48,48 @@ async def test_pump_audio_sends_chunks_from_fanout():
     assert [p for _, p in sock.sent] == [bytes([0]), bytes([1]), bytes([2])]
 
 
+async def test_pump_video_does_not_send_while_suspended():
+    async def gen():
+        for i in range(3):
+            yield f"f{i}".encode()
+            await asyncio.sleep(0)
+
+    fan = Fanout(gen, "video")
+    sock = FakeSock()
+    active = {"on": False}
+    task = asyncio.create_task(
+        streams.pump_video(sock, fan, should_stream=lambda: active["on"])
+    )
+    await asyncio.sleep(0.05)
+    task.cancel()
+    try:
+        await task
+    except asyncio.CancelledError:
+        pass
+    assert sock.sent == []
+
+
+async def test_pump_audio_does_not_send_while_suspended():
+    async def gen():
+        for i in range(3):
+            yield bytes([i])
+            await asyncio.sleep(0)
+
+    fan = Fanout(gen, "audio")
+    sock = FakeSock()
+    active = {"on": False}
+    task = asyncio.create_task(
+        streams.pump_audio(sock, fan, should_stream=lambda: active["on"])
+    )
+    await asyncio.sleep(0.05)
+    task.cancel()
+    try:
+        await task
+    except asyncio.CancelledError:
+        pass
+    assert sock.sent == []
+
+
 async def test_pump_video_unsubscribes_when_cancelled():
     started = asyncio.Event()
     cancelled = asyncio.Event()

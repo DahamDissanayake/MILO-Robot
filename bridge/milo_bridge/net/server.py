@@ -182,7 +182,7 @@ class RobotServer:
         try:
             session = RobotSession(
                 sock, display=self._display, media_hub=self._media_hub,
-                audio=self._audio, graph_api=self._graph_api,
+                audio=self._audio, graph_api=self._graph_api, broker=self._broker,
             )
             await session.run()
         except Exception as exc:

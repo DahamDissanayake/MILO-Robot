@@ -54,6 +54,26 @@ def test_tts_plays_audio():
     assert deps["audio"].played == [b"pcmdata"]
 
 
+class FakeBroker:
+    def __init__(self, allow: bool):
+        self._allow = allow
+
+    def allow_brain_motion(self):
+        return self._allow
+
+
+def test_tts_suspended_while_web_pilot_holds_control():
+    session, deps = make_session(broker=FakeBroker(False))
+    asyncio.run(session.dispatch(msg(protocol.T_TTS, payload=b"pcmdata")))
+    assert deps["audio"].played == []
+
+
+def test_tts_plays_when_broker_allows_brain_motion():
+    session, deps = make_session(broker=FakeBroker(True))
+    asyncio.run(session.dispatch(msg(protocol.T_TTS, payload=b"pcmdata")))
+    assert deps["audio"].played == [b"pcmdata"]
+
+
 def test_graph_without_api_reports_error():
     session, _ = make_session()
     asyncio.run(session.dispatch(msg(protocol.T_GRAPH, id=7, op="query")))

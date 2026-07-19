@@ -30,6 +30,7 @@ class RobotSession:
         media_hub=None,
         audio=None,
         graph_api=None,
+        broker=None,
     ):
         self._sock = sock
         self._display = display
@@ -38,13 +39,23 @@ class RobotSession:
         # outbound mic/camera capture streaming is owned by the media hub.
         self._audio = audio
         self._graph_api = graph_api
+        self._broker = broker
+
+    def _brain_active(self) -> bool:
+        """The brain streams + speaks only when it holds motion rights -- i.e.
+        no web pilot has taken control (see webapp/control.py's ControlBroker).
+        A web pilot taking control suspends the brain: its media stops flowing
+        and its speech is dropped until control is released."""
+        return self._broker is None or self._broker.allow_brain_motion()
 
     async def run(self) -> None:
         pumps: list[asyncio.Task] = []
         if self._hub is not None and self._hub.video is not None:
-            pumps.append(asyncio.create_task(streams.pump_video(self._sock, self._hub.video)))
+            pumps.append(asyncio.create_task(
+                streams.pump_video(self._sock, self._hub.video, should_stream=self._brain_active)))
         if self._hub is not None and self._hub.audio is not None:
-            pumps.append(asyncio.create_task(streams.pump_audio(self._sock, self._hub.audio)))
+            pumps.append(asyncio.create_task(
+                streams.pump_audio(self._sock, self._hub.audio, should_stream=self._brain_active)))
         try:
             while True:
                 msg = await self._sock.recv()
@@ -58,7 +69,7 @@ class RobotSession:
 
     async def dispatch(self, msg: protocol.Message) -> None:
         if msg.t == protocol.T_TTS:
-            if self._audio is not None and msg.payload:
+            if self._audio is not None and msg.payload and self._brain_active():
                 self._audio.play_pcm(msg.payload)
         elif msg.t == protocol.T_GRAPH:
             await self._handle_graph(msg)
