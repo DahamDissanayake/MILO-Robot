@@ -109,3 +109,49 @@ def test_sequence_numbers_increment():
         assert second["seq"] == first["seq"] + 1
 
     asyncio.run(run())
+
+
+class _YieldingRecorderWs:
+    """Records every frame handed to send(), yielding control once per call
+    (like a real socket write would) -- reproduces the interleaving a real
+    websocket exhibits when two coroutines write to it concurrently, so an
+    unlocked two-step send() (header, then payload) can be caught racing."""
+
+    def __init__(self):
+        self.frames: list = []
+
+    async def send(self, frame):
+        await asyncio.sleep(0)
+        self.frames.append(frame)
+
+
+async def _concurrent_sends_stay_atomic():
+    ws = _YieldingRecorderWs()
+    sock = MiloSocket(ws)
+    # bridge/milo_bridge/net/session.py runs pump_video/pump_audio as
+    # separate tasks sending on the same MiloSocket concurrently -- this
+    # reproduces that shape directly (real bug: a robot audio session
+    # crashed with "header 'audio' promised a binary payload, got a text
+    # frame" because a video/graph_result header interleaved between an
+    # audio header and its payload).
+    await asyncio.gather(
+        sock.send(protocol.T_AUDIO, payload=b"AUDIO-PAYLOAD", ts=1.0),
+        sock.send(protocol.T_VIDEO, payload=b"VIDEO-PAYLOAD", ts=2.0),
+    )
+    assert len(ws.frames) == 4
+    # Each header must be immediately followed by ITS OWN payload -- never
+    # another message's header sandwiched in between.
+    for i in (0, 2):
+        header = protocol.decode_header(ws.frames[i])
+        payload = ws.frames[i + 1]
+        assert isinstance(payload, (bytes, bytearray)), (
+            f"frame {i + 1} should be {header['t']!r}'s binary payload, "
+            f"got a text frame instead -- send() let another message's "
+            f"header interleave in between"
+        )
+        expected_payload = b"AUDIO-PAYLOAD" if header["t"] == protocol.T_AUDIO else b"VIDEO-PAYLOAD"
+        assert payload == expected_payload
+
+
+def test_concurrent_sends_on_the_same_socket_never_interleave():
+    asyncio.run(_concurrent_sends_stay_atomic())

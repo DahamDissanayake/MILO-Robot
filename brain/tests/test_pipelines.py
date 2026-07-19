@@ -294,6 +294,66 @@ def test_whisper_asr_status_starts_not_loaded():
     assert asr.error is None
 
 
+def test_whisper_asr_falls_back_to_cpu_when_the_configured_device_cant_run(monkeypatch):
+    """Reproduces a real production failure: faster_whisper's WhisperModel
+    constructs fine on a GPU device (ctranslate2 defers CUDA init), but the
+    first real transcribe() call throws because cublas64_12.dll isn't
+    loadable on this machine. transcribe() must catch that, fall back to
+    CPU, and still return the transcript for the utterance that triggered
+    it -- not just log and drop it."""
+    import faster_whisper
+
+    from milo_brain.pipelines.asr import WhisperAsr
+
+    class _Segment:
+        def __init__(self, text):
+            self.text = text
+            self.avg_logprob = 0.0
+
+    class _FakeModel:
+        def __init__(self, model_size, device, compute_type):
+            self.device = device
+
+        def transcribe(self, audio, language, beam_size):
+            if self.device != "cpu":
+                raise RuntimeError("Library cublas64_12.dll is not found or cannot be loaded")
+            return [_Segment(" hello milo")], None
+
+    monkeypatch.setattr(faster_whisper, "WhisperModel", _FakeModel)
+
+    asr = WhisperAsr(model_size="small", device="cuda")
+    mono = np.zeros(1600, dtype=np.int16)
+
+    result = asr.transcribe(mono)
+    assert result.text == "hello milo"
+    assert asr._device_in_use == "cpu"
+
+    # Already fell back -- the next call must go straight to cpu, not retry cuda.
+    result2 = asr.transcribe(mono)
+    assert result2.text == "hello milo"
+
+
+def test_whisper_asr_reraises_when_already_on_cpu():
+    """No fallback left once already on cpu -- a real transcribe failure
+    there must propagate, not silently loop."""
+    from milo_brain.pipelines.asr import WhisperAsr
+
+    class _FakeModel:
+        def __init__(self, model_size, device, compute_type):
+            pass
+
+        def transcribe(self, audio, language, beam_size):
+            raise RuntimeError("out of memory")
+
+    asr = WhisperAsr(model_size="small", device="cpu")
+    asr._model = _FakeModel("small", "cpu", "auto")
+    asr._device_in_use = "cpu"
+    asr.status = "ready"
+
+    with pytest.raises(RuntimeError, match="out of memory"):
+        asr.transcribe(np.zeros(1600, dtype=np.int16))
+
+
 def test_piper_tts_status_starts_not_loaded():
     from milo_brain.pipelines.tts import PiperTts
 

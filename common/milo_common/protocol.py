@@ -13,6 +13,7 @@ Message types (``"t"`` field):
 
 from __future__ import annotations
 
+import asyncio
 import json
 from dataclasses import dataclass
 from typing import Any
@@ -97,17 +98,26 @@ class MiloSocket:
     def __init__(self, ws: Any):
         self._ws = ws
         self._seq = 0
+        # A logical message is header-then-payload, two separate awaited
+        # writes -- without this lock, two coroutines sending concurrently
+        # on the same socket (e.g. bridge/net/session.py's pump_video and
+        # pump_audio tasks) can interleave: one's header lands, then the
+        # other's header lands before the first's payload does, and the
+        # receiver sees "header promised a binary payload, got a text
+        # frame". This lock makes each send() atomic on the wire.
+        self._send_lock = asyncio.Lock()
 
     async def send(self, t: str, payload: bytes | None = None, **fields: Any) -> None:
-        self._seq += 1
         wants_payload = t in BINARY_TYPES
         if wants_payload != (payload is not None):
             raise ProtocolError(
                 f"message type {t!r} {'requires' if wants_payload else 'does not take'} a binary payload"
             )
-        await self._ws.send(encode_header(t, seq=self._seq, **fields))
-        if payload is not None:
-            await self._ws.send(payload)
+        async with self._send_lock:
+            self._seq += 1
+            await self._ws.send(encode_header(t, seq=self._seq, **fields))
+            if payload is not None:
+                await self._ws.send(payload)
 
     async def recv(self) -> Message:
         frame = await self._ws.recv()
