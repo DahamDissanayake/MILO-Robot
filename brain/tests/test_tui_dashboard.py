@@ -5,16 +5,11 @@ from __future__ import annotations
 import asyncio
 
 from textual.app import App, ComposeResult
+from textual.widgets import ProgressBar, Static as TextualStatic
 
 from milo_brain.config import BrainConfig
 from milo_brain.llm.token_rate import TokenRateTracker
-from milo_brain.tui.dashboard import (
-    ConnectionPanel,
-    DashboardScreen,
-    IdentityPanel,
-    ModelPanel,
-    PipelinesPanel,
-)
+from milo_brain.tui.dashboard import ConnectionPanel, DashboardScreen, IdentityPanel, ModelPanel
 
 
 class _FakePeer:
@@ -177,7 +172,7 @@ def test_refresh_from_shows_retrying_stage_with_countdown_attempt_and_error(monk
     asyncio.run(scenario())
 
 
-def test_refresh_from_renders_pipelines_panel_when_factory_provided():
+def test_refresh_from_shows_progress_while_pipelines_are_loading():
     async def scenario():
         cfg = BrainConfig(brain_id="b", name="n", tier="small")
         connector = _FakeConnector()
@@ -186,7 +181,57 @@ def test_refresh_from_renders_pipelines_panel_when_factory_provided():
             def pipeline_status(self):
                 return {
                     "asr": ("ready", None),
-                    "tts": ("not_loaded", None),
+                    "tts": ("loading", None),
+                    "vision": ("not_loaded", None),
+                }
+
+        app = _HostApp()
+        async with app.run_test():
+            screen = app.query_one(DashboardScreen)
+            screen.refresh_from(connector, cfg, TokenRateTracker(), _FakeFactory())
+            bar = screen.query_one("#pipelines-bar", ProgressBar)
+            detail = str(screen.query_one("#pipelines-detail", TextualStatic).content)
+            assert bar.total == 3
+            assert bar.progress == 1  # only asr is resolved (ready)
+            assert "1/3 ready" in detail
+            assert "loading: TTS" in detail
+            assert "pending: VISION" in detail
+
+    asyncio.run(scenario())
+
+
+def test_refresh_from_shows_all_ready_with_no_errors():
+    async def scenario():
+        cfg = BrainConfig(brain_id="b", name="n", tier="small")
+        connector = _FakeConnector()
+
+        class _FakeFactory:
+            def pipeline_status(self):
+                return {"asr": ("ready", None), "tts": ("ready", None), "vision": ("ready", None)}
+
+        app = _HostApp()
+        async with app.run_test():
+            screen = app.query_one(DashboardScreen)
+            screen.refresh_from(connector, cfg, TokenRateTracker(), _FakeFactory())
+            bar = screen.query_one("#pipelines-bar", ProgressBar)
+            detail = str(screen.query_one("#pipelines-detail", TextualStatic).content)
+            assert bar.total == 3
+            assert bar.progress == 3
+            assert detail == "All pipelines ready"
+
+    asyncio.run(scenario())
+
+
+def test_refresh_from_shows_ready_with_an_error_called_out():
+    async def scenario():
+        cfg = BrainConfig(brain_id="b", name="n", tier="small")
+        connector = _FakeConnector()
+
+        class _FakeFactory:
+            def pipeline_status(self):
+                return {
+                    "asr": ("ready", None),
+                    "tts": ("ready", None),
                     "vision": ("error", "no GPU found"),
                 }
 
@@ -194,11 +239,40 @@ def test_refresh_from_renders_pipelines_panel_when_factory_provided():
         async with app.run_test():
             screen = app.query_one(DashboardScreen)
             screen.refresh_from(connector, cfg, TokenRateTracker(), _FakeFactory())
-            pipelines = str(screen.query_one(PipelinesPanel).content)
-            assert "ASR: ready" in pipelines
-            assert "TTS: not_loaded" in pipelines
-            assert "VISION: error" in pipelines
-            assert "no GPU found" in pipelines
+            bar = screen.query_one("#pipelines-bar", ProgressBar)
+            detail = str(screen.query_one("#pipelines-detail", TextualStatic).content)
+            assert bar.total == 3
+            assert bar.progress == 3  # errors count as resolved -- bar still completes
+            assert "1 error" in detail
+            assert "VISION: error — no GPU found" in detail
+
+    asyncio.run(scenario())
+
+
+def test_refresh_from_shows_ready_with_multiple_errors_pluralized():
+    async def scenario():
+        cfg = BrainConfig(brain_id="b", name="n", tier="small")
+        connector = _FakeConnector()
+
+        class _FakeFactory:
+            def pipeline_status(self):
+                return {
+                    "asr": ("error", "boom"),
+                    "tts": ("ready", None),
+                    "vision": ("error", "no GPU found"),
+                }
+
+        app = _HostApp()
+        async with app.run_test():
+            screen = app.query_one(DashboardScreen)
+            screen.refresh_from(connector, cfg, TokenRateTracker(), _FakeFactory())
+            bar = screen.query_one("#pipelines-bar", ProgressBar)
+            detail = str(screen.query_one("#pipelines-detail", TextualStatic).content)
+            assert bar.total == 3
+            assert bar.progress == 3
+            assert "2 errors" in detail
+            assert "ASR: error — boom" in detail
+            assert "VISION: error — no GPU found" in detail
 
     asyncio.run(scenario())
 
@@ -211,7 +285,7 @@ def test_refresh_from_omits_pipelines_when_factory_is_none():
         async with app.run_test():
             screen = app.query_one(DashboardScreen)
             screen.refresh_from(connector, cfg, TokenRateTracker())
-            pipelines = str(screen.query_one(PipelinesPanel).content)
-            assert "unavailable" in pipelines
+            detail = str(screen.query_one("#pipelines-detail", TextualStatic).content)
+            assert "unavailable" in detail
 
     asyncio.run(scenario())

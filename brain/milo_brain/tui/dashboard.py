@@ -7,7 +7,7 @@ import time
 from textual.app import ComposeResult
 from textual.containers import Horizontal, Vertical
 from textual.screen import Screen
-from textual.widgets import Footer, Header, Static
+from textual.widgets import Footer, Header, ProgressBar, Static
 
 
 class IdentityPanel(Static):
@@ -73,22 +73,42 @@ class ModelPanel(Static):
 _PIPELINE_ORDER = ("asr", "tts", "vision", "vad", "mcp")
 
 
-class PipelinesPanel(Static):
+class PipelinesPanel(Vertical):
+    def compose(self) -> ComposeResult:
+        yield Static("[b]Pipelines[/b]", id="pipelines-label")
+        yield ProgressBar(total=1, show_eta=False, id="pipelines-bar")
+        yield Static("", id="pipelines-detail")
+
     def render_pipelines(self, status: dict[str, tuple[str, str | None]]) -> None:
-        lines = ["[b]Pipelines[/b]"]
+        bar = self.query_one("#pipelines-bar", ProgressBar)
+        detail = self.query_one("#pipelines-detail", Static)
         if not status:
-            lines.append("(unavailable)")
+            bar.update(total=1, progress=0)
+            detail.update("(unavailable)")
+            return
+
+        ordered = [(name, status[name]) for name in _PIPELINE_ORDER if name in status]
+        total = len(ordered)
+        loading = [name.upper() for name, (state, _err) in ordered if state == "loading"]
+        pending = [name.upper() for name, (state, _err) in ordered if state == "not_loaded"]
+        errors = [(name.upper(), err) for name, (state, err) in ordered if state == "error"]
+        done = total - len(loading) - len(pending)
+
+        bar.update(total=total, progress=done)
+
+        if done < total:
+            parts = [f"{done}/{total} ready"]
+            if loading:
+                parts.append(f"loading: {', '.join(loading)}")
+            if pending:
+                parts.append(f"pending: {', '.join(pending)}")
+            detail.update(" — ".join(parts))
+        elif errors:
+            names = ", ".join(f"{name}: error — {msg}" for name, msg in errors)
+            plural = "s" if len(errors) > 1 else ""
+            detail.update(f"Pipelines ready ({len(errors)} error{plural}) — {names}")
         else:
-            for name in _PIPELINE_ORDER:
-                if name not in status:
-                    continue
-                state, error = status[name]
-                label = name.upper()
-                if state == "error" and error:
-                    lines.append(f"{label}: error — {error}")
-                else:
-                    lines.append(f"{label}: {state}")
-        self.update("\n".join(lines))
+            detail.update("All pipelines ready")
 
 
 class DashboardScreen(Screen):
@@ -102,6 +122,16 @@ class DashboardScreen(Screen):
         padding: 0 1;
         width: 1fr;
         height: auto;
+    }
+    PipelinesPanel {
+        border: round $primary;
+        padding: 0 1;
+        width: 1fr;
+        height: auto;
+    }
+    PipelinesPanel Static, PipelinesPanel ProgressBar {
+        border: none;
+        padding: 0;
     }
     #credit {
         dock: bottom;
