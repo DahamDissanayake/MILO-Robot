@@ -30,10 +30,12 @@ it). Nothing here needs a robot/Pi redeploy.
     splits one sentence into fragments.
 
 - **ASR (speech→text)** — `pipelines/asr.py`, faster-whisper. Loads the model on
-  connect (see warm-up). A per-segment **`no_speech_prob > 0.6` filter** drops
-  Whisper's phantom "Bye."/"Thank you." hallucinations before they reach the LLM.
-  On a machine with no working CUDA it runs on **CPU** (slower, lower accuracy —
-  see *GPU acceleration* below).
+  connect (see warm-up) and runs it on the **NVIDIA GPU** when one is present
+  (~0.2–0.4 s/clip vs ~3 s on CPU — the main fix for both latency *and*
+  mishearing). A per-segment **`no_speech_prob > 0.6` filter** drops Whisper's
+  phantom "Bye."/"Thank you." hallucinations before they reach the LLM. With no
+  usable CUDA GPU it falls back to **CPU** automatically (slower, lower accuracy
+  — see *GPU acceleration* below).
 
 - **LLM (reply)** — `llm/agent.py`, Ollama. Milo **always** replies via the LLM;
   identity (face match / a name you gave this session) is just context, never a
@@ -62,7 +64,7 @@ it). Nothing here needs a robot/Pi redeploy.
 |---|---|---|
 | `llm_model` | `llama3.2:3b` | Any Ollama model you've `ollama pull`ed. Must fit in RAM/VRAM. |
 | `llm_use_tools` | `false` | Let the LLM autonomously call movement/face tools. Only turn on with a capable large model — small models break on it. |
-| `whisper_model` | `small` | `tiny`/`base`/`small`/`medium` (or `.en` variants). Bigger = more accurate, slower. `medium` is great on GPU, slow on CPU. |
+| `whisper_model` | `small` (`medium` recommended on a GPU) | `tiny`/`base`/`small`/`medium` (or `.en` variants). Bigger = more accurate, slower. `medium` is great on GPU (~0.4 s/clip), slow on CPU. |
 | `piper_voice` | `en_US-lessac-medium` | Auto-downloaded on first use. |
 | `ollama_url` | `http://127.0.0.1:11434` | Where Ollama runs. |
 
@@ -96,27 +98,48 @@ After editing, restart the brain.
 ## GPU acceleration (the real fix for accuracy + speed)
 
 On CPU, Whisper `small` is both slow (~3 s/clip) and the main source of
-mis-hearing. Your NVIDIA GPU can run it ~5–10× faster *and* more accurately (and
-lets you use the `medium` model), but faster-whisper/ctranslate2 needs the CUDA
-12 runtime libraries, which aren't bundled.
+mis-hearing. An NVIDIA GPU runs it ~5–10× faster *and* more accurately, and lets
+you use the far-more-accurate `medium` model (~0.4 s/clip on a 6 GB RTX 4050).
 
-**Enable it (one-time, ~1.3 GB download):**
+**This now works out of the box** — no manual steps:
+
+- The CUDA 12 runtime libraries (`nvidia-cublas-cu12`, `nvidia-cudnn-cu12`, and
+  their `nvidia-cuda-nvrtc-cu12` dependency) are declared in the brain's `full`
+  extra (`brain/pyproject.toml`). A normal `pip install -e ".\brain[full]"` pulls
+  them automatically on Windows/Linux x86_64 (~1.3 GB). There are no macOS/ARM
+  wheels, so the markers skip them there and the brain runs CPU Whisper instead.
+- On Windows those DLLs aren't on the search path by default, so
+  `pipelines/asr.py::_ensure_cuda_dll_path()` locates the installed
+  `nvidia/*/bin` dirs (via the `nvidia` namespace package) and registers them
+  before ctranslate2's first inference. Nothing for you to configure.
+- Device selection is automatic: ASR loads on the GPU when one works and falls
+  back to CPU **once**, at warm-up, if it can't (`_build_probed`). The TUI/log
+  reports the real device it settled on (`cuda` or `cpu`).
+
+**To use it:**
+1. `pip install -e ".\brain[full]"` (or re-run it after pulling — it's a no-op if
+   the libs are already present).
+2. Set `whisper_model: medium` in `~/.milo-brain/config.yaml` for best accuracy
+   (fits a ~6 GB card alongside the LLM).
+3. Restart the brain. There should be **no** `cublas64_12.dll ... falling back to
+   cpu` warning, and transcription should be fast + accurate.
+
+**Verify it's on the GPU:** the brain log at warm-up should *not* contain
+"falling back to cpu". A quick standalone check from the brain's venv:
 
 ```bash
-# from the brain's venv:
-python -m pip install nvidia-cublas-cu12 nvidia-cudnn-cu12
+python -c "from milo_brain.pipelines.asr import WhisperAsr; a=WhisperAsr('medium'); a.ensure_loaded(); print('device:', a._device_in_use)"
 ```
 
-Then, once installed:
-- Set `whisper_model: medium` in `~/.milo-brain/config.yaml` for best accuracy
-  (fits your ~6 GB VRAM; falls back to CPU automatically if the GPU can't load).
-- Restart the brain. The log should stop showing the `cublas64_12.dll ... falling
-  back to cpu` warning, and transcription should be fast + accurate.
+Expect `device: cuda`. If you see `device: cpu`, the CUDA libs didn't install
+(check `pip show nvidia-cublas-cu12`) or your GPU/driver isn't visible to
+ctranslate2.
 
-If `pip` seems to hang with no output, it's the dependency resolver — install the
-two packages **without version constraints** (as above), which resolves instantly;
-the slow part is just the download.
+**If `pip` ever seems to hang** installing the CUDA libs, it's the dependency
+resolver backtracking on a version bound — the `full` extra pins cuDNN as `>=9`
+with **no** upper bound for exactly this reason; the slow part is only the
+download.
 
-**Known limit until GPU is on:** `small` on CPU will still occasionally mis-hear
-short/unclear speech. The `no_speech_prob` filter stops it *acting on* the worst
-phantoms, but the accuracy ceiling is the model+CPU — GPU `medium` is the fix.
+**On CPU-only machines:** `small` will still occasionally mis-hear short/unclear
+speech. The `no_speech_prob` filter stops it *acting on* the worst phantoms, but
+the accuracy ceiling is the model+CPU — a GPU with `medium` is the fix.

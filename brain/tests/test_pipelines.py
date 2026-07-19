@@ -429,6 +429,38 @@ def test_whisper_asr_healthy_device_loads_once_without_a_rebuild(monkeypatch):
     assert builds["n"] == 1  # constructed exactly once, no fallback rebuild
 
 
+def test_whisper_asr_reports_the_concrete_device_when_auto_requested(monkeypatch):
+    """With device='auto' the probe succeeds without a fallback, so the status
+    must reflect the device ctranslate2 actually chose ('cuda'), not the literal
+    'auto' we asked for -- otherwise the TUI/log can't tell GPU from CPU."""
+    import faster_whisper
+
+    from milo_brain.pipelines.asr import WhisperAsr
+
+    class _Segment:
+        def __init__(self, text):
+            self.text = text
+            self.avg_logprob = 0.0
+
+    class _Ct2Model:
+        device = "cuda"  # faster_whisper exposes the resolved ct2 device here
+
+    class _FakeModel:
+        model = _Ct2Model()  # WhisperModel.model is the underlying ct2 model
+
+        def __init__(self, model_size, device, compute_type):
+            pass
+
+        def transcribe(self, audio, language, beam_size, **kw):
+            return [_Segment(" hi")], None
+
+    monkeypatch.setattr(faster_whisper, "WhisperModel", _FakeModel)
+
+    asr = WhisperAsr(model_size="small", device="auto")
+    asr.ensure_loaded()
+    assert asr._device_in_use == "cuda"  # not "auto"
+
+
 def test_piper_tts_status_starts_not_loaded():
     from milo_brain.pipelines.tts import PiperTts
 

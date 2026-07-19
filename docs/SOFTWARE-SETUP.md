@@ -277,11 +277,19 @@ Pair every brain machine the same way. Verify: live video and mic levels appear 
 ### 4.5 Full AI stack (when you reach the cognition phase)
 
 ```powershell
-pip install -e ".\brain[full]"    # faster-whisper, InsightFace, Piper, torch, opencv
+pip install -e ".\brain[full]"    # faster-whisper, InsightFace, Piper, torch, opencv + CUDA runtime
 python -m milo_brain              # first run downloads Whisper / InsightFace / Silero models
 ```
 
-Config lives in `~/.milo-brain/config.yaml` — tier is auto-detected from the GPU, models overridable. On a 6 GB GPU: whisper-small + InsightFace + 3B-Q4 LLM fit in about 4 GB; if tight, InsightFace runs fine on CPU.
+On Windows/Linux x86_64 this also pulls the CUDA 12 runtime libs
+(`nvidia-cublas-cu12`, `nvidia-cudnn-cu12`, ~1.3 GB) so Whisper runs on the
+**NVIDIA GPU** — ~5–10× faster and more accurate than CPU. It's automatic: the
+brain adds the DLLs to the search path at load and falls back to CPU on its own
+if no GPU is usable (macOS/ARM, or no NVIDIA card). See
+[`VOICE-PIPELINE.md`](VOICE-PIPELINE.md#gpu-acceleration-the-real-fix-for-accuracy--speed)
+for how to verify the GPU is active.
+
+Config lives in `~/.milo-brain/config.yaml` — tier is auto-detected from the GPU, models overridable. On a 6 GB GPU with the CUDA libs above: whisper-**medium** (set `whisper_model: medium` for best accuracy) + InsightFace + 3B-Q4 LLM fit comfortably; if tight, InsightFace runs fine on CPU.
 
 ---
 

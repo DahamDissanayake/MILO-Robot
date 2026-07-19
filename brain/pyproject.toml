@@ -29,6 +29,16 @@ full = [
     "torch>=2.2",          # Silero VAD
     "torchaudio>=2.2",     # Silero VAD's torch.hub repo imports this at load time
     "opencv-python>=4.9",
+    # CUDA 12 runtime libs so faster-whisper/ctranslate2 runs Whisper on the
+    # NVIDIA GPU — 5-10x faster AND more accurate than CPU, and required for the
+    # `medium` model. Windows/Linux x86_64 only: no wheels exist for macOS or
+    # ARM, and the brain falls back to CPU Whisper automatically where they're
+    # absent (see pipelines/asr.py::_build_probed). On Windows the DLLs aren't
+    # on the search path by default, so asr.py::_ensure_cuda_dll_path adds them
+    # at load. No upper pin on cudnn — the `<10` bound sent pip's resolver into
+    # a long backtrack; ctranslate2 4.x wants cuDNN 9, which `>=9` already gets.
+    "nvidia-cublas-cu12>=12.3; (platform_machine == 'AMD64' or platform_machine == 'x86_64') and platform_system != 'Darwin'",
+    "nvidia-cudnn-cu12>=9; (platform_machine == 'AMD64' or platform_machine == 'x86_64') and platform_system != 'Darwin'",
 ]
 dev = ["pytest>=8"]
 
