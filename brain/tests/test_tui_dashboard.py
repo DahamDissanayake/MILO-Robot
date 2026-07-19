@@ -9,7 +9,13 @@ from textual.widgets import ProgressBar, Static as TextualStatic
 
 from milo_brain.config import BrainConfig
 from milo_brain.llm.token_rate import TokenRateTracker
-from milo_brain.tui.dashboard import ConnectionPanel, DashboardScreen, IdentityPanel, ModelPanel
+from milo_brain.tui.dashboard import (
+    ChatPanel,
+    ConnectionPanel,
+    DashboardScreen,
+    IdentityPanel,
+    ModelPanel,
+)
 
 
 class _FakePeer:
@@ -184,6 +190,10 @@ def test_refresh_from_shows_progress_while_pipelines_are_loading():
                     "tts": ("loading", None),
                     "vision": ("not_loaded", None),
                 }
+            def llm_status(self): return ("unknown", None)
+            class _Convo:
+                def recent(self, n): return []
+            conversation = _Convo()
 
         app = _HostApp()
         async with app.run_test():
@@ -208,6 +218,10 @@ def test_refresh_from_shows_all_ready_with_no_errors():
         class _FakeFactory:
             def pipeline_status(self):
                 return {"asr": ("ready", None), "tts": ("ready", None), "vision": ("ready", None)}
+            def llm_status(self): return ("unknown", None)
+            class _Convo:
+                def recent(self, n): return []
+            conversation = _Convo()
 
         app = _HostApp()
         async with app.run_test():
@@ -234,6 +248,10 @@ def test_refresh_from_shows_ready_with_an_error_called_out():
                     "tts": ("ready", None),
                     "vision": ("error", "no GPU found"),
                 }
+            def llm_status(self): return ("unknown", None)
+            class _Convo:
+                def recent(self, n): return []
+            conversation = _Convo()
 
         app = _HostApp()
         async with app.run_test():
@@ -261,6 +279,10 @@ def test_refresh_from_shows_ready_with_multiple_errors_pluralized():
                     "tts": ("ready", None),
                     "vision": ("error", "no GPU found"),
                 }
+            def llm_status(self): return ("unknown", None)
+            class _Convo:
+                def recent(self, n): return []
+            conversation = _Convo()
 
         app = _HostApp()
         async with app.run_test():
@@ -302,5 +324,89 @@ def test_refresh_from_shows_manual_disconnect_distinct_from_idle():
             connection = str(screen.query_one(ConnectionPanel).content)
             assert "disconnected" in connection
             assert "no robot connected" not in connection
+
+    asyncio.run(scenario())
+
+
+def test_model_panel_shows_llm_ready_state():
+    async def scenario():
+        cfg = BrainConfig(brain_id="b", name="n", tier="small", llm_model="llama3.2:3b")
+        connector = _FakeConnector()
+
+        class _FakeFactory:
+            def pipeline_status(self): return {}
+            def llm_status(self): return ("ready", None)
+            class _Convo:
+                def recent(self, n): return []
+            conversation = _Convo()
+
+        app = _HostApp()
+        async with app.run_test():
+            screen = app.query_one(DashboardScreen)
+            screen.refresh_from(connector, cfg, TokenRateTracker(), _FakeFactory())
+            model = str(screen.query_one(ModelPanel).content)
+            assert "ready" in model
+
+    asyncio.run(scenario())
+
+
+def test_model_panel_shows_llm_error_reason():
+    async def scenario():
+        cfg = BrainConfig(brain_id="b", name="n", tier="small")
+        connector = _FakeConnector()
+
+        class _FakeFactory:
+            def pipeline_status(self): return {}
+            def llm_status(self): return ("error", "500 out of memory")
+            class _Convo:
+                def recent(self, n): return []
+            conversation = _Convo()
+
+        app = _HostApp()
+        async with app.run_test():
+            screen = app.query_one(DashboardScreen)
+            screen.refresh_from(connector, cfg, TokenRateTracker(), _FakeFactory())
+            model = str(screen.query_one(ModelPanel).content)
+            assert "error" in model and "out of memory" in model
+
+    asyncio.run(scenario())
+
+
+def test_chat_panel_shows_recent_exchanges():
+    async def scenario():
+        from milo_brain.conversation import Exchange
+        cfg = BrainConfig(brain_id="b", name="n", tier="small")
+        connector = _FakeConnector()
+
+        class _FakeFactory:
+            def pipeline_status(self): return {}
+            def llm_status(self): return ("ready", None)
+            class _Convo:
+                def recent(self, n):
+                    return [Exchange(heard="hi milo", reply="hey there", ts=0.0)]
+            conversation = _Convo()
+
+        app = _HostApp()
+        async with app.run_test():
+            screen = app.query_one(DashboardScreen)
+            screen.refresh_from(connector, cfg, TokenRateTracker(), _FakeFactory())
+            chat = str(screen.query_one(ChatPanel).content)
+            assert "hi milo" in chat and "hey there" in chat
+
+    asyncio.run(scenario())
+
+
+def test_chat_panel_and_model_degrade_when_factory_is_none():
+    async def scenario():
+        cfg = BrainConfig(brain_id="b", name="n", tier="small")
+        connector = _FakeConnector()
+        app = _HostApp()
+        async with app.run_test():
+            screen = app.query_one(DashboardScreen)
+            screen.refresh_from(connector, cfg, TokenRateTracker())  # no factory
+            chat = str(screen.query_one(ChatPanel).content)
+            model = str(screen.query_one(ModelPanel).content)
+            assert "no conversation" in chat.lower()
+            assert "Model:" in model  # renders a "—" state without crashing
 
     asyncio.run(scenario())

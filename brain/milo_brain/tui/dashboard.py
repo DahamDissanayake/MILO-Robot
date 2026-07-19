@@ -61,13 +61,24 @@ class ModelPanel(Static):
     def render_model(
         self, llm_model: str, whisper_model: str, piper_voice: str,
         tokens_per_sec_in: float, tokens_per_sec_out: float,
+        llm_status: tuple[str, str | None] = ("unknown", None),
     ) -> None:
+        state, error = llm_status
+        if state == "error" and error:
+            ready_line = f"Model: error — {error}"
+        elif state == "responding":
+            ready_line = "Model: responding…"
+        elif state == "ready":
+            ready_line = "Model: ready"
+        else:
+            ready_line = "Model: —"
         self.update(
             f"[b]Model[/b]\n"
             f"LLM: {llm_model}\n"
             f"Whisper: {whisper_model}\n"
             f"Piper: {piper_voice}\n"
             f"Tokens/s  in: {tokens_per_sec_in:.1f} ^   out: {tokens_per_sec_out:.1f} v\n"
+            f"{ready_line}\n"
             f"[dim](m to change model)[/dim]"
         )
 
@@ -113,6 +124,20 @@ class PipelinesPanel(Vertical):
             detail.update("All pipelines ready")
 
 
+class ChatPanel(Static):
+    MAX_SHOWN = 6
+
+    def render_chat(self, exchanges) -> None:
+        lines = ["[b]Conversation[/b]"]
+        if not exchanges:
+            lines.append("[dim]no conversation yet[/dim]")
+        else:
+            for ex in exchanges:
+                lines.append(f"[b]You:[/b] {ex.heard}")
+                lines.append(f"[b]Milo:[/b] {ex.reply}")
+        self.update("\n".join(lines))
+
+
 class DashboardScreen(Screen):
     """The default screen: read-only panels, refreshed by MiloBrainApp's
     periodic timer calling refresh_from() -- not reactive watchers, matching
@@ -153,6 +178,7 @@ class DashboardScreen(Screen):
                 yield ConnectionPanel(id="connection-panel")
             yield ModelPanel(id="model-panel")
             yield PipelinesPanel(id="pipelines-panel")
+            yield ChatPanel(id="chat-panel")
         yield Static("by DAMA", id="credit")
         yield Footer()
 
@@ -172,10 +198,14 @@ class DashboardScreen(Screen):
             retry_in,
             connector.consecutive_drops,
         )
+        llm_status = factory.llm_status() if factory is not None else ("unknown", None)
         self.query_one(ModelPanel).render_model(
             cfg.llm_model, cfg.whisper_model, cfg.piper_voice,
             rate_tracker.tokens_per_sec_in, rate_tracker.tokens_per_sec_out,
+            llm_status,
         )
         self.query_one(PipelinesPanel).render_pipelines(
             factory.pipeline_status() if factory is not None else {}
         )
+        exchanges = factory.conversation.recent(ChatPanel.MAX_SHOWN) if factory is not None else []
+        self.query_one(ChatPanel).render_chat(exchanges)
