@@ -93,6 +93,11 @@ class RobotConnectorManager:
         # drives _drop_backoff_seconds(); reset to 0 as soon as a connect
         # succeeds again.
         self.consecutive_drops = 0
+        # Manual-disconnect latch: request_disconnect() sets this False and
+        # closes the live socket; the tick loop then idles instead of
+        # auto-reconnecting until an explicit connect action re-enables it.
+        self._enabled = True
+        self._active_ws = None
 
     def paired_ids(self) -> list[str]:
         return self._store.peer_ids()
@@ -104,6 +109,7 @@ class RobotConnectorManager:
         """The "Connect" action from the Connect Robots tab, for a robot
         that discovery actually found. One-shot: consumed by the very next
         _tick(), whether it succeeds or not."""
+        self._enabled = True
         self._manual_target = robot_id
         self._wake.set()
 
@@ -116,6 +122,7 @@ class RobotConnectorManager:
         request_pin (harmless if it turns out to already be paired --
         brain_handshake() only calls it on a reactive T_PAIR_BEGIN, which a
         paired robot never sends). One-shot, same as request_manual_connect."""
+        self._enabled = True
         self._manual_host_target = (host, port)
         self._wake.set()
 
@@ -125,9 +132,23 @@ class RobotConnectorManager:
         and cuts short whatever reconnect_seconds wait _tick() is
         currently sitting in. Returns False (no-op) if nothing has
         connected yet this run, e.g. right after startup."""
+        self._enabled = True
         if self.last_connected is None:
             return False
         self._manual_host_target = self.last_connected
+        self._wake.set()
+        return True
+
+    def request_disconnect(self) -> bool:
+        """Close the current robot connection and stop auto-reconnecting
+        until an explicit connect/reconnect action. Returns False (no-op)
+        if nothing is connected right now."""
+        if self.connected_robot is None or self._active_ws is None:
+            return False
+        self._enabled = False
+        self.link_state = "disconnected"
+        ws, self._active_ws = self._active_ws, None
+        asyncio.create_task(ws.close())
         self._wake.set()
         return True
 
@@ -144,6 +165,11 @@ class RobotConnectorManager:
             self.discovery.stop()
 
     async def _tick(self) -> None:
+        if not self._enabled:
+            self.link_state = "disconnected"
+            self.link_target = None
+            await self._wait_before_retry(3600)  # wake on any connect action
+            return
         manual_host_target, self._manual_host_target = self._manual_host_target, None
         if manual_host_target is not None:
             host, port = manual_host_target
@@ -177,6 +203,7 @@ class RobotConnectorManager:
         self.last_error = None
         try:
             async with self._connect(url) as ws:
+                self._active_ws = ws
                 sock = MiloSocket(ws)
                 self.link_state = "handshaking"
                 peer = await brain_handshake(
@@ -199,13 +226,26 @@ class RobotConnectorManager:
                     await self._session_handler(sock, peer)
                 finally:
                     self.connected_robot = None
-                    self.link_state = "idle"
+                    self._active_ws = None
+                    if self._enabled:
+                        self.link_state = "idle"
         except HandshakeError as exc:
             self.link_state = "idle"
             self.last_error = f"handshake failed: {exc}"
             log.warning("handshake with %s failed: %s", url, exc)
             await self._wait_before_retry(self._cfg.reconnect_seconds)
         except Exception as exc:  # connection drop -> fail over on next tick
+            self._active_ws = None
+            if not self._enabled:
+                # Our own request_disconnect() closed the socket -- go idle,
+                # don't treat it as a drop to rescan/retry. Clear _wake
+                # ourselves since we're skipping _wait_before_retry (which
+                # would normally do it): request_disconnect() set it to
+                # cut short any in-progress wait, and leaving it set would
+                # make the very next tick's idle-wait in _tick() return
+                # immediately instead of actually idling.
+                self._wake.clear()
+                return
             self.consecutive_drops += 1
             backoff = _drop_backoff_seconds(self.consecutive_drops)
             self.link_state = "retrying"

@@ -62,6 +62,28 @@ class _RaisingConnectCM:
         return False
 
 
+class _ClosingFakeWebSocket(FakeWebSocket):
+    """The shared FakeWebSocket's close() only flips a `closed` flag -- it
+    doesn't wake a coroutine already blocked in `await self.outbox.get()`
+    inside recv(). request_disconnect()'s whole point is to make a session
+    stuck in `await sock.recv()` end, so this local subclass makes close()
+    push a sentinel into the outbox that recv() turns into a raise,
+    mimicking a real websocket's recv() raising ConnectionClosed once the
+    connection is closed out from under it."""
+
+    _CLOSE_SENTINEL = object()
+
+    async def recv(self):
+        frame = await self.outbox.get()
+        if frame is self._CLOSE_SENTINEL:
+            raise ConnectionError("closed by request_disconnect()")
+        return frame
+
+    async def close(self, code=1000, reason=""):
+        self.closed = True
+        await self.outbox.put(self._CLOSE_SENTINEL)
+
+
 def test_drop_backoff_seconds_grows_and_caps():
     assert _drop_backoff_seconds(1) == 1
     assert _drop_backoff_seconds(2) == 2
@@ -189,6 +211,78 @@ def test_consecutive_drops_resets_after_a_successful_connect(tmp_path):
 
         assert connector.consecutive_drops == 0
         assert connector.link_state == "idle"
+
+    asyncio.run(main())
+
+
+def test_request_disconnect_is_a_noop_when_not_connected(tmp_path):
+    cfg = BrainConfig(data_dir=str(tmp_path))
+    connector = RobotConnectorManager(
+        cfg, session_handler=lambda sock, peer: None, discovery=FakeDiscoveryEmpty(),
+    )
+    assert connector.request_disconnect() is False
+
+
+def test_request_disconnect_closes_the_live_socket_and_stays_disconnected(tmp_path):
+    async def main():
+        cfg = BrainConfig(brain_id="brain-1", name="d", tier="large", data_dir=str(tmp_path))
+        token = derive_token("123456", "milo-1", "brain-1")
+        PairedStore(cfg.paired_path).add("milo-1", token)
+        robot_store = PairedStore(tmp_path / "robot" / "paired.json")
+        robot_store.add("brain-1", token)
+
+        # raw_brain uses the local _ClosingFakeWebSocket so that closing it
+        # (via request_disconnect()) unblocks the handler's pending recv() --
+        # see the class docstring above for why the shared FakeWebSocket
+        # double can't do this.
+        raw_robot, raw_brain = FakeWebSocket(), _ClosingFakeWebSocket()
+        raw_robot.peer, raw_brain.peer = raw_brain, raw_robot
+
+        session_running = asyncio.Event()
+        session_ended = asyncio.Event()
+
+        async def handler(sock, peer):
+            session_running.set()
+            try:
+                await sock.recv()  # blocks until the socket is closed
+            finally:
+                session_ended.set()
+
+        discovery = FakeDiscoveryWith(
+            [RobotRecord(robot_id="milo-1", name="milo", host="10.0.0.9", port=8765)]
+        )
+        connector = RobotConnectorManager(
+            cfg, session_handler=handler, discovery=discovery,
+            connect=lambda url: _ConnectCM(raw_brain),
+        )
+
+        robot_task = asyncio.create_task(
+            robot_handshake(MiloSocket(raw_robot), "milo-1", "milo", robot_store, mcp_port=0)
+        )
+        tick_task = asyncio.create_task(connector._tick())
+        await asyncio.wait_for(session_running.wait(), timeout=2.0)
+        await robot_task
+
+        assert connector.request_disconnect() is True
+        await asyncio.wait_for(session_ended.wait(), timeout=2.0)
+        await asyncio.wait_for(tick_task, timeout=2.0)
+        assert connector._enabled is False
+
+        # A follow-up tick must idle (stay "disconnected"), NOT reconnect.
+        async def handler_must_not_run(sock, peer):
+            raise AssertionError("must not reconnect while manually disconnected")
+        connector._session_handler = handler_must_not_run
+        idle_tick = asyncio.create_task(connector._tick())
+        await asyncio.sleep(0.05)
+        assert not idle_tick.done()          # sitting idle, not connecting
+        assert connector.link_state == "disconnected"
+        connector.request_reconnect()        # re-enable + wake
+        assert connector._enabled is True
+        idle_tick.cancel()
+        try:
+            await idle_tick
+        except asyncio.CancelledError:
+            pass
 
     asyncio.run(main())
 
