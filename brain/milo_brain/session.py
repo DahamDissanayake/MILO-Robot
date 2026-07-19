@@ -86,6 +86,7 @@ class RobotCognitionSession:
         self._current_embedding_b64: str | None = None
         self._video_task: asyncio.Task | None = None
         self._segment_task: asyncio.Task | None = None
+        self._warmup_task: asyncio.Task | None = None
 
     def pipeline_status(self) -> dict[str, tuple[str, str | None]]:
         status: dict[str, tuple[str, str | None]] = {"vad": (self._vad.status, self._vad.error)}
@@ -97,6 +98,7 @@ class RobotCognitionSession:
         """Recv loop. Handlers that call back into the graph run as background
         tasks — awaiting them here would deadlock the graph_result routing."""
         log.info("cognition session started for %s", self._peer.name or self._peer.id)
+        self._warmup_task = asyncio.create_task(self._warm_up())
         while True:
             msg = await self._sock.recv()
             if msg.t == protocol.T_AUDIO and msg.payload:
@@ -108,6 +110,26 @@ class RobotCognitionSession:
                     self._video_task = asyncio.create_task(self._on_video(msg))
             elif msg.t == protocol.T_GRAPH_RESULT:
                 self._graph.deliver(dict(msg.header))
+
+    async def _warm_up(self) -> None:
+        """Eagerly load the user-action-gated pipelines (ASR, TTS) as soon as we
+        connect, in the background, so the readiness bar completes on its own
+        within a minute or two -- without the operator having to speak first --
+        and the first spoken interaction has no cold-load stall. VAD and Vision
+        already warm themselves from the incoming audio/video streams, and MCP
+        connects at session start, so only ASR and TTS need this. Failures are
+        non-fatal: a pipeline that can't warm stays errored (shown on the
+        dashboard) and the session runs without it."""
+        async def warm(name, fn):
+            try:
+                await asyncio.to_thread(fn)
+            except Exception:
+                log.warning("warm-up of %s failed", name, exc_info=True)
+
+        await asyncio.gather(
+            warm("asr", self._asr.ensure_loaded),
+            warm("tts", self._tts.ensure_loaded),
+        )
 
     # -- video --------------------------------------------------------------
     async def _on_video(self, msg: protocol.Message) -> None:

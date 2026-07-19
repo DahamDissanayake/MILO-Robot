@@ -20,6 +20,12 @@ FRAME = FS * 20 // 1000
 
 
 class FakeAsr:
+    def __init__(self):
+        self.warmed = 0
+
+    def ensure_loaded(self):
+        self.warmed += 1
+
     def transcribe(self, mono):
         return Transcript(text="hello milo", confidence=0.9)
 
@@ -33,6 +39,12 @@ class FakeVision:
 
 
 class FakeTts:
+    def __init__(self):
+        self.warmed = 0
+
+    def ensure_loaded(self):
+        self.warmed += 1
+
     def synthesize(self, text):
         return b"\x00\x01" * FRAME * 2  # two frames of "speech"
 
@@ -432,3 +444,43 @@ def test_factory_current_session_is_tracked_during_handle_and_cleared_after(tmp_
         assert factory.current_session is None
 
     asyncio.run(main())
+
+
+def test_warm_up_preloads_asr_and_tts():
+    async def main():
+        session, robot_sock, robot, mcp = build_session(lambda op, header: {})
+        await session._warm_up()
+        return session._asr.warmed, session._tts.warmed
+
+    asr_warmed, tts_warmed = asyncio.run(main())
+    assert asr_warmed == 1 and tts_warmed == 1
+
+
+def test_warm_up_survives_a_pipeline_failure():
+    async def main():
+        session, robot_sock, robot, mcp = build_session(lambda op, header: {})
+
+        def boom():
+            raise RuntimeError("model download failed")
+        session._asr.ensure_loaded = boom  # ASR can't warm
+
+        await session._warm_up()            # must not raise
+        return session._tts.warmed
+
+    assert asyncio.run(main()) == 1         # TTS still warmed despite ASR failing
+
+
+def test_run_spawns_the_warm_up_task():
+    async def main():
+        session, robot_sock, robot, mcp = build_session(lambda op, header: {})
+        run_task = asyncio.create_task(session.run())
+        await asyncio.sleep(0.05)           # let run() start and spawn warm-up
+        spawned = session._warmup_task is not None
+        run_task.cancel()
+        try:
+            await run_task
+        except asyncio.CancelledError:
+            pass
+        return spawned
+
+    assert asyncio.run(main()) is True

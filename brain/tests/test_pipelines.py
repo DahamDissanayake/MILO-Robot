@@ -371,6 +371,64 @@ def test_whisper_asr_reraises_when_already_on_cpu():
         asr.transcribe(np.zeros(1600, dtype=np.int16))
 
 
+def test_whisper_asr_resolves_the_device_at_load_not_first_transcribe(monkeypatch):
+    """The GPU->CPU fallback now happens during _load()/warm-up (via a probe
+    inference), so ensure_loaded() alone settles the device -- the operator's
+    first real utterance never eats a mid-conversation rebuild. This is what
+    makes background warm-up on connect actually useful."""
+    import faster_whisper
+
+    from milo_brain.pipelines.asr import WhisperAsr
+
+    class _Segment:
+        def __init__(self, text):
+            self.text = text
+            self.avg_logprob = 0.0
+
+    class _FakeModel:
+        def __init__(self, model_size, device, compute_type):
+            self.device = device
+
+        def transcribe(self, audio, language, beam_size):
+            if self.device != "cpu":
+                raise RuntimeError("Library cublas64_12.dll is not found or cannot be loaded")
+            return [_Segment(" ok")], None
+
+    monkeypatch.setattr(faster_whisper, "WhisperModel", _FakeModel)
+
+    asr = WhisperAsr(model_size="small", device="cuda")
+    asr.ensure_loaded()  # no transcribe() call at all
+    assert asr.status == "ready"
+    assert asr._device_in_use == "cpu"  # fallback already resolved at load time
+
+
+def test_whisper_asr_healthy_device_loads_once_without_a_rebuild(monkeypatch):
+    import faster_whisper
+
+    from milo_brain.pipelines.asr import WhisperAsr
+
+    class _Segment:
+        def __init__(self, text):
+            self.text = text
+            self.avg_logprob = 0.0
+
+    builds = {"n": 0}
+
+    class _FakeModel:
+        def __init__(self, model_size, device, compute_type):
+            builds["n"] += 1
+
+        def transcribe(self, audio, language, beam_size):
+            return [_Segment(" hi")], None
+
+    monkeypatch.setattr(faster_whisper, "WhisperModel", _FakeModel)
+
+    asr = WhisperAsr(model_size="small", device="cpu")
+    asr.ensure_loaded()
+    assert asr.status == "ready" and asr._device_in_use == "cpu"
+    assert builds["n"] == 1  # constructed exactly once, no fallback rebuild
+
+
 def test_piper_tts_status_starts_not_loaded():
     from milo_brain.pipelines.tts import PiperTts
 
