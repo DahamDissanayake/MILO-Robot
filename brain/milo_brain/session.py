@@ -253,7 +253,7 @@ class CognitionSessionFactory:
         try:
             if mcp is not None:
                 await mcp.connect()
-            agent = CognitionAgent(self._llm, graph, mcp)
+            agent = CognitionAgent(self._llm, graph, mcp, use_tools=self._cfg.llm_use_tools)
             session = RobotCognitionSession(
                 sock,
                 peer,

@@ -55,6 +55,10 @@ class BrainConfig:
     llm_model: str = ""
     whisper_model: str = ""
     ollama_url: str = "http://127.0.0.1:11434"
+    # Let the LLM autonomously call the robot's movement/face MCP tools. Off by
+    # default: small models do tool-calling unreliably and it breaks the spoken
+    # reply (see CognitionAgent). Turn on only with a capable large-tier model.
+    llm_use_tools: bool = False
     piper_voice: str = "en_US-lessac-medium"
     face_match_threshold: float = 0.45
     vision_fps: float = 3.0

@@ -298,7 +298,7 @@ def test_tool_calls_are_executed_and_looped_until_a_final_reply():
         {"role": "assistant", "content": '{"reply": "Done waving!", "facts": []}'},
     ])
     mcp = FakeMcp()
-    agent = CognitionAgent(llm, FakeGraph(), mcp)
+    agent = CognitionAgent(llm, FakeGraph(), mcp, use_tools=True)
 
     result = asyncio.run(agent.on_utterance("wave at me", DAHAM, None))
     assert result.reply == "Done waving!"
@@ -315,7 +315,7 @@ def test_tool_loop_gives_up_gracefully_after_max_rounds():
     ]}
     llm = FakeLlm([keep_calling, keep_calling, keep_calling, keep_calling])
     mcp = FakeMcp()
-    agent = CognitionAgent(llm, FakeGraph(), mcp)
+    agent = CognitionAgent(llm, FakeGraph(), mcp, use_tools=True)
 
     result = asyncio.run(agent.on_utterance("wave forever", DAHAM, None))
     assert result.reply  # some graceful fallback reply, not a crash
@@ -324,7 +324,7 @@ def test_tool_loop_gives_up_gracefully_after_max_rounds():
 
 def test_on_utterance_works_without_an_mcp_client():
     llm = FakeLlm([{"role": "assistant", "content": '{"reply": "hi", "facts": []}'}])
-    agent = CognitionAgent(llm, FakeGraph(), mcp=None)
+    agent = CognitionAgent(llm, FakeGraph(), mcp=None, use_tools=True)
     result = asyncio.run(agent.on_utterance("hello", DAHAM, None))
     assert result.reply == "hi"
     assert llm.calls[0]["tools"] is None
@@ -345,7 +345,7 @@ def test_tool_schemas_are_fetched_once_and_cached_across_utterances():
         {"role": "assistant", "content": '{"reply": "hi again", "facts": []}'},
     ])
     mcp = CountingMcp()
-    agent = CognitionAgent(llm, FakeGraph(), mcp)
+    agent = CognitionAgent(llm, FakeGraph(), mcp, use_tools=True)
     asyncio.run(agent.on_utterance("hello", DAHAM, None))
     asyncio.run(agent.on_utterance("hello again", DAHAM, None))
     assert mcp.list_tools_calls == 1  # fetched once at first use, not per utterance

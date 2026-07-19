@@ -180,15 +180,23 @@ def extract_name(transcript: str) -> str | None:
 
 
 class CognitionAgent:
-    def __init__(self, llm, graph, mcp=None):
+    def __init__(self, llm, graph, mcp=None, use_tools: bool = False):
         """``llm``: object with async chat(system, messages, tools=None) -> dict.
         ``graph``: object with async call(op, **kwargs) -> dict (the wire API).
         ``mcp``: object with async list_tools() -> list[dict] and async
         call_tool(tool_name, **kwargs) -> dict (MiloMcpClient, or None if
-        this robot has no reachable MCP server)."""
+        this robot has no reachable MCP server).
+        ``use_tools``: offer the LLM the robot's MCP tools for autonomous
+        movement/face calls. OFF by default -- small models (e.g. llama3.2:3b)
+        do tool-calling unreliably (empty replies + garbage tool args), which
+        breaks the spoken reply; with tools off, Ollama's strict JSON mode
+        gives clean conversational replies. The robot still reacts to sound
+        direction and animates its face while speaking (both direct, not
+        LLM-driven). Turn it on for a capable large-tier model."""
         self._llm = llm
         self._graph = graph
         self._mcp = mcp
+        self._use_tools = use_tools
         self._tools: list[dict] | None = None
         self._tools_loaded = False
         self._session_person: dict | None = None
@@ -235,7 +243,7 @@ class CognitionAgent:
             {"role": "user", "content": f"[memory context]\n{context}"},
             *self._history,
         ]
-        tools = await self._get_tools()
+        tools = await self._get_tools() if self._use_tools else None
 
         result = AgentResult(reply="Sorry, I got a bit stuck there.")
         try:
