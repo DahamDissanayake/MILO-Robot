@@ -145,16 +145,28 @@ def sanitize(data: dict) -> AgentResult:
 
 def extract_name(transcript: str) -> str | None:
     """Pull a name only from an explicit self-introduction. Ordinary short
-    phrases are NOT treated as names (that created junk person nodes)."""
+    phrases are NOT treated as names (that created junk person nodes).
+
+    "my name is X" / "call me X" are unambiguous, so the name may be any
+    word. "i am X" / "i'm X" / "this is X" also match ordinary sentences
+    ("I am tired", "this is fun"), so for those the captured name must be
+    Capitalized -- Whisper capitalizes proper nouns, so a real name ("I'm
+    Daham") still matches while a common adjective ("i am tired") doesn't.
+    The intro phrase is matched case-insensitively; the name's casing is
+    matched literally (note the scoped ``(?i:...)`` rather than a global
+    re.I, which would defeat the capitalization check)."""
     text = transcript.strip().rstrip(".!?")
     if not text:
         return None
-    match = re.search(
-        r"(?:my name is|i am|i'm|call me|this is)\s+([A-Za-z][\w'-]*(?:\s+[A-Z][\w'-]*)?)",
-        text,
-        flags=re.I,
-    )
-    return match.group(1).strip().title() if match else None
+    any_name = r"([A-Za-z][\w'-]*(?:\s+[A-Z][\w'-]*)?)"
+    cap_name = r"([A-Z][\w'-]*(?:\s+[A-Z][\w'-]*)?)"
+    strong = re.search(r"(?i:my name is|call me)\s+" + any_name, text)
+    if strong:
+        return strong.group(1).strip().title()
+    weak = re.search(r"(?i:i am|i'?m|this is)\s+" + cap_name, text)
+    if weak:
+        return weak.group(1).strip().title()
+    return None
 
 
 class CognitionAgent:

@@ -214,8 +214,16 @@ def test_extract_name_variants():
     assert extract_name("My name is Daham") == "Daham"
     assert extract_name("I'm Sarah!") == "Sarah"
     assert extract_name("call me Bob") == "Bob"
+    assert extract_name("This is Alice") == "Alice"
     assert extract_name("Daham") is None  # a bare word is no longer treated as a name
     assert extract_name("well that is a very long sentence about nothing") is None
+    # "i am/i'm/this is" + a lowercase word is ordinary speech, not a name --
+    # these must NOT be captured (they used to create junk person nodes).
+    assert extract_name("I am tired") is None
+    assert extract_name("I'm good thanks") is None
+    assert extract_name("this is fun") is None
+    # ...but "my name is"/"call me" are unambiguous even lowercased.
+    assert extract_name("my name is daham") == "Daham"
 
 
 # --- agent flows -------------------------------------------------------------
