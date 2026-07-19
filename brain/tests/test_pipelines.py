@@ -286,6 +286,23 @@ def test_lazyload_ensure_loaded_retries_after_a_previous_error():
     assert loader.load_calls == 2
 
 
+def test_lazyload_status_is_loading_while_load_runs():
+    class _Loader(LazyLoad):
+        def __init__(self):
+            super().__init__()
+            self.observed_status_during_load = None
+
+        def _load(self) -> None:
+            # Captures what a concurrent dashboard poll would see while
+            # this (slow, blocking) call is still in progress.
+            self.observed_status_during_load = self.status
+
+    loader = _Loader()
+    loader.ensure_loaded()
+    assert loader.observed_status_during_load == "loading"
+    assert loader.status == "ready"  # settles to ready once _load() returns
+
+
 def test_whisper_asr_status_starts_not_loaded():
     from milo_brain.pipelines.asr import WhisperAsr
 
