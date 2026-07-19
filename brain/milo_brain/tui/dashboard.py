@@ -64,8 +64,8 @@ class ModelPanel(Static):
         llm_status: tuple[str, str | None] = ("unknown", None),
     ) -> None:
         state, error = llm_status
-        if state == "error" and error:
-            ready_line = f"Model: error — {error}"
+        if state == "error":
+            ready_line = f"Model: error — {error}" if error else "Model: error"
         elif state == "responding":
             ready_line = "Model: responding…"
         elif state == "ready":
