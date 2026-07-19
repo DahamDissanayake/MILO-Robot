@@ -22,11 +22,13 @@ AUDIO_QUEUE_SIZE = 10
 
 class Fanout:
     def __init__(self, gen_factory: Callable[[], AsyncIterator[bytes]], name: str,
-                 on_item: Callable[[bytes], None] | None = None, queue_size: int = QUEUE_SIZE):
+                 on_item: Callable[[bytes], None] | None = None, queue_size: int = QUEUE_SIZE,
+                 restart_delay: float = 1.0):
         self._factory = gen_factory
         self._name = name
         self._on_item = on_item
         self._queue_size = queue_size
+        self._restart_delay = restart_delay
         self._subs: set[asyncio.Queue] = set()
         self._task: asyncio.Task | None = None
 
@@ -76,21 +78,31 @@ class Fanout:
             self._start_task()
 
     async def _run(self) -> None:
-        try:
-            async for item in self._factory():
-                if self._on_item is not None:
-                    self._on_item(item)
-                for q in list(self._subs):
-                    if q.full():
-                        try:
-                            q.get_nowait()
-                        except asyncio.QueueEmpty:
-                            pass
-                    q.put_nowait(item)
-        except asyncio.CancelledError:
-            raise
-        except Exception:
-            log.exception("%s fanout reader died", self._name)
+        # Keep a live reader for as long as anyone is subscribed. A natural
+        # reader death -- an uncaught driver exception (e.g. a momentary
+        # camera/I2C hiccup) or the generator ending -- is retried with a
+        # fresh generator after a short backoff, so an already-connected
+        # subscriber's stream self-heals instead of blanking forever. Only a
+        # cancellation (all subscribers gone) stops the loop.
+        while self._subs:
+            try:
+                async for item in self._factory():
+                    if self._on_item is not None:
+                        self._on_item(item)
+                    for q in list(self._subs):
+                        if q.full():
+                            try:
+                                q.get_nowait()
+                            except asyncio.QueueEmpty:
+                                pass
+                        q.put_nowait(item)
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                log.exception("%s fanout reader died; retrying in %.1fs",
+                              self._name, self._restart_delay)
+            if self._subs:
+                await asyncio.sleep(self._restart_delay)
 
 
 class MediaHub:

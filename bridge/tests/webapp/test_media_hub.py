@@ -88,35 +88,34 @@ async def test_hub_none_drivers():
     assert hub.video is None and hub.audio is None
 
 
-async def test_reader_death_self_heals_active_flag():
-    """Finding 1: when the driver generator dies mid-stream, `active` must
-    flip to False on its own (via the task's done-callback) - not only
-    when some *future* subscribe() call happens to notice. Subscribers
-    left in `_subs` are not serviced further, but at least a reconnect
-    loop polling `active` will see the true state promptly instead of
-    hanging forever believing a reader is still running."""
+async def test_reader_death_auto_recovers_for_existing_subscribers():
+    """When the driver generator dies mid-stream, the fanout retries with a
+    fresh generator (bounded by restart_delay) so an ALREADY-connected
+    subscriber's stream self-heals -- it keeps receiving frames without a new
+    subscribe(). Previously a natural death stranded existing subscribers
+    until some future subscribe() happened to restart the reader (the
+    /stream/camera blank-forever bug); the reader now recovers on its own."""
+
+    calls = 0
 
     async def gen():
-        yield b"f0"
-        raise RuntimeError("driver exploded")
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            yield b"f0"
+            raise RuntimeError("driver exploded")  # first reader dies mid-stream
+        while True:                                 # the restarted reader keeps going
+            yield b"post"
+            await asyncio.sleep(0.01)
 
-    fan = Fanout(gen, "video")
+    fan = Fanout(gen, "video", restart_delay=0)
     q = fan.subscribe()
     assert await asyncio.wait_for(q.get(), 1.0) == b"f0"
-
-    # No new subscribe() call here - the fix must self-heal `active`
-    # purely from the reader task's own completion, not from lazy
-    # detection inside subscribe(). Poll briefly (no fixed sleep) so the
-    # test isn't flaky if a done-callback needs one extra loop tick.
-    for _ in range(50):
-        if fan.active is False:
-            break
-        await asyncio.sleep(0)
-    assert fan.active is False
-    # The subscriber is still registered but the reader is gone - this is
-    # the documented residual half of the bug (fixed by a fresh
-    # subscribe(), not by this fix alone).
-    assert q in fan._subs
+    # No new subscribe() -- the SAME queue keeps receiving after the death.
+    assert await asyncio.wait_for(q.get(), 1.0) == b"post"
+    assert calls >= 2            # the reader was restarted with a fresh generator
+    assert fan.active is True    # a reader is running again, not stranded
+    fan.unsubscribe(q)
 
 
 async def test_rapid_unsubscribe_resubscribe_never_runs_two_readers():
