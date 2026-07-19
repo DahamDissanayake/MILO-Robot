@@ -404,6 +404,13 @@ def test_unknown_speaker_chatter_creates_no_person_nodes():
     assert person_upserts == []
 
 
+def test_warm_up_makes_a_throwaway_chat_to_preload_the_model():
+    llm = FakeLlm([{"role": "assistant", "content": "ok"}])
+    agent = CognitionAgent(llm, FakeGraph(), FakeMcp())
+    asyncio.run(agent.warm_up())
+    assert len(llm.calls) == 1  # one throwaway chat issued to cold-load Ollama
+
+
 def test_empty_transcript_is_ignored():
     result = asyncio.run(CognitionAgent(FakeLlm(), FakeGraph(), FakeMcp()).on_utterance("  ", DAHAM, None))
     assert result.reply == ""

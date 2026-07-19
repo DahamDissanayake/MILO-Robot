@@ -202,6 +202,15 @@ class CognitionAgent:
             self._tools_loaded = True
         return self._tools
 
+    async def warm_up(self) -> None:
+        """Cold-load the LLM with a tiny throwaway chat. Ollama pulls the model
+        into memory on its FIRST request (~20-30s for a 3B on CPU), so without
+        this the operator's first real reply eats that whole cold start; doing
+        it in the background on connect makes the first real reply prompt."""
+        await self._llm.chat(
+            "Reply with 'ok'.", [{"role": "user", "content": "warm up"}]
+        )
+
     async def on_utterance(
         self,
         transcript: str,

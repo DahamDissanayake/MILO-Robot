@@ -65,7 +65,14 @@ class WhisperAsr(LazyLoad):
         return self._run_transcribe(mono_int16.astype(np.float32) / 32768.0)
 
     def _run_transcribe(self, audio: np.ndarray) -> Transcript:
-        segments, _info = self._model.transcribe(audio, language="en", beam_size=3)
+        # vad_filter runs Silero inside faster-whisper to trim non-speech, which
+        # kills the classic short-clip hallucinations ("Bye.", "Thank you.")
+        # Whisper emits on near-silence; condition_on_previous_text=False stops
+        # it echoing/repeating an earlier utterance's text into this one.
+        segments, _info = self._model.transcribe(
+            audio, language="en", beam_size=3,
+            vad_filter=True, condition_on_previous_text=False,
+        )
         texts, probs = [], []
         for segment in segments:
             texts.append(segment.text.strip())

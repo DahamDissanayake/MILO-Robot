@@ -331,7 +331,7 @@ def test_whisper_asr_falls_back_to_cpu_when_the_configured_device_cant_run(monke
         def __init__(self, model_size, device, compute_type):
             self.device = device
 
-        def transcribe(self, audio, language, beam_size):
+        def transcribe(self, audio, language, beam_size, **kw):
             if self.device != "cpu":
                 raise RuntimeError("Library cublas64_12.dll is not found or cannot be loaded")
             return [_Segment(" hello milo")], None
@@ -359,7 +359,7 @@ def test_whisper_asr_reraises_when_already_on_cpu():
         def __init__(self, model_size, device, compute_type):
             pass
 
-        def transcribe(self, audio, language, beam_size):
+        def transcribe(self, audio, language, beam_size, **kw):
             raise RuntimeError("out of memory")
 
     asr = WhisperAsr(model_size="small", device="cpu")
@@ -389,7 +389,7 @@ def test_whisper_asr_resolves_the_device_at_load_not_first_transcribe(monkeypatc
         def __init__(self, model_size, device, compute_type):
             self.device = device
 
-        def transcribe(self, audio, language, beam_size):
+        def transcribe(self, audio, language, beam_size, **kw):
             if self.device != "cpu":
                 raise RuntimeError("Library cublas64_12.dll is not found or cannot be loaded")
             return [_Segment(" ok")], None
@@ -418,7 +418,7 @@ def test_whisper_asr_healthy_device_loads_once_without_a_rebuild(monkeypatch):
         def __init__(self, model_size, device, compute_type):
             builds["n"] += 1
 
-        def transcribe(self, audio, language, beam_size):
+        def transcribe(self, audio, language, beam_size, **kw):
             return [_Segment(" hi")], None
 
     monkeypatch.setattr(faster_whisper, "WhisperModel", _FakeModel)

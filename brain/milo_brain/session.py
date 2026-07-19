@@ -126,9 +126,19 @@ class RobotCognitionSession:
             except Exception:
                 log.warning("warm-up of %s failed", name, exc_info=True)
 
+        async def warm_llm():
+            # The LLM is an async client, not a blocking load -- cold-load it
+            # with a throwaway chat so the first real reply isn't a ~30s
+            # Ollama cold start.
+            try:
+                await self._agent.warm_up()
+            except Exception:
+                log.warning("warm-up of llm failed", exc_info=True)
+
         await asyncio.gather(
             warm("asr", self._asr.ensure_loaded),
             warm("tts", self._tts.ensure_loaded),
+            warm_llm(),
         )
 
     # -- video --------------------------------------------------------------
