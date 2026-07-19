@@ -233,6 +233,52 @@ def test_graph_client_times_out_cleanly():
     asyncio.run(main())
 
 
+def test_session_records_a_conversation_exchange():
+    from milo_brain.conversation import ConversationLog
+
+    def answers(op, header):
+        if op == "match_face":
+            return {"match": {"id": 1, "type": "person", "props": {"name": "Daham"}}, "similarity": 0.98}
+        return {"neighbors": []} if op == "neighbors" else {"nodes": []} if op == "recent_events" else {}
+
+    async def main():
+        brain_sock, robot_sock = socket_pair()
+        graph = GraphClient(brain_sock)
+        convo = ConversationLog()
+        session = RobotCognitionSession(
+            brain_sock, Peer(id="milo-1", name="milo"),
+            vad=VadSegmenter(is_speech=energy_detector, min_silence_ms=60, pre_roll_frames=2),
+            asr=FakeAsr(), vision=FakeVision(), tts=FakeTts(),
+            agent=CognitionAgent(FakeLlm(), graph, FakeMcp()), graph=graph, mcp=FakeMcp(),
+            conversation=convo,
+        )
+
+        async def robot():
+            while True:
+                msg = await robot_sock.recv()
+                if msg.t == protocol.T_GRAPH:
+                    await robot_sock.send(protocol.T_GRAPH_RESULT, id=msg.get("id"), **answers(msg.get("op"), dict(msg.header)))
+
+        robot_task = asyncio.create_task(robot())
+        # Drive one closed speech segment straight through _handle_segment.
+        seg = session._vad  # build a segment via the same helper the loop uses
+        # Feed loud frames then silence so a segment closes:
+        segment = None
+        t = 0.0
+        for loud in [True] * 10 + [False] * 5:
+            segment = session._vad.push(loud_frame() if loud else quiet_frame(), t) or segment
+            t += 0.02
+        assert segment is not None
+        await session._handle_segment(segment)
+        robot_task.cancel()
+        return convo.recent(5)
+
+    exchanges = asyncio.run(main())
+    assert len(exchanges) == 1
+    assert exchanges[0].heard == "hello milo"      # FakeAsr transcript
+    assert exchanges[0].reply == "Hey Daham!"      # FakeLlm reply
+
+
 def test_factory_handle_closes_mcp_client_when_connect_fails(tmp_path, monkeypatch):
     """A MiloMcpClient whose connect() raises partway through must still be
     close()'d -- otherwise its AsyncExitStack (partially opened transport)

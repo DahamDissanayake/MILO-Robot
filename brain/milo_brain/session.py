@@ -69,6 +69,7 @@ class RobotCognitionSession:
         graph: GraphClient,
         mcp=None,
         face_match_threshold: float = 0.45,
+        conversation=None,
     ):
         self._sock = sock
         self._peer = peer
@@ -80,6 +81,7 @@ class RobotCognitionSession:
         self._graph = graph
         self._mcp = mcp
         self._threshold = face_match_threshold
+        self._conversation = conversation
         self._current_person: dict | None = None
         self._current_embedding_b64: str | None = None
         self._video_task: asyncio.Task | None = None
@@ -146,6 +148,8 @@ class RobotCognitionSession:
         result = await self._agent.on_utterance(
             transcript.text, self._current_person, self._current_embedding_b64
         )
+        if self._conversation is not None and result.reply:
+            self._conversation.add(transcript.text, result.reply)
         await self._respond(result)
 
     async def _respond(self, result: AgentResult) -> None:
@@ -189,6 +193,9 @@ class CognitionSessionFactory:
         self._llm = OllamaClient(cfg.ollama_url, cfg.llm_model, rate_tracker=rate_tracker)
         self.current_session: RobotCognitionSession | None = None
 
+        from .conversation import ConversationLog
+        self.conversation = ConversationLog()
+
     def pipeline_status(self) -> dict[str, tuple[str, str | None]]:
         status: dict[str, tuple[str, str | None]] = {
             "asr": (self._asr.status, self._asr.error),
@@ -198,6 +205,9 @@ class CognitionSessionFactory:
         if self.current_session is not None:
             status.update(self.current_session.pipeline_status())
         return status
+
+    def llm_status(self) -> tuple[str, str | None]:
+        return (getattr(self._llm, "status", "unknown"), getattr(self._llm, "error", None))
 
     async def handle(self, sock: MiloSocket, peer: Peer) -> None:
         from .mcp_client import MiloMcpClient
@@ -223,6 +233,7 @@ class CognitionSessionFactory:
                 graph=graph,
                 mcp=mcp,
                 face_match_threshold=self._cfg.face_match_threshold,
+                conversation=self.conversation,
             )
             self.current_session = session
             try:
