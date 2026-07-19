@@ -129,6 +129,53 @@ def test_chat_without_a_rate_tracker_still_works(monkeypatch):
     assert message == {"role": "assistant", "content": "ok"}
 
 
+def test_ollama_client_status_tracks_success(monkeypatch):
+    import httpx
+    def fake_stream(self, method, url, json):
+        return _FakeStreamCtx([
+            json_lib.dumps({"message": {"role": "assistant", "content": "hi"}, "done": True,
+                            "prompt_eval_count": 1, "prompt_eval_duration": 1_000_000}),
+        ])
+    monkeypatch.setattr(httpx.AsyncClient, "stream", fake_stream)
+    client = OllamaClient()
+    assert client.status == "unknown"
+    asyncio_run_chat(client, "sys", [{"role": "user", "content": "hey"}])
+    assert client.status == "ready"
+    assert client.error is None
+
+
+def test_ollama_client_status_goes_error_on_failure(monkeypatch):
+    import httpx
+    class _BoomCtx:
+        async def __aenter__(self): raise RuntimeError("500 boom")
+        async def __aexit__(self, *e): return False
+    monkeypatch.setattr(httpx.AsyncClient, "stream", lambda self, m, u, json: _BoomCtx())
+    client = OllamaClient()
+    import pytest as _pytest
+    with _pytest.raises(RuntimeError):
+        asyncio_run_chat(client, "sys", [{"role": "user", "content": "hey"}])
+    assert client.status == "error"
+    assert client.error and "boom" in client.error
+
+
+def test_on_utterance_gives_a_fallback_when_the_llm_fails(caplog):
+    import logging
+
+    class _FailingLlm:
+        async def chat(self, system, messages, tools=None):
+            raise RuntimeError("500 Internal Server Error")
+
+    graph = FakeGraph()
+    agent = CognitionAgent(_FailingLlm(), graph, FakeMcp())
+    with caplog.at_level(logging.WARNING, logger="milo_brain.llm.agent"):
+        result = asyncio.run(agent.on_utterance("hello", DAHAM, None))
+    assert result.reply  # a non-empty fallback, not a crash
+    assert "blank" in result.reply.lower() or "again" in result.reply.lower()
+    # a failed turn writes no facts
+    assert not any(op == "upsert_node" and kw.get("type") == "fact" for op, kw in graph.calls)
+    assert any(r.levelno == logging.WARNING for r in caplog.records)
+
+
 def asyncio_run_chat(client, system, messages, tools=None):
     return asyncio.run(client.chat(system, messages, tools=tools))
 

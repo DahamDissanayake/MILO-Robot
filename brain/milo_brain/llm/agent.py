@@ -64,6 +64,8 @@ class OllamaClient:
         self.base_url = base_url.rstrip("/")
         self.model = model
         self._rate_tracker = rate_tracker
+        self.status = "unknown"  # "unknown" | "responding" | "ready" | "error"
+        self.error: str | None = None
 
     async def chat(self, system: str, messages: list[dict], tools: list[dict] | None = None) -> dict:
         """Returns the raw assistant message dict (``content`` and, if the
@@ -80,6 +82,7 @@ class OllamaClient:
         the fact."""
         import httpx
 
+        self.status = "responding"
         payload = {
             "model": self.model,
             "messages": [{"role": "system", "content": system}, *messages],
@@ -93,28 +96,35 @@ class OllamaClient:
         role = "assistant"
         content_parts: list[str] = []
         tool_calls: list[dict] = []
-        async with httpx.AsyncClient(timeout=120) as client:
-            async with client.stream("POST", f"{self.base_url}/api/chat", json=payload) as response:
-                response.raise_for_status()
-                async for line in response.aiter_lines():
-                    if not line:
-                        continue
-                    chunk = json.loads(line)
-                    message = chunk.get("message") or {}
-                    role = message.get("role", role)
-                    piece = message.get("content", "")
-                    if piece:
-                        content_parts.append(piece)
-                        if self._rate_tracker is not None:
-                            self._rate_tracker.record_output_token()
-                    if message.get("tool_calls"):
-                        tool_calls = message["tool_calls"]
-                    if chunk.get("done") and self._rate_tracker is not None:
-                        count = chunk.get("prompt_eval_count")
-                        duration = chunk.get("prompt_eval_duration")
-                        if count is not None and duration is not None:
-                            self._rate_tracker.record_prompt_eval(count, duration)
+        try:
+            async with httpx.AsyncClient(timeout=120) as client:
+                async with client.stream("POST", f"{self.base_url}/api/chat", json=payload) as response:
+                    response.raise_for_status()
+                    async for line in response.aiter_lines():
+                        if not line:
+                            continue
+                        chunk = json.loads(line)
+                        message = chunk.get("message") or {}
+                        role = message.get("role", role)
+                        piece = message.get("content", "")
+                        if piece:
+                            content_parts.append(piece)
+                            if self._rate_tracker is not None:
+                                self._rate_tracker.record_output_token()
+                        if message.get("tool_calls"):
+                            tool_calls = message["tool_calls"]
+                        if chunk.get("done") and self._rate_tracker is not None:
+                            count = chunk.get("prompt_eval_count")
+                            duration = chunk.get("prompt_eval_duration")
+                            if count is not None and duration is not None:
+                                self._rate_tracker.record_prompt_eval(count, duration)
+        except Exception as exc:
+            self.status = "error"
+            self.error = str(exc)[:200]
+            raise
 
+        self.status = "ready"
+        self.error = None
         result: dict = {"role": role, "content": "".join(content_parts)}
         if tool_calls:
             result["tool_calls"] = tool_calls
@@ -219,22 +229,28 @@ class CognitionAgent:
         tools = await self._get_tools()
 
         result = AgentResult(reply="Sorry, I got a bit stuck there.")
-        for _ in range(MAX_TOOL_ROUNDS):
-            message = await self._llm.chat(SYSTEM_PROMPT, messages, tools=tools)
-            tool_calls = message.get("tool_calls") or []
-            if not tool_calls:
-                result = sanitize(parse_llm_json(message.get("content", "")))
-                break
-            messages.append({"role": "assistant", "content": message.get("content", ""), "tool_calls": tool_calls})
-            for call in tool_calls:
-                fn = call.get("function", {})
-                name = fn.get("name", "")
-                arguments = fn.get("arguments") or {}
-                if self._mcp is not None:
-                    tool_result = await self._mcp.call_tool(name, **arguments)
-                else:
-                    tool_result = {"ok": False, "error": "mcp unavailable"}
-                messages.append({"role": "tool", "name": name, "content": json.dumps(tool_result)})
+        try:
+            for _ in range(MAX_TOOL_ROUNDS):
+                message = await self._llm.chat(SYSTEM_PROMPT, messages, tools=tools)
+                tool_calls = message.get("tool_calls") or []
+                if not tool_calls:
+                    result = sanitize(parse_llm_json(message.get("content", "")))
+                    break
+                messages.append({"role": "assistant", "content": message.get("content", ""), "tool_calls": tool_calls})
+                for call in tool_calls:
+                    fn = call.get("function", {})
+                    name = fn.get("name", "")
+                    arguments = fn.get("arguments") or {}
+                    if self._mcp is not None:
+                        tool_result = await self._mcp.call_tool(name, **arguments)
+                    else:
+                        tool_result = {"ok": False, "error": "mcp unavailable"}
+                    messages.append({"role": "tool", "name": name, "content": json.dumps(tool_result)})
+        except Exception as exc:
+            log.warning("LLM call failed (%s); giving a fallback reply", exc)
+            fallback = AgentResult(reply="Sorry — my mind went blank for a second. Can you say that again?")
+            self._history.append({"role": "assistant", "content": fallback.reply})
+            return fallback
 
         self._history.append({"role": "assistant", "content": result.reply})
         new_name = await self._maybe_learn_name(transcript, speaker, face_embedding_b64)
