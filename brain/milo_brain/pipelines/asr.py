@@ -69,11 +69,7 @@ class WhisperAsr(LazyLoad):
         # already gates segments through its own Silero VAD (see
         # pipelines/vad.py) before ASR, so a second in-Whisper VAD pass
         # double-trims and truncates real speech down to a word or two.
-        # condition_on_previous_text=False just stops Whisper echoing an
-        # earlier utterance's text into this one; it doesn't affect length.
-        segments, _info = self._model.transcribe(
-            audio, language="en", beam_size=3, condition_on_previous_text=False,
-        )
+        segments, _info = self._model.transcribe(audio, language="en", beam_size=3)
         texts, probs = [], []
         for segment in segments:
             texts.append(segment.text.strip())

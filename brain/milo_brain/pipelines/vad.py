@@ -46,7 +46,12 @@ class SileroSpeechDetector(LazyLoad):
 
     REQUIRED_SAMPLES = 512  # sr / 31.25 at 16 kHz -- Silero's minimum chunk length
 
-    def __init__(self, threshold: float = 0.5, model=None):
+    def __init__(self, threshold: float = 0.35, model=None):
+        # 0.35, not Silero's usual 0.5: a higher bar clips the quieter starts
+        # and ends of a phrase (e.g. hearing only the loud middle word), so a
+        # lower threshold keeps the whole utterance as speech. The brain still
+        # gates on a full segment closing, so the extra sensitivity mostly
+        # widens real speech rather than admitting noise.
         super().__init__()
         self._threshold = threshold
         self._model = model
@@ -97,9 +102,14 @@ class VadSegmenter:
     def __init__(
         self,
         is_speech: Callable[[np.ndarray], bool] | None = None,
-        min_silence_ms: int = 400,
+        # 700ms (not 400) of silence to close: natural mid-sentence pauses
+        # ("I said hi ... not bye") are often 400-600ms, and closing that
+        # early splits one sentence into fragments -- of which only the first
+        # gets transcribed (the rest is dropped while ASR is busy). pre_roll
+        # 10 frames (200ms, not 100) keeps more of a phrase's quiet onset.
+        min_silence_ms: int = 700,
         max_segment_s: float = 15.0,
-        pre_roll_frames: int = 5,
+        pre_roll_frames: int = 10,
     ):
         self._is_speech = is_speech or SileroSpeechDetector()
         self._min_silence_ms = min_silence_ms
