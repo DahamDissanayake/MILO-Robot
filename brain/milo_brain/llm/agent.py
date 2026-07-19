@@ -30,11 +30,29 @@ MAX_TOOL_ROUNDS = 4
 SYSTEM_PROMPT = f"""You are Milo, a small four-legged robot with a camera, microphones and an OLED face.
 You are curious, warm and a little playful. Keep replies to 1-3 short spoken sentences.
 
-You have tools to move (walk, run_pose, turn, set_mode, reset, standby, relax,
-hold, stop), check your own state (get_imu_state, get_status), change your
-face (set_face -- one of: {", ".join(sorted(VALID_FACES))}), and speak
-something unprompted (speak). Use them when it fits the moment; check
-get_imu_state before an ambitious movement if you're unsure about balance.
+## Acting on requests
+When the user asks you to physically DO something, you MUST call a tool:
+- A trick or body movement -> call run_pose with the pose `name`. Poses include
+  wave, dance, bow, point, pushup, shake, shrug, crab, look_up, look_down, rest,
+  stand, turn_left, turn_right (see the run_pose tool for the full list).
+- To walk around -> call walk with vx/vy (m/s) and yaw_rate (deg/s); walk(0,0,0) stops.
+- An emotion or expression on your face -> call set_face with `name`, one of:
+  {", ".join(sorted(VALID_FACES))}.
+You may also check your balance/state (get_imu_state, get_status) or say
+something unprompted (speak). Check get_imu_state before an ambitious movement
+if you're unsure about balance.
+
+Tool-call rules (follow exactly):
+- run_pose is for BODY actions; set_face is ONLY for the {len(VALID_FACES)} face
+  expressions listed above. "bow", "wave" and "dance" are POSES (run_pose), never faces.
+- Each tool takes ONLY its own arguments. Never wrap them in an "object" key, and
+  never put a face name or vx/vy into run_pose.
+- Worked examples:
+  - "wave at me"        -> run_pose(name="wave")
+  - "do a little dance" -> run_pose(name="dance")
+  - "turn left"         -> run_pose(name="turn_left")
+  - "you look sad"      -> set_face(name="happy")
+  - "walk forward"      -> walk(vx=0.2, vy=0.0, yaw_rate=0.0)
 
 You know things from your on-board memory graph; context about the speaker
 follows. Once you're done (with or without using any tools), reply ONLY with
@@ -153,6 +171,44 @@ def sanitize(data: dict) -> AgentResult:
     return AgentResult(reply=str(data.get("reply", ""))[:600], facts=facts)
 
 
+# Keys small models nest the real arguments under instead of passing them flat
+# (llama3.2:3b routinely emits run_pose({"object": {"name": "wave"}, ...})).
+_ARG_WRAPPER_KEYS = ("object", "arguments", "args", "params", "parameters", "kwargs")
+
+
+def repair_tool_args(arguments, valid_params: set[str]) -> dict:
+    """Best-effort fix for a small model's malformed tool-call arguments so an
+    otherwise-correct call still reaches the robot instead of being rejected by
+    the bridge. Two observed failure modes from llama3.2:3b:
+
+    1. The real args are nested under an ``"object"``/``"arguments"`` wrapper key
+       -- unwrap it (merging the inner dict up, inner values winning).
+    2. Params from *other* tools are dumped into one call (e.g. ``face`` and
+       ``vx`` inside a run_pose call) -- drop anything the tool's schema
+       doesn't declare.
+
+    ``valid_params`` is the tool's declared parameter names (empty if unknown,
+    in which case we unwrap but don't filter). Accepts a JSON string too, since
+    Ollama occasionally hands the arguments back as a string."""
+    if isinstance(arguments, str):
+        try:
+            arguments = json.loads(arguments)
+        except json.JSONDecodeError:
+            return {}
+    if not isinstance(arguments, dict):
+        return {}
+    merged = dict(arguments)
+    for wrapper in _ARG_WRAPPER_KEYS:
+        inner = merged.get(wrapper)
+        if isinstance(inner, dict) and wrapper not in valid_params:
+            merged.pop(wrapper)
+            for key, value in inner.items():
+                merged.setdefault(key, value)
+    if valid_params:
+        merged = {k: v for k, v in merged.items() if k in valid_params}
+    return merged
+
+
 def extract_name(transcript: str) -> str | None:
     """Pull a name only from an explicit self-introduction. Ordinary short
     phrases are NOT treated as names (that created junk person nodes).
@@ -210,6 +266,16 @@ class CognitionAgent:
             self._tools_loaded = True
         return self._tools
 
+    def _valid_params_for(self, tool_name: str) -> set[str]:
+        """The parameter names a given tool declares, from the cached schemas --
+        used to strip a small model's stray/misplaced tool-call args."""
+        for tool in self._tools or []:
+            fn = tool.get("function", {})
+            if fn.get("name") == tool_name:
+                props = (fn.get("parameters") or {}).get("properties") or {}
+                return set(props)
+        return set()
+
     async def warm_up(self) -> None:
         """Cold-load the LLM with a tiny throwaway chat. Ollama pulls the model
         into memory on its FIRST request (~20-30s for a 3B on CPU), so without
@@ -257,7 +323,9 @@ class CognitionAgent:
                 for call in tool_calls:
                     fn = call.get("function", {})
                     name = fn.get("name", "")
-                    arguments = fn.get("arguments") or {}
+                    arguments = repair_tool_args(
+                        fn.get("arguments") or {}, self._valid_params_for(name)
+                    )
                     if self._mcp is not None:
                         tool_result = await self._mcp.call_tool(name, **arguments)
                     else:

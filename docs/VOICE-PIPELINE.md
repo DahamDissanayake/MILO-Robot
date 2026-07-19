@@ -37,14 +37,24 @@ it). Nothing here needs a robot/Pi redeploy.
   usable CUDA GPU it falls back to **CPU** automatically (slower, lower accuracy
   — see *GPU acceleration* below).
 
-- **LLM (reply)** — `llm/agent.py`, Ollama. Milo **always** replies via the LLM;
-  identity (face match / a name you gave this session) is just context, never a
-  gate. **Tool-calling is OFF by default** (`llm_use_tools`) because small models
-  (e.g. `llama3.2:3b`) call tools unreliably and it broke the spoken reply into
-  raw JSON / "Hmm."; with tools off, Ollama's strict JSON mode gives clean
-  conversational replies. An LLM error degrades to a spoken fallback (no
-  traceback spam). The robot still turns toward your voice and animates its face
-  while speaking — those are direct, not LLM-driven.
+- **LLM (reply + actions)** — `llm/agent.py`, Ollama. Milo **always** replies via
+  the LLM; identity (face match / a name you gave this session) is just context,
+  never a gate. An LLM error degrades to a spoken fallback (no traceback spam).
+  The robot also turns toward your voice and animates its face while speaking —
+  those are direct reflexes, not LLM-driven.
+  - **Tool-calling** (`llm_use_tools`) lets the LLM autonomously drive the robot
+    — call `run_pose` (wave/dance/bow/…), `set_face`, `walk`, etc. — over MCP in
+    response to what you say ("wave at me" → it waves). Two things make this work
+    even on a small model like `llama3.2:3b`: (1) a **tightened system prompt**
+    that enumerates poses vs faces, distinguishes them, and gives worked examples
+    ("turn left" → `run_pose(name="turn_left")`); (2) **`repair_tool_args`**,
+    which unwraps the `{"object": {…}}` nesting and drops stray params a small
+    model dumps into a call, so an *almost*-right call still reaches the robot
+    instead of being rejected. Measured on `llama3.2:3b`: 3/6 correct raw → 8/8
+    after these fixes. Off by default in code (`BrainConfig.llm_use_tools=False`)
+    so a fresh install with any model is safe; turn it on in your config once
+    you've confirmed your model calls tools sanely. A bigger model
+    (e.g. `qwen2.5:7b-instruct`) is even more reliable if you want it.
 
 - **TTS (text→speech)** — `pipelines/tts.py`, Piper. Auto-downloads the voice on
   first use; if it can't load, Milo stays silent (logged once) instead of
@@ -63,7 +73,7 @@ it). Nothing here needs a robot/Pi redeploy.
 | Key | Default | Notes |
 |---|---|---|
 | `llm_model` | `llama3.2:3b` | Any Ollama model you've `ollama pull`ed. Must fit in RAM/VRAM. |
-| `llm_use_tools` | `false` | Let the LLM autonomously call movement/face tools. Only turn on with a capable large model — small models break on it. |
+| `llm_use_tools` | `false` (code default) | Let the LLM autonomously call movement/face tools over MCP. A tightened prompt + `repair_tool_args` make this work on `llama3.2:3b` (~8/8 on simple commands); `qwen2.5:7b-instruct` is even more reliable. |
 | `whisper_model` | `small` (`medium` recommended on a GPU) | `tiny`/`base`/`small`/`medium` (or `.en` variants). Bigger = more accurate, slower. `medium` is great on GPU (~0.4 s/clip), slow on CPU. |
 | `piper_voice` | `en_US-lessac-medium` | Auto-downloaded on first use. |
 | `ollama_url` | `http://127.0.0.1:11434` | Where Ollama runs. |
