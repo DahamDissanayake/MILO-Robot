@@ -27,6 +27,8 @@ class FakeConnector:
         self._manual_targets: list[str] = []
         self.reconnect_requested = 0
         self._reconnect_result = True
+        self.disconnect_requested = 0
+        self._disconnect_result = True
         self.ran = asyncio.Event()
 
     def paired_ids(self):
@@ -41,6 +43,10 @@ class FakeConnector:
     def request_reconnect(self):
         self.reconnect_requested += 1
         return self._reconnect_result
+
+    def request_disconnect(self):
+        self.disconnect_requested += 1
+        return self._disconnect_result
 
     async def run_forever(self):
         self.ran.set()
@@ -145,3 +151,29 @@ def test_provided_factory_is_used_as_is():
     factory = object()
     app = MiloBrainApp(connector, cfg, TokenRateTracker(), factory=factory)
     assert app.factory is factory
+
+
+def test_disconnect_action_calls_through_to_the_connector():
+    async def scenario():
+        app, connector = make_app()
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            app.action_disconnect()
+            await pilot.pause()
+            return connector.disconnect_requested
+
+    assert asyncio.run(scenario()) == 1
+
+
+def test_disconnect_action_notifies_when_nothing_is_connected():
+    async def scenario():
+        app, connector = make_app()
+        connector._disconnect_result = False
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            app.action_disconnect()
+            await pilot.pause()
+            return [n.message for n in app._notifications]
+
+    messages = asyncio.run(scenario())
+    assert any("Not connected" in m for m in messages)

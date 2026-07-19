@@ -28,6 +28,7 @@ class MiloBrainApp(App):
     BINDINGS = [
         ("c", "connect_robots", "Connect Robots"),
         ("r", "reconnect", "Reconnect"),
+        ("d", "disconnect", "Disconnect"),
         ("m", "pick_model", "Model"),
         ("l", "logs", "Logs"),
         ("q", "quit", "Quit"),
@@ -79,6 +80,14 @@ class MiloBrainApp(App):
         background tick loop is currently sitting in."""
         if not self.connector.request_reconnect():
             self.notify("No previous connection to reconnect to yet", severity="warning")
+
+    def action_disconnect(self) -> None:
+        """Disconnect from the current robot and stop auto-reconnecting until
+        the operator reconnects (c) or redials the last robot (r)."""
+        if self.connector.request_disconnect():
+            self.notify("Disconnected")
+        else:
+            self.notify("Not connected", severity="warning")
 
     def action_logs(self) -> None:
         self.push_screen(LogsScreen(self.log_buffer))

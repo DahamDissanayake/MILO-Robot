@@ -289,3 +289,18 @@ def test_refresh_from_omits_pipelines_when_factory_is_none():
             assert "unavailable" in detail
 
     asyncio.run(scenario())
+
+
+def test_refresh_from_shows_manual_disconnect_distinct_from_idle():
+    async def scenario():
+        cfg = BrainConfig(brain_id="b", name="n", tier="small")
+        connector = _FakeConnector(link_state="disconnected", last_connected=("10.0.0.9", 8765))
+        app = _HostApp()
+        async with app.run_test():
+            screen = app.query_one(DashboardScreen)
+            screen.refresh_from(connector, cfg, TokenRateTracker())
+            connection = str(screen.query_one(ConnectionPanel).content)
+            assert "disconnected" in connection
+            assert "no robot connected" not in connection
+
+    asyncio.run(scenario())

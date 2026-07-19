@@ -45,6 +45,8 @@ class ConnectionPanel(Static):
             lines.append(f"Robot: retrying in {countdown} (attempt {attempt})")
             if last_error:
                 lines.append(f"  last error: {last_error}")
+        elif link_state == "disconnected":
+            lines.append("Robot: disconnected (press c to connect, r to reconnect)")
         else:
             lines.append("Robot: no robot connected")
         lines.append(f"Paired robots: {paired_count}")
