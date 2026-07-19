@@ -13,6 +13,8 @@
   checklists
 - [`WEB-DASHBOARD.md`](WEB-DASHBOARD.md) — the Pi-hosted web dashboard's
   feature tour and how to add a new card
+- [`VOICE-PIPELINE.md`](VOICE-PIPELINE.md) — the brain's voice loop (VAD → ASR →
+  LLM → TTS): how it works, the config knobs, how to test it, and enabling GPU
 
 ## Other contents
 
