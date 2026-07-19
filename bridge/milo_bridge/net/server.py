@@ -83,6 +83,9 @@ class RobotServer:
         # (see webapp/motion.py's switch_active_brain).
         self.connected_brains: dict[str, Peer] = {}
         self.active_brain_id: str | None = None
+        # Live socket per connected brain, so the webapp can close a
+        # specific brain's session (see disconnect_brain / webapp Brain card).
+        self._brain_socks: dict[str, MiloSocket] = {}
 
     @property
     def connected_brain(self):
@@ -112,6 +115,17 @@ class RobotServer:
         if peer_id not in self.connected_brains:
             return False
         self.active_brain_id = peer_id
+        return True
+
+    async def disconnect_brain(self, peer_id: str) -> bool:
+        """Close a specific connected brain's session. The session's own
+        finally in _on_connection does the bookkeeping (drops it from
+        connected_brains, reassigns active_brain_id, updates busy). Returns
+        False if that brain isn't connected."""
+        sock = self._brain_socks.get(peer_id)
+        if sock is None:
+            return False
+        await sock.close(4003, "disconnected by operator")
         return True
 
     @property
@@ -156,6 +170,7 @@ class RobotServer:
             await self.pairing.exit_pairing_mode()
         log.info("brain connected: %s (%s)", peer.name, peer.id)
         self.connected_brains[peer.id] = peer
+        self._brain_socks[peer.id] = sock
         if self.active_brain_id is None:
             # First brain in gets motion rights automatically; anyone who
             # joins after that just observes until the webapp switches them
@@ -174,6 +189,7 @@ class RobotServer:
             log.info("brain session ended: %s: %s", type(exc).__name__, exc)
         finally:
             self.connected_brains.pop(peer.id, None)
+            self._brain_socks.pop(peer.id, None)
             if self.active_brain_id == peer.id:
                 # Hand motion rights to whoever else is still here, if anyone.
                 self.active_brain_id = next(iter(self.connected_brains), None)

@@ -8,7 +8,7 @@ import pytest
 import websockets
 
 from milo_common.auth import PairedStore, derive_token
-from milo_common.handshake import HandshakeError, brain_handshake
+from milo_common.handshake import HandshakeError, Peer, brain_handshake
 from milo_common.protocol import MiloSocket
 
 from milo_bridge.config import BridgeConfig
@@ -299,3 +299,30 @@ def test_configured_mcp_port_travels_to_the_brain(tmp_path, paired_stores):
             await ws_server.wait_closed()
 
     asyncio.run(main())
+
+
+class _FakeSock:
+    """Stand-in for a MiloSocket -- just enough to prove disconnect_brain
+    called close() with the right args, without a real connection."""
+
+    def __init__(self):
+        self.closed_with = None
+
+    async def close(self, code=1000, reason=""):
+        self.closed_with = (code, reason)
+
+
+def test_disconnect_brain_unknown_id_is_a_noop(tmp_path):
+    server = make_server(tmp_path)
+    assert asyncio.run(server.disconnect_brain("nope")) is False
+
+
+def test_disconnect_brain_closes_the_connected_brains_socket(tmp_path):
+    server = make_server(tmp_path)
+    sock = _FakeSock()
+    server.connected_brains["brain-1"] = Peer(id="brain-1", name="desk")
+    server._brain_socks["brain-1"] = sock
+    server.active_brain_id = "brain-1"
+
+    assert asyncio.run(server.disconnect_brain("brain-1")) is True
+    assert sock.closed_with == (4003, "disconnected by operator")
