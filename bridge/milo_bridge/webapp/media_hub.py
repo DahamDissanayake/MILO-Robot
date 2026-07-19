@@ -63,17 +63,16 @@ class Fanout:
     def _on_task_done(self, task: asyncio.Task) -> None:
         if self._task is task:
             self._task = None
-        # If the task that just finished was cancelled (i.e. unsubscribe()
-        # emptied `_subs` and requested cancellation) but a new subscriber
-        # arrived *before* the cancellation actually unwound, subscribe()
-        # saw `active` still True (the old task wasn't done yet) and only
+        # This only ever fires on a cancellation race: unsubscribe() emptied
+        # `_subs` and requested cancellation, but a new subscriber arrived
+        # *before* the cancellation actually unwound, so subscribe() saw
+        # `active` still True (the old task wasn't done yet) and only
         # re-added to `_subs` without starting a reader. Now that the old
         # reader has truly finished, start a fresh one for those pending
-        # subscribers. This deliberately does NOT fire for a *natural*
-        # death (an uncaught driver exception, or generator exhaustion) -
-        # in that case `task.cancelled()` is False, so we leave existing
-        # subscribers waiting until a fresh subscribe() call notices
-        # `active is False` and starts a new reader (see `active`/`_run`).
+        # subscribers. A *natural* death (driver exception or generator
+        # exhaustion) never reaches here while subscribers remain -- `_run`'s
+        # own retry loop absorbs it and keeps a reader alive (the task only
+        # ends via cancellation once `_subs` is empty).
         if task.cancelled() and self._subs and self._task is None:
             self._start_task()
 
