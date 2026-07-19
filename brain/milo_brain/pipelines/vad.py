@@ -46,12 +46,12 @@ class SileroSpeechDetector(LazyLoad):
 
     REQUIRED_SAMPLES = 512  # sr / 31.25 at 16 kHz -- Silero's minimum chunk length
 
-    def __init__(self, threshold: float = 0.35, model=None):
-        # 0.35, not Silero's usual 0.5: a higher bar clips the quieter starts
-        # and ends of a phrase (e.g. hearing only the loud middle word), so a
-        # lower threshold keeps the whole utterance as speech. The brain still
-        # gates on a full segment closing, so the extra sensitivity mostly
-        # widens real speech rather than admitting noise.
+    def __init__(self, threshold: float = 0.5, model=None):
+        # Silero's standard 0.5. (0.35 was tried to catch quiet phrase edges but
+        # let too much unclear/near-silence audio through, which the CPU Whisper
+        # model then mis-decodes into phantom "Bye."/"Thank you." -- the wider
+        # pre_roll + longer min_silence on VadSegmenter capture full utterances
+        # without needing to lower this bar.)
         super().__init__()
         self._threshold = threshold
         self._model = model

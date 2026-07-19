@@ -72,6 +72,12 @@ class WhisperAsr(LazyLoad):
         segments, _info = self._model.transcribe(audio, language="en", beam_size=3)
         texts, probs = [], []
         for segment in segments:
+            # Whisper's own "this window isn't really speech" signal -- high on
+            # the phantom "Bye."/"Thank you." it emits for unclear/near-silent
+            # audio. Dropping these keeps hallucinations out of the transcript
+            # without touching genuine speech (whose no_speech_prob is low).
+            if getattr(segment, "no_speech_prob", 0.0) > 0.6:
+                continue
             texts.append(segment.text.strip())
             probs.append(np.exp(segment.avg_logprob))
         if not texts:
