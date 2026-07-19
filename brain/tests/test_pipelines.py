@@ -463,6 +463,39 @@ def test_face_vision_status_delegates_to_a_lazyload_analyzer():
     assert vision.status == "ready"
 
 
+def test_lazyload_concurrent_ensure_loaded_loads_exactly_once():
+    import threading
+    import time
+
+    class _SlowLoader(LazyLoad):
+        def __init__(self):
+            super().__init__()
+            self.load_calls = 0
+
+        def _load(self):
+            self.load_calls += 1
+            time.sleep(0.05)  # widen the race window
+
+    loader = _SlowLoader()
+    errors = []
+
+    def call():
+        try:
+            loader.ensure_loaded()
+        except Exception as exc:  # pragma: no cover
+            errors.append(exc)
+
+    threads = [threading.Thread(target=call) for _ in range(8)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    assert not errors
+    assert loader.load_calls == 1     # only one thread ran _load
+    assert loader.status == "ready"
+
+
 def test_insightface_analyzer_status_starts_not_loaded():
     from milo_brain.pipelines.vision import InsightFaceAnalyzer
 
