@@ -171,6 +171,14 @@ class FakeRobotServer:
         self.active_brain_id = peer_id
         return True
 
+    async def disconnect_brain(self, peer_id):
+        if peer_id not in self.connected_brains:
+            return False
+        del self.connected_brains[peer_id]
+        if self.active_brain_id == peer_id:
+            self.active_brain_id = next(iter(self.connected_brains), None)
+        return True
+
     def connect(self, peer: "FakePeer") -> None:
         """Test helper: simulate a brain connecting (mirrors what
         RobotServer._on_connection does on a successful handshake)."""

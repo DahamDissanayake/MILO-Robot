@@ -45,6 +45,7 @@ export default {
             <li>
               ${b.name}${b.active ? " <b>(active)</b>" : ""}
               ${b.active ? "" : `<button class="btn switch-brain-btn" data-id="${b.id}">Make Active</button>`}
+              <button class="btn disconnect-brain-btn" data-id="${b.id}">Disconnect</button>
             </li>`).join("")
         : "";
       listEl.innerHTML = r.paired.length
@@ -58,8 +59,10 @@ export default {
     // only thing that changes immediately; the robot doesn't move.
     btn.onclick = () => bus.send({ t: "enter_pairing_mode", on: !btn.classList.contains("active") });
     connectedEl.onclick = (ev) => {
-      const target = ev.target.closest(".switch-brain-btn");
-      if (target) bus.send({ t: "switch_active_brain", id: target.dataset.id });
+      const sw = ev.target.closest(".switch-brain-btn");
+      if (sw) { bus.send({ t: "switch_active_brain", id: sw.dataset.id }); return; }
+      const dc = ev.target.closest(".disconnect-brain-btn");
+      if (dc) bus.send({ t: "disconnect_brain", id: dc.dataset.id });
     };
     const offPairing = bus.on("pairing", (m) => { setButton(m.on); refresh(); });
 

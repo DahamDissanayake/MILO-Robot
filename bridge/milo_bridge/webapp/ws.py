@@ -94,6 +94,11 @@ async def _handle_text(app, ws, client_id: str, data: dict) -> None:
         if "error" in res:
             await ws.send_json({"t": "err", "for": "switch_active_brain", "error": res["error"]})
         return
+    if t == "disconnect_brain":
+        res = await motion.disconnect_brain(client_id, str(data.get("id", "")))
+        if "error" in res:
+            await ws.send_json({"t": "err", "for": "disconnect_brain", "error": res["error"]})
+        return
     if t == "audio":
         ws_state = app["ws_state"][ws]
         ws_state["audio_on"] = bool(data.get("on"))

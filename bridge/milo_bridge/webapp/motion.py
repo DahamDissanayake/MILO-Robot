@@ -211,6 +211,16 @@ class MotionService:
             return {"error": f"brain {peer_id!r} isn't connected"}
         return {"ok": True, "active_id": robot_server.active_brain_id}
 
+    async def disconnect_brain(self, client_id: str, peer_id: str) -> dict:
+        if err := self._denied(client_id):
+            return err
+        robot_server = self._deps.robot_server
+        if robot_server is None:
+            return {"error": "unavailable"}
+        if not await robot_server.disconnect_brain(peer_id):
+            return {"error": f"brain {peer_id!r} isn't connected"}
+        return {"ok": True}
+
     async def turn(self, client_id: str, direction: str) -> dict:
         if err := self._denied(client_id):
             return err

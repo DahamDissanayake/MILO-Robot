@@ -382,6 +382,52 @@ async def test_switch_active_brain_rejects_an_unconnected_id():
         await client.close()
 
 
+async def test_disconnect_brain_removes_it_from_the_robot_servers_connected_brains():
+    rs = FakeRobotServer()
+    rs.connect(FakePeer("brain-1", "desk"))
+    rs.connect(FakePeer("brain-2", "laptop"))
+    deps = make_deps(broker=ControlBroker(), robot_server=rs)
+    client, ws = await _ws(deps)
+    try:
+        await ws.send_json({"t": "control", "take": True})
+        await _recv_json_until(ws, "control")
+        await ws.send_json({"t": "disconnect_brain", "id": "brain-2"})
+        await asyncio.sleep(0.05)  # no ack broadcast -- just assert the side effect landed
+        assert "brain-2" not in rs.connected_brains
+    finally:
+        await client.close()
+
+
+async def test_disconnect_brain_denied_without_control():
+    rs = FakeRobotServer()
+    rs.connect(FakePeer("brain-1", "desk"))
+    deps = make_deps(broker=ControlBroker(), robot_server=rs)
+    client, ws = await _ws(deps)
+    try:
+        await ws.send_json({"t": "disconnect_brain", "id": "brain-1"})
+        data = await _recv_json_until(ws, "err")
+        assert data["error"] == "not-controlling"
+        assert "brain-1" in rs.connected_brains
+    finally:
+        await client.close()
+
+
+async def test_disconnect_brain_rejects_an_unconnected_id():
+    rs = FakeRobotServer()
+    rs.connect(FakePeer("brain-1", "desk"))
+    deps = make_deps(broker=ControlBroker(), robot_server=rs)
+    client, ws = await _ws(deps)
+    try:
+        await ws.send_json({"t": "control", "take": True})
+        await _recv_json_until(ws, "control")
+        await ws.send_json({"t": "disconnect_brain", "id": "brain-ghost"})
+        data = await _recv_json_until(ws, "err")
+        assert "isn't connected" in data["error"]
+        assert "brain-1" in rs.connected_brains
+    finally:
+        await client.close()
+
+
 async def test_camera_resolution_accepted_without_control():
     """No control gate on camera_resolution -- observation is never
     brokered in this codebase, only motion is."""
