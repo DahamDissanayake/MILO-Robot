@@ -1,7 +1,9 @@
 // Memory Graph panel: shows the whole knowledge graph by default (Obsidian-
 // style force layout, growing live via polling since there's no WS push for
 // graph mutations), with search highlighting matches instead of replacing
-// the view.
+// the view. Nodes can be dragged (pinned while held), the whole view can be
+// panned by dragging empty space, and the force sim is tuned to settle into
+// a compact circular cluster.
 const POLL_MS = 5000;
 
 export default {
@@ -18,6 +20,7 @@ export default {
     const cv = el.querySelector("#graph-canvas"), g = cv.getContext("2d");
     const detail = el.querySelector("#graph-detail");
     let nodes = [], edges = [], selected = null, highlighted = null, raf = null;
+    let offsetX = 0, offsetY = 0, dragNode = null, panning = false, lastPX = 0, lastPY = 0, downX = 0, downY = 0, moved = false;
 
     function resize() { cv.width = cv.clientWidth; cv.height = cv.clientHeight; draw(); }
     resize();
@@ -53,23 +56,24 @@ export default {
     function tick() {
       const W = cv.width, H = cv.height;
       for (const a of nodes) {
-        a.vx += (W / 2 - a.x) * 0.001; a.vy += (H / 2 - a.y) * 0.001;
+        a.vx += (W / 2 - a.x) * 0.02; a.vy += (H / 2 - a.y) * 0.02;
         for (const b of nodes) {
           if (a === b) continue;
           const dx = a.x - b.x, dy = a.y - b.y;
-          const d2 = Math.max(100, dx * dx + dy * dy);
-          a.vx += (dx / d2) * 600; a.vy += (dy / d2) * 600;
+          const d2 = Math.max(64, dx * dx + dy * dy);
+          a.vx += (dx / d2) * 120; a.vy += (dy / d2) * 120;
         }
       }
       for (const e of edges) {
         const a = nodes.find((n) => n.id === e.src), b = nodes.find((n) => n.id === e.dst);
         if (!a || !b) continue;
         const dx = b.x - a.x, dy = b.y - a.y;
-        a.vx += dx * 0.003; a.vy += dy * 0.003;
-        b.vx -= dx * 0.003; b.vy -= dy * 0.003;
+        a.vx += dx * 0.01; a.vy += dy * 0.01;
+        b.vx -= dx * 0.01; b.vy -= dy * 0.01;
       }
       let settled = true;
       for (const n of nodes) {
+        if (n === dragNode) { n.vx = 0; n.vy = 0; continue; }
         n.vx *= 0.85; n.vy *= 0.85; n.x += n.vx; n.y += n.vy;
         if (Math.abs(n.vx) > 0.05 || Math.abs(n.vy) > 0.05) settled = false;
       }
@@ -82,6 +86,8 @@ export default {
       const muted = getComputedStyle(document.documentElement).getPropertyValue("--muted");
       const ok = getComputedStyle(document.documentElement).getPropertyValue("--ok");
       g.clearRect(0, 0, cv.width, cv.height);
+      g.save();
+      g.translate(offsetX, offsetY);
       g.strokeStyle = muted;
       for (const e of edges) {
         const a = nodes.find((n) => n.id === e.src), b = nodes.find((n) => n.id === e.dst);
@@ -99,16 +105,49 @@ export default {
         g.fillStyle = muted; g.font = "10px sans-serif";
         g.fillText(`${n.props?.name || n.type}#${n.id}`, n.x + 9, n.y + 3);
       }
+      g.restore();
       g.globalAlpha = 1;
     }
 
-    cv.onclick = (ev) => {
+    function hitTest(ev) {
       const r = cv.getBoundingClientRect();
-      const x = ev.clientX - r.left, y = ev.clientY - r.top;
-      selected = nodes.find((n) => (n.x - x) ** 2 + (n.y - y) ** 2 < 120) || null;
-      detail.textContent = selected
-        ? `#${selected.id} [${selected.type}] ${JSON.stringify(selected.props)}`
-        : "";
+      const x = ev.clientX - r.left - offsetX, y = ev.clientY - r.top - offsetY;
+      return nodes.find((n) => (n.x - x) ** 2 + (n.y - y) ** 2 < 120) || null;
+    }
+
+    cv.onpointerdown = (ev) => {
+      const hit = hitTest(ev);
+      downX = ev.clientX; downY = ev.clientY;
+      lastPX = ev.clientX; lastPY = ev.clientY;
+      moved = false;
+      if (hit) { dragNode = hit; cv.setPointerCapture(ev.pointerId); }
+      else { panning = true; }
+    };
+
+    cv.onpointermove = (ev) => {
+      if (dragNode) {
+        const r = cv.getBoundingClientRect();
+        dragNode.x = ev.clientX - r.left - offsetX;
+        dragNode.y = ev.clientY - r.top - offsetY;
+        dragNode.vx = 0; dragNode.vy = 0;
+        moved = true;
+        if (!raf) tick();
+      } else if (panning) {
+        offsetX += ev.clientX - lastPX; offsetY += ev.clientY - lastPY;
+        lastPX = ev.clientX; lastPY = ev.clientY;
+        moved = true;
+        draw();
+      }
+    };
+
+    cv.onpointerup = (ev) => {
+      if (!moved) {
+        selected = hitTest(ev);
+        detail.textContent = selected
+          ? `#${selected.id} [${selected.type}] ${JSON.stringify(selected.props)}`
+          : "";
+      }
+      dragNode = null; panning = false;
       draw();
     };
 
