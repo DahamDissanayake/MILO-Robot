@@ -379,6 +379,66 @@ def test_piper_tts_status_starts_not_loaded():
     assert tts.error is None
 
 
+def test_piper_downloads_the_voice_when_missing(tmp_path):
+    from milo_brain.pipelines.tts import PiperTts
+
+    calls = {"download": 0, "load": 0}
+
+    def fake_download(name, directory):
+        calls["download"] += 1
+        (directory / f"{name}.onnx").write_bytes(b"model")  # simulate the fetch
+
+    def fake_loader(model_path):
+        calls["load"] += 1
+        assert model_path.exists()
+        return object()  # a stand-in "voice"; synthesize isn't exercised here
+
+    tts = PiperTts(voice="en_US-lessac-medium", voices_dir=tmp_path,
+                   download=fake_download, loader=fake_loader)
+    tts.ensure_loaded()
+    assert calls["download"] == 1 and calls["load"] == 1
+    assert tts.status == "ready"
+
+
+def test_piper_skips_download_when_the_voice_is_already_present(tmp_path):
+    from milo_brain.pipelines.tts import PiperTts
+
+    (tmp_path / "en_US-lessac-medium.onnx").write_bytes(b"model")
+    calls = {"download": 0}
+
+    def fake_download(name, directory):
+        calls["download"] += 1
+
+    tts = PiperTts(voice="en_US-lessac-medium", voices_dir=tmp_path,
+                   download=fake_download, loader=lambda p: object())
+    tts.ensure_loaded()
+    assert calls["download"] == 0  # already on disk -> no fetch
+
+
+def test_piper_synthesize_stays_silent_and_logs_once_on_load_failure(tmp_path, caplog):
+    import logging
+    from milo_brain.pipelines.tts import PiperTts
+
+    load_attempts = {"n": 0}
+
+    def failing_download(name, directory):
+        load_attempts["n"] += 1
+        raise RuntimeError("network down")
+
+    tts = PiperTts(voice="en_US-lessac-medium", voices_dir=tmp_path,
+                   download=failing_download, loader=lambda p: object())
+
+    with caplog.at_level(logging.WARNING, logger="milo_brain.pipelines.tts"):
+        assert tts.synthesize("hello") == b""
+        assert tts.synthesize("again") == b""
+        assert tts.synthesize("and again") == b""
+
+    assert tts.status == "error"
+    assert load_attempts["n"] == 1  # only the first call tried to load; the rest short-circuit
+    warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
+    assert len(warnings) == 1  # logged exactly once, not per-utterance
+
+
 # --- vision status delegation -----------------------------------------------
 
 

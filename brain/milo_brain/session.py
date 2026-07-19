@@ -184,7 +184,8 @@ class CognitionSessionFactory:
         self._store = PairedStore(cfg.paired_path)
         self._asr = WhisperAsr(cfg.whisper_model)
         self._vision = FaceVision(analysis_fps=cfg.vision_fps)
-        self._tts = PiperTts(cfg.piper_voice)
+        from pathlib import Path
+        self._tts = PiperTts(cfg.piper_voice, voices_dir=Path(cfg.data_dir) / "piper-voices")
         self._llm = OllamaClient(cfg.ollama_url, cfg.llm_model, rate_tracker=rate_tracker)
         self.current_session: RobotCognitionSession | None = None
 

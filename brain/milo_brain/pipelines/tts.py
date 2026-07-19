@@ -2,12 +2,18 @@
 
 from __future__ import annotations
 
+import logging
+from pathlib import Path
+
 import numpy as np
 
 from ._lazy import LazyLoad
 
+log = logging.getLogger(__name__)
+
 TARGET_RATE = 16_000
 FRAME_MS = 20
+DEFAULT_VOICES_DIR = Path.home() / ".milo-brain" / "piper-voices"
 
 
 def chunk_pcm(pcm: bytes, frame_ms: int = FRAME_MS, rate: int = TARGET_RATE) -> list[bytes]:
@@ -33,19 +39,51 @@ def resample_s16(pcm: np.ndarray, src_rate: int, dst_rate: int = TARGET_RATE) ->
 
 
 class PiperTts(LazyLoad):
-    def __init__(self, voice: str = "en_US-lessac-medium"):
+    """Loads a Piper voice, downloading it on first use if it isn't cached.
+    A voice that can't be fetched/loaded degrades to silence (logged once)
+    rather than crashing every reply."""
+
+    def __init__(self, voice: str = "en_US-lessac-medium", voices_dir=None,
+                 download=None, loader=None):
         super().__init__()
         self._voice_name = voice
+        self._voices_dir = Path(voices_dir) if voices_dir else DEFAULT_VOICES_DIR
+        self._download = download
+        self._loader = loader
         self._voice = None
+        self._warned = False
 
     def _load(self) -> None:
-        from piper import PiperVoice
-
-        self._voice = PiperVoice.load(self._voice_name)
+        download = self._download
+        loader = self._loader
+        if download is None:
+            from piper.download_voices import download_voice
+            download = download_voice
+        if loader is None:
+            from piper import PiperVoice
+            loader = PiperVoice.load
+        model_path = self._voices_dir / f"{self._voice_name}.onnx"
+        if not model_path.exists():
+            self._voices_dir.mkdir(parents=True, exist_ok=True)
+            log.info("downloading Piper voice %r to %s", self._voice_name, self._voices_dir)
+            download(self._voice_name, self._voices_dir)
+        self._voice = loader(model_path)
 
     def synthesize(self, text: str) -> bytes:
-        """16 kHz mono s16le for ``{"t":"tts"}`` frames."""
-        self.ensure_loaded()
+        """16 kHz mono s16le for ``{"t":"tts"}`` frames. Returns b"" (silence)
+        if the voice can't be loaded, logging the reason exactly once."""
+        if self.status == "error":
+            return b""
+        try:
+            self.ensure_loaded()
+        except Exception:
+            if not self._warned:
+                log.warning(
+                    "TTS voice %r unavailable (%s); robot will stay silent until restart",
+                    self._voice_name, self.error,
+                )
+                self._warned = True
+            return b""
         samples: list[np.ndarray] = []
         src_rate = TARGET_RATE
         for chunk in self._voice.synthesize(text):
