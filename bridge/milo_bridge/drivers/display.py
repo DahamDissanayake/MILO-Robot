@@ -94,6 +94,7 @@ def render_status_image(status: dict[str, bool]) -> Image.Image:
 class FaceDisplay:
     def __init__(self, device, assets_dir: Path, rng: random.Random | None = None):
         self._device = device
+        self._device_failed = False
         self._assets_dir = Path(assets_dir)
         self._rng = rng or random.Random()
         self._cache: dict[str, list[Image.Image]] = {}
@@ -123,7 +124,16 @@ class FaceDisplay:
         # of the servo tick loop. Calling it directly here would stall the
         # whole event loop (servo ticks, IMU reads, web requests) for that
         # entire duration every time the face animates or changes.
-        await asyncio.to_thread(self._device.display, image)
+        # A missing/unwired OLED (no I2C device at 0x3C) raises here; swallow
+        # it once and no-op thereafter so a dead display can't kill the
+        # idle-loop task or spam tracebacks -- the robot just runs faceless.
+        if self._device_failed:
+            return
+        try:
+            await asyncio.to_thread(self._device.display, image)
+        except Exception as exc:
+            self._device_failed = True
+            log.warning("face display unavailable (%s); continuing without a face", exc)
 
     async def set_face(
         self, name: str, mode: AnimMode = AnimMode.ONCE, fps: float = DEFAULT_FPS

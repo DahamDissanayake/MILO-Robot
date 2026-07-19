@@ -215,3 +215,31 @@ def test_stop_idle_then_start_idle_actually_overrides_base_face(assets: Path):
 
     asyncio.run(run())
     assert face.current_face == "happy"
+
+
+def test_show_swallows_a_device_error_and_no_ops_after(assets: Path):
+    """Device errors (e.g., missing I2C OLED) should not crash tasks or spam
+    tracebacks; the robot should just run faceless."""
+
+    class _FlakyDevice:
+        def __init__(self):
+            self.calls = 0
+
+        def display(self, image):
+            self.calls += 1
+            raise RuntimeError("I2C device not found on address: 0x3C")
+
+    device = _FlakyDevice()
+    face = FaceDisplay(device, assets)
+
+    async def run():
+        # set_face must NOT raise even though the device is dead
+        await face.set_face("happy", AnimMode.ONCE)
+        assert face._device_failed is True
+        assert device.calls == 1  # tried once
+
+        # a second face op is a silent no-op -- device.display not called again
+        await face.set_face("idle", AnimMode.ONCE)
+        assert device.calls == 1  # still just 1, no new call
+
+    asyncio.run(run())
