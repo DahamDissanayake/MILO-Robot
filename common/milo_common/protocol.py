@@ -1,4 +1,4 @@
-"""Wire protocol: one WebSocket, multiplexed JSON control frames + binary payloads.
+﻿"""Wire protocol: one WebSocket, multiplexed JSON control frames + binary payloads.
 
 Every logical message is a JSON text frame. Messages that carry bulk data
 (video/audio/tts) set ``"bin": true`` in the header; the binary payload is sent
@@ -10,6 +10,14 @@ common/tests/test_protocol.py. Headers also carry a monotonically increasing
 ``seq`` (not currently read on receive) for log correlation across the two
 sides -- the transport is a single ordered stream, so there's nothing for a
 receive-side seq check to catch that TCP hasn't already ruled out.
+
+Trust boundary: every frame after the handshake -- video, audio, tts, movement
+commands -- travels over a plain ``ws://`` socket with no transport
+encryption. The handshake's mutual HMAC auth (see handshake.py) proves who's
+on the other end; it does not make the session traffic itself confidential
+against something else already on the same LAN. This is a deliberate
+"trusted home network" design, not an oversight -- add TLS if that
+assumption stops holding (e.g. the robot leaves a trusted network).
 
 Message types (``"t"`` field):
     robot -> brain:  video, audio, graph_result, pair_begin, challenge, auth_ok
@@ -143,3 +151,4 @@ class MiloSocket:
 
     async def close(self, code: int = 1000, reason: str = "") -> None:
         await self._ws.close(code, reason)
+
