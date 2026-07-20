@@ -1,4 +1,4 @@
-﻿"""Wire protocol: one WebSocket, multiplexed JSON control frames + binary payloads.
+"""Wire protocol: one WebSocket, multiplexed JSON control frames + binary payloads.
 
 Every logical message is a JSON text frame. Messages that carry bulk data
 (video/audio/tts) set ``"bin": true`` in the header; the binary payload is sent
@@ -151,4 +151,3 @@ class MiloSocket:
 
     async def close(self, code: int = 1000, reason: str = "") -> None:
         await self._ws.close(code, reason)
-

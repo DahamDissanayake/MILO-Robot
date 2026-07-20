@@ -1,4 +1,4 @@
-﻿"""Milo web dashboard: aiohttp app factory.
+"""Milo web dashboard: aiohttp app factory.
 
 Trust boundary: this serves plain HTTP, no TLS termination. The session
 cookie is ``httponly`` + ``samesite=Strict`` but not ``Secure`` (there's no
@@ -58,7 +58,7 @@ _ALWAYS_REVALIDATE_PATHS = {"/", "/login"}
 async def _no_cache_static_middleware(request: web.Request, handler):
     """Force the HTML shell and every /static/ asset to revalidate with the
     server before reuse. aiohttp's static/FileResponse handlers already set
-    ETag/Last-Modified, so a revalidation is a cheap 304 â€” but with no
+    ETag/Last-Modified, so a revalidation is a cheap 304 — but with no
     Cache-Control header at all, browsers apply their own heuristic
     freshness lifetime and can keep serving a fully stale JS module
     (importing a since-deleted panel file from a prior deploy) with no
@@ -104,4 +104,3 @@ def create_app(deps: WebDeps) -> web.Application:
     app.router.add_get("/login", _login_page)
     app.router.add_static("/static", STATIC_DIR)
     return app
-
