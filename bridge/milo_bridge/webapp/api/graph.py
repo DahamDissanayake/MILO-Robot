@@ -28,6 +28,12 @@ async def get_search(request: web.Request) -> web.Response:
     return web.json_response(deps.graph_store.search_text(q, limit))
 
 
+async def get_stats(request: web.Request) -> web.Response:
+    deps = request.app["deps"]
+    return web.json_response(deps.graph_store.stats())
+
+
 def register(app: web.Application) -> None:
     app.router.add_post("/api/graph", post_graph)
     app.router.add_get("/api/graph/search", get_search)
+    app.router.add_get("/api/graph/stats", get_stats)

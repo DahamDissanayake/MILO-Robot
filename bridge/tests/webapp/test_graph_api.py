@@ -117,3 +117,17 @@ async def test_search_rejects_limit_above_cap():
         assert resp.status == 400
     finally:
         await client.close()
+
+
+async def test_stats_endpoint_returns_counts_by_type():
+    deps = make_deps()
+    _seed(deps.graph_store)
+    client = await _client(deps)
+    try:
+        resp = await client.get("/api/graph/stats")
+        data = await resp.json()
+        assert data["by_type"] == {"person": 2, "object": 1}
+        assert data["total_nodes"] == 3
+        assert data["total_edges"] == 2
+    finally:
+        await client.close()
