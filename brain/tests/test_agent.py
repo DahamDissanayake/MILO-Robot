@@ -403,9 +403,9 @@ def test_build_context_recalls_keyword_matches_beyond_direct_neighbors():
 
 
 def test_build_context_does_not_duplicate_a_node_that_is_both_neighbor_and_keyword_match():
-    fact_node = {"id": 1, "type": "fact", "props": {"text": "likes robots"}}
+    fact_node = {"id": 42, "type": "fact", "props": {"text": "likes robots"}}
     graph = SearchableFakeGraph(
-        neighbors=[{"edge": {"type": "said", "src": DAHAM["id"], "dst": 1}, "node": fact_node}],
+        neighbors=[{"edge": {"type": "said", "src": DAHAM["id"], "dst": 42}, "node": fact_node}],
         search_index={"robots": [fact_node]},
     )
     context = asyncio.run(CognitionAgent(FakeLlm(), graph, FakeMcp())._build_context(DAHAM, "tell me about robots"))

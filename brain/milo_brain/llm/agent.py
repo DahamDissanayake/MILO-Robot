@@ -432,6 +432,7 @@ class CognitionAgent:
     async def _build_context(self, person: dict | None, transcript: str) -> str:
         lines: list[str] = []
         person_id = person.get("id") if person else None
+        seen_ids: set = {person_id} if person_id is not None else set()
         if person is None:
             lines.append(
                 "You are talking to someone you have not identified yet. Chat "
@@ -448,10 +449,11 @@ class CognitionAgent:
                     summary = summarize_node(node)
                     if not summary:
                         continue
+                    if node.get("id") is not None:
+                        seen_ids.add(node.get("id"))
                     label = describe_relation(edge.get("type", "related"), edge.get("src") == person_id)
                     lines.append(f"- {label}: {summary}")
 
-        seen_ids = {person_id} if person_id is not None else set()
         for kw in extract_keywords(transcript):
             result = await self._graph.call("search_text", q=kw, limit=5)
             for node in result.get("nodes", []):
