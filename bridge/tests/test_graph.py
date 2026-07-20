@@ -140,3 +140,40 @@ def test_api_errors_are_returned_not_raised(store):
 def test_embedding_codec_roundtrip():
     vec = embedding(7)
     assert np.allclose(decode_embedding(encode_embedding(vec)), vec)
+
+
+# --- schema validation -------------------------------------------------------
+
+def test_new_node_types_are_accepted(store):
+    animal = store.upsert_node("animal", {"name": "Rex", "species": "dog"})
+    story = store.upsert_node("story", {"text": "told me about Japan"})
+    topic = store.upsert_node("topic", {"text": "weather chat"})
+    assert animal.type == "animal" and story.type == "story" and topic.type == "topic"
+
+
+def test_invalid_edge_type_rejected(store):
+    daham = store.upsert_node("person", {"name": "Daham"})
+    jane = store.upsert_node("person", {"name": "Jane"})
+    with pytest.raises(ValueError):
+        store.upsert_edge(jane.id, daham.id, "boss_of")  # not in EDGE_TYPES
+
+
+def test_relation_and_structural_edge_types_are_accepted(store):
+    daham = store.upsert_node("person", {"name": "Daham"})
+    jane = store.upsert_node("person", {"name": "Jane"})
+    edge = store.upsert_edge(jane.id, daham.id, "supervisor_of")
+    assert edge.type == "supervisor_of"
+    fact = store.upsert_node("fact", {"text": "likes robots"})
+    said = store.upsert_edge(daham.id, fact.id, "said")
+    assert said.type == "said"
+
+
+def test_stats_counts_nodes_by_type_and_total_edges(store):
+    daham = store.upsert_node("person", {"name": "Daham"})
+    jane = store.upsert_node("person", {"name": "Jane"})
+    store.upsert_node("animal", {"name": "Rex"})
+    store.upsert_edge(jane.id, daham.id, "supervisor_of")
+    stats = store.stats()
+    assert stats["by_type"] == {"person": 2, "animal": 1}
+    assert stats["total_nodes"] == 3
+    assert stats["total_edges"] == 1

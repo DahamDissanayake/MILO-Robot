@@ -15,7 +15,8 @@ from pathlib import Path
 
 import numpy as np
 
-NODE_TYPES = frozenset({"person", "place", "object", "event", "fact"})
+from milo_common.graph_types import EDGE_TYPES, NODE_TYPES
+
 EMBEDDING_DIM = 512
 DEFAULT_MATCH_THRESHOLD = 0.45
 
@@ -173,8 +174,22 @@ class GraphStore:
         edges = self._edges_among({n.id for n in nodes})
         return {"nodes": [n.to_dict() for n in nodes], "edges": [e.to_dict() for e in edges]}
 
+    def stats(self) -> dict:
+        """Node counts by type plus totals, for the web dashboard's stats bar."""
+        by_type = dict(self._db.execute(
+            "SELECT type, COUNT(*) FROM nodes GROUP BY type"
+        ).fetchall())
+        total_edges = self._db.execute("SELECT COUNT(*) FROM edges").fetchone()[0]
+        return {
+            "by_type": by_type,
+            "total_nodes": sum(by_type.values()),
+            "total_edges": total_edges,
+        }
+
     # -- edges ---------------------------------------------------------------
     def upsert_edge(self, src: int, dst: int, type: str, props: dict | None = None) -> Edge:
+        if type not in EDGE_TYPES:
+            raise ValueError(f"unknown edge type {type!r}")
         for node_id in (src, dst):
             if self.get_node(node_id) is None:
                 raise KeyError(f"node {node_id} does not exist")
