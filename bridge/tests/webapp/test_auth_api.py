@@ -62,7 +62,7 @@ async def test_login_wrong_password_fails():
     client = await _raw_client(make_deps())
     try:
         resp = await client.post("/api/login", json={"username": TEST_USERNAME, "password": "wrong"})
-        assert resp.status == 200
+        assert resp.status == 401
         data = await resp.json()
         assert data["error"] == "invalid credentials"
         assert "milo_session" not in client.session.cookie_jar.filter_cookies("http://127.0.0.1")
