@@ -59,7 +59,7 @@ class BrainConfig:
     # default: small models do tool-calling unreliably and it breaks the spoken
     # reply (see CognitionAgent). Turn on only with a capable large-tier model.
     llm_use_tools: bool = False
-    piper_voice: str = "en_US-lessac-medium"
+    piper_voice: str = "en_US-amy-medium"
     face_match_threshold: float = 0.45
     vision_fps: float = 3.0
     busy_gpu_percent: int = 85    # above this, advertise busy=1
