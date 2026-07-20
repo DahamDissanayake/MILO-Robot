@@ -17,7 +17,7 @@ def tts_available() -> bool:
 
 async def synth_pcm(text: str, timeout_s: float = 10.0) -> bytes | None:
     proc = await asyncio.create_subprocess_exec(
-        "espeak-ng", "--stdout", "-a", "120", "--", text,
+        "espeak-ng", "-v", "en+f3", "--stdout", "-a", "120", "--", text,
         stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL)
     try:
         out, _ = await asyncio.wait_for(proc.communicate(), timeout_s)
