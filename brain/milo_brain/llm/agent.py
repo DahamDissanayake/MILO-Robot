@@ -446,7 +446,7 @@ class CognitionAgent:
 
         self._history.append({"role": "assistant", "content": result.reply})
         new_name = await self._maybe_learn_name(transcript, speaker, face_embedding_b64)
-        await self._write_facts(self._session_person, result.facts)
+        await self._write_memory(self._session_person, result)
         return replace(result, new_person_name=new_name) if new_name else result
 
     async def _maybe_learn_name(
@@ -516,12 +516,43 @@ class CognitionAgent:
                 lines.append(f"- recent event: {text}")
         return "\n".join(lines)
 
-    async def _write_facts(self, person: dict | None, facts: list[str]) -> None:
+    async def _find_or_create_entity(self, name: str, kind: str) -> dict | None:
+        existing = await self._graph.call("query", type=kind, limit=200)
+        for node in existing.get("nodes", []):
+            if node.get("props", {}).get("name", "").lower() == name.lower():
+                return node
+        created = await self._graph.call("upsert_node", type=kind, props={"name": name})
+        return created.get("node")
+
+    async def _write_memory(self, person: dict | None, result: AgentResult) -> None:
         node_id = person.get("id") if person else None
-        for fact in facts:
+
+        for fact in result.facts:
             created = await self._graph.call("upsert_node", type="fact", props={"text": fact})
             fact_id = created.get("node", {}).get("id")
             if node_id is not None and fact_id is not None:
+                await self._graph.call("upsert_edge", src=node_id, dst=fact_id, type="said")
+
+        for entity in result.entities:
+            target = await self._find_or_create_entity(entity["name"], entity["kind"])
+            with_name = entity.get("with")
+            if with_name == "speaker":
+                subject_id = node_id
+            elif with_name:
+                subject = await self._find_or_create_entity(with_name, "person")
+                subject_id = subject["id"] if subject else None
+            else:
+                subject_id = None
+            if subject_id is not None and target is not None:
                 await self._graph.call(
-                    "upsert_edge", src=node_id, dst=fact_id, type="said"
+                    "upsert_edge", src=target["id"], dst=subject_id, type=entity["relation"]
                 )
+
+        if result.story and node_id is not None:
+            created = await self._graph.call("upsert_node", type="story", props={"text": result.story})
+            story_id = created.get("node", {}).get("id")
+            if story_id is not None:
+                await self._graph.call("upsert_edge", src=node_id, dst=story_id, type="told")
+
+        if result.topic:
+            await self._graph.call("upsert_node", type="topic", props={"text": result.topic})

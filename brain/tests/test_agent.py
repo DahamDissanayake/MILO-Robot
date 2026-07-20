@@ -599,3 +599,60 @@ def test_warm_up_makes_a_throwaway_chat_to_preload_the_model():
 def test_empty_transcript_is_ignored():
     result = asyncio.run(CognitionAgent(FakeLlm(), FakeGraph(), FakeMcp()).on_utterance("  ", DAHAM, None))
     assert result.reply == ""
+
+
+def test_on_utterance_writes_entity_relation_story_and_topic():
+    llm = FakeLlm([{"role": "assistant", "content": json.dumps({
+        "reply": "Got it!",
+        "facts": [],
+        "entities": [{"name": "Jane", "kind": "person", "relation": "supervisor_of", "with": "speaker"}],
+        "story": "told me about her trip to Japan last year",
+        "topic": "the weather has been nice lately",
+    })}])
+    graph = FakeGraph()
+    agent = CognitionAgent(llm, graph, FakeMcp())
+
+    result = asyncio.run(agent.on_utterance(
+        "Jane is my supervisor, she just got back from Japan", DAHAM, None))
+    assert result.reply == "Got it!"
+
+    person_creates = [kw for op, kw in graph.calls if op == "upsert_node" and kw.get("type") == "person"]
+    assert person_creates and person_creates[0]["props"]["name"] == "Jane"
+
+    edge_calls = [kw for op, kw in graph.calls if op == "upsert_edge"]
+    assert len(edge_calls) == 2  # supervisor_of + told, topic gets no edge
+
+    relation_edge = next(kw for kw in edge_calls if kw["type"] == "supervisor_of")
+    assert relation_edge["dst"] == DAHAM["id"]  # Jane --supervisor_of--> Daham
+    assert isinstance(relation_edge["src"], int)
+
+    story_creates = [kw for op, kw in graph.calls if op == "upsert_node" and kw.get("type") == "story"]
+    assert story_creates and "Japan" in story_creates[0]["props"]["text"]
+    told_edge = next(kw for kw in edge_calls if kw["type"] == "told")
+    assert told_edge["src"] == DAHAM["id"]
+
+    topic_creates = [kw for op, kw in graph.calls if op == "upsert_node" and kw.get("type") == "topic"]
+    assert topic_creates and "weather" in topic_creates[0]["props"]["text"]
+
+
+class GraphWithExistingJane(FakeGraph):
+    async def call(self, op, **kwargs):
+        if op == "query" and kwargs.get("type") == "person":
+            self.calls.append((op, kwargs))
+            return {"nodes": [{"id": 42, "type": "person", "props": {"name": "Jane"}}]}
+        return await super().call(op, **kwargs)
+
+
+def test_entity_relation_reuses_existing_person_by_case_insensitive_name():
+    llm = FakeLlm([{"role": "assistant", "content": json.dumps({
+        "reply": "ok", "facts": [],
+        "entities": [{"name": "jane", "kind": "person", "relation": "supervisor_of", "with": "speaker"}],
+    })}])
+    graph = GraphWithExistingJane()
+    agent = CognitionAgent(llm, graph, FakeMcp())
+    asyncio.run(agent.on_utterance("jane is my supervisor", DAHAM, None))
+
+    person_creates = [kw for op, kw in graph.calls if op == "upsert_node" and kw.get("type") == "person"]
+    assert person_creates == []  # reused id 42, not created again
+    edge_calls = [kw for op, kw in graph.calls if op == "upsert_edge"]
+    assert edge_calls[0]["src"] == 42
