@@ -104,6 +104,21 @@ Then from any device on the same Wi-Fi, open `http://milo.local` (falls
 back automatically to `http://milo.local:8080` if port 80 is ever
 unavailable, and to the robot's raw LAN IP if mDNS doesn't resolve).
 
+## Resetting the memory graph
+
+The memory graph (`graph.db` under the configured `data_dir`, default
+`~/.milo/graph.db`) uses a schema that's validated in code, not migrated in
+the database — upgrading to a new node/edge taxonomy means wiping and
+starting fresh rather than an in-place migration:
+
+```bash
+sudo systemctl stop milo-bridge
+rm ~/.milo/graph.db          # a nightly backup exists under ~/.milo/backups/ if needed
+sudo systemctl start milo-bridge
+```
+
+The graph rebuilds from scratch as Milo has new conversations.
+
 ## Package layout
 
 ```
