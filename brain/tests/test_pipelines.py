@@ -461,6 +461,14 @@ def test_whisper_asr_reports_the_concrete_device_when_auto_requested(monkeypatch
     assert asr._device_in_use == "cuda"  # not "auto"
 
 
+def test_default_piper_voice_is_female():
+    from milo_brain.config import BrainConfig
+    from milo_brain.pipelines.tts import PiperTts
+
+    assert BrainConfig().piper_voice == "en_US-amy-medium"
+    assert PiperTts()._voice_name == "en_US-amy-medium"
+
+
 def test_piper_tts_status_starts_not_loaded():
     from milo_brain.pipelines.tts import PiperTts
 
