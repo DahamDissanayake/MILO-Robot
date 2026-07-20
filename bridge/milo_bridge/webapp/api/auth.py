@@ -30,7 +30,7 @@ async def post_login(request: web.Request) -> web.Response:
     ok = username == deps.config.web_username and verify_password(password, deps.config.web_password_hash)
     if not ok:
         throttle.record_failure(ip)
-        return web.json_response({"error": "invalid credentials"})
+        return web.json_response({"error": "invalid credentials"}, status=401)
     throttle.record_success(ip)
     token = app["sessions"].create(username)
     resp = web.json_response({"ok": True})

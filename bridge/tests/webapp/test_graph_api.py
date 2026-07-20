@@ -84,3 +84,36 @@ async def test_search_with_empty_query_returns_full_graph_via_http():
         assert len(data["nodes"]) == 3
     finally:
         await client.close()
+
+
+async def test_search_rejects_non_integer_limit():
+    client = await _client(make_deps())
+    try:
+        resp = await client.get("/api/graph/search", params={"limit": "not-a-number"})
+        assert resp.status == 400
+        data = await resp.json()
+        assert "limit" in data["error"]
+    finally:
+        await client.close()
+
+
+async def test_search_rejects_negative_limit():
+    deps = make_deps()
+    _seed(deps.graph_store)
+    client = await _client(deps)
+    try:
+        resp = await client.get("/api/graph/search", params={"limit": "-1"})
+        assert resp.status == 400
+        data = await resp.json()
+        assert "limit" in data["error"]
+    finally:
+        await client.close()
+
+
+async def test_search_rejects_limit_above_cap():
+    client = await _client(make_deps())
+    try:
+        resp = await client.get("/api/graph/search", params={"limit": "100000"})
+        assert resp.status == 400
+    finally:
+        await client.close()
