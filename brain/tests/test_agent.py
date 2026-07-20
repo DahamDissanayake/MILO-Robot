@@ -635,6 +635,23 @@ def test_on_utterance_writes_entity_relation_story_and_topic():
     assert topic_creates and "weather" in topic_creates[0]["props"]["text"]
 
 
+def test_story_from_unidentified_speaker_is_recorded_as_an_orphan_node():
+    llm = FakeLlm([{"role": "assistant", "content": json.dumps({
+        "reply": "That sounds like quite a trip!",
+        "facts": [],
+        "story": "told me about backpacking through Japan last year",
+    })}])
+    graph = FakeGraph()
+    agent = CognitionAgent(llm, graph, FakeMcp())
+
+    asyncio.run(agent.on_utterance("I backpacked through Japan last year", None, None))
+
+    story_creates = [kw for op, kw in graph.calls if op == "upsert_node" and kw.get("type") == "story"]
+    assert story_creates and "Japan" in story_creates[0]["props"]["text"]
+    edge_calls = [kw for op, kw in graph.calls if op == "upsert_edge"]
+    assert edge_calls == []  # no speaker to link it to, but the story itself is still saved
+
+
 class GraphWithExistingJane(FakeGraph):
     async def call(self, op, **kwargs):
         if op == "query" and kwargs.get("type") == "person":

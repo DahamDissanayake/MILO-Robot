@@ -548,10 +548,10 @@ class CognitionAgent:
                     "upsert_edge", src=target["id"], dst=subject_id, type=entity["relation"]
                 )
 
-        if result.story and node_id is not None:
+        if result.story:
             created = await self._graph.call("upsert_node", type="story", props={"text": result.story})
             story_id = created.get("node", {}).get("id")
-            if story_id is not None:
+            if node_id is not None and story_id is not None:
                 await self._graph.call("upsert_edge", src=node_id, dst=story_id, type="told")
 
         if result.topic:
