@@ -248,7 +248,7 @@ but every field:
 | `llm_model` | tier default | `llama3.2:3b` (small) / `llama3.1:8b` (large). Must support Ollama tool-calling. |
 | `whisper_model` | tier default | `small` (small tier) / `medium` (large tier). |
 | `ollama_url` | `http://127.0.0.1:11434` | Where Ollama is listening — change if it's on another machine/container. |
-| `piper_voice` | `en_US-amy-medium` | Piper TTS voice model name. |
+| `piper_voice` | `en_US-lessac-medium` | Piper TTS voice model name. |
 | `face_match_threshold` | `0.45` | Cosine-similarity cutoff for "this is the same person" in face matching. |
 | `vision_fps` | `3.0` | How often the video stream is analyzed for faces (independent of the robot's actual stream fps). |
 | `busy_gpu_percent` | `85` | Reserved for a future "too busy to take a robot" signal — not yet wired up. |

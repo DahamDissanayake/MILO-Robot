@@ -43,7 +43,7 @@ class PiperTts(LazyLoad):
     A voice that can't be fetched/loaded degrades to silence (logged once)
     rather than crashing every reply."""
 
-    def __init__(self, voice: str = "en_US-amy-medium", voices_dir=None,
+    def __init__(self, voice: str = "en_US-lessac-medium", voices_dir=None,
                  download=None, loader=None):
         super().__init__()
         self._voice_name = voice
