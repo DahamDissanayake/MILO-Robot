@@ -271,7 +271,22 @@ def test_session_records_a_conversation_exchange():
                 if msg.t == protocol.T_GRAPH:
                     await robot_sock.send(protocol.T_GRAPH_RESULT, id=msg.get("id"), **answers(msg.get("op"), dict(msg.header)))
 
+        async def deliver_graph_results():
+            # This test drives _handle_segment directly instead of running
+            # session.run()'s recv loop, so nothing routes T_GRAPH_RESULT
+            # frames back to the GraphClient's pending futures -- do that
+            # narrow slice of run()'s job here. (Previously _build_context
+            # made zero graph calls for an unidentified speaker -- since it
+            # now also does keyword recall/recent-events for them too, those
+            # calls need their responses delivered or they hang until
+            # GraphClient's call() timeout.)
+            while True:
+                msg = await brain_sock.recv()
+                if msg.t == protocol.T_GRAPH_RESULT:
+                    graph.deliver(dict(msg.header))
+
         robot_task = asyncio.create_task(robot())
+        deliver_task = asyncio.create_task(deliver_graph_results())
         # Drive one closed speech segment straight through _handle_segment.
         seg = session._vad  # build a segment via the same helper the loop uses
         # Feed loud frames then silence so a segment closes:
@@ -283,6 +298,7 @@ def test_session_records_a_conversation_exchange():
         assert segment is not None
         await session._handle_segment(segment)
         robot_task.cancel()
+        deliver_task.cancel()
         return convo.recent(5)
 
     exchanges = asyncio.run(main())

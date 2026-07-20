@@ -364,7 +364,7 @@ class CognitionAgent:
             self._session_person = person
         speaker = person if person is not None else self._session_person
 
-        context = await self._build_context(speaker)
+        context = await self._build_context(speaker, transcript)
         self._history.append({"role": "user", "content": transcript})
         self._history = self._history[-12:]
         messages = [
@@ -429,23 +429,39 @@ class CognitionAgent:
         log.info("learned speaker name: %s (node %s)", name, node.get("id"))
         return name
 
-    async def _build_context(self, person: dict | None) -> str:
+    async def _build_context(self, person: dict | None, transcript: str) -> str:
+        lines: list[str] = []
+        person_id = person.get("id") if person else None
         if person is None:
-            return (
+            lines.append(
                 "You are talking to someone you have not identified yet. Chat "
                 "naturally; you may ask their name once if it feels right, but "
                 "don't insist."
             )
-        lines = [f"Speaker: {person.get('props', {}).get('name', 'unknown')}"]
-        node_id = person.get("id")
-        if node_id is not None:
-            neighbors = await self._graph.call("neighbors", node_id=node_id, limit=10)
-            for item in neighbors.get("neighbors", []):
-                node = item.get("node") or {}
-                edge = item.get("edge") or {}
-                summary = node.get("props", {}).get("text") or node.get("props", {}).get("name")
+        else:
+            lines.append(f"Speaker: {person.get('props', {}).get('name', 'unknown')}")
+            if person_id is not None:
+                neighbors = await self._graph.call("neighbors", node_id=person_id, limit=10)
+                for item in neighbors.get("neighbors", []):
+                    node = item.get("node") or {}
+                    edge = item.get("edge") or {}
+                    summary = summarize_node(node)
+                    if not summary:
+                        continue
+                    label = describe_relation(edge.get("type", "related"), edge.get("src") == person_id)
+                    lines.append(f"- {label}: {summary}")
+
+        seen_ids = {person_id} if person_id is not None else set()
+        for kw in extract_keywords(transcript):
+            result = await self._graph.call("search_text", q=kw, limit=5)
+            for node in result.get("nodes", []):
+                if node.get("id") in seen_ids:
+                    continue
+                seen_ids.add(node.get("id"))
+                summary = summarize_node(node)
                 if summary:
-                    lines.append(f"- {edge.get('type', 'related')}: {summary}")
+                    lines.append(f"- recalled ({node.get('type')}): {summary}")
+
         recent = await self._graph.call("recent_events", limit=5)
         for node in recent.get("nodes", []):
             text = node.get("props", {}).get("text")

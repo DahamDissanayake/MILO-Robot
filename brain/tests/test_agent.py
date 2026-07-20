@@ -234,6 +234,33 @@ class FakeGraph:
         return {}
 
 
+class SearchableFakeGraph:
+    """A FakeGraph variant with a configurable keyword -> nodes index and a
+    configurable neighbor list, for testing _build_context's whole-graph
+    keyword recall (search_text) both independently of and overlapping with
+    the direct-neighbors path."""
+
+    def __init__(self, search_index=None, neighbors=None):
+        self.calls: list[tuple[str, dict]] = []
+        self._next_id = 100
+        self._search_index = search_index or {}
+        self._neighbors = neighbors or []
+
+    async def call(self, op, **kwargs):
+        self.calls.append((op, kwargs))
+        if op == "upsert_node":
+            self._next_id += 1
+            return {"node": {"id": self._next_id, "type": kwargs.get("type"),
+                             "props": kwargs.get("props", {})}}
+        if op == "neighbors":
+            return {"neighbors": self._neighbors}
+        if op == "recent_events":
+            return {"nodes": []}
+        if op == "search_text":
+            return {"nodes": self._search_index.get(kwargs.get("q", ""), [])}
+        return {"nodes": []}
+
+
 DAHAM = {"id": 1, "type": "person", "props": {"name": "Daham"}}
 
 
@@ -362,6 +389,34 @@ def test_known_person_gets_contextual_reply_with_no_tool_calls():
     assert "likes robots" in sent and "met Daham yesterday" in sent
     ops = [op for op, _ in graph.calls]
     assert "upsert_node" in ops and "upsert_edge" in ops
+
+
+def test_build_context_recalls_keyword_matches_beyond_direct_neighbors():
+    story_node = {"id": 55, "type": "story", "props": {"text": "trip to Japan last year"}}
+    graph = SearchableFakeGraph(search_index={"Japan": [story_node]})
+    agent = CognitionAgent(FakeLlm(), graph, FakeMcp())
+
+    context = asyncio.run(agent._build_context(DAHAM, "tell me about Japan"))
+    assert "trip to Japan last year" in context
+    search_calls = [kw for op, kw in graph.calls if op == "search_text"]
+    assert any(kw.get("q") == "Japan" for kw in search_calls)
+
+
+def test_build_context_does_not_duplicate_a_node_that_is_both_neighbor_and_keyword_match():
+    fact_node = {"id": 1, "type": "fact", "props": {"text": "likes robots"}}
+    graph = SearchableFakeGraph(
+        neighbors=[{"edge": {"type": "said", "src": DAHAM["id"], "dst": 1}, "node": fact_node}],
+        search_index={"robots": [fact_node]},
+    )
+    context = asyncio.run(CognitionAgent(FakeLlm(), graph, FakeMcp())._build_context(DAHAM, "tell me about robots"))
+    assert context.count("likes robots") == 1  # once from neighbors, not again from the keyword match
+
+
+def test_build_context_deduplicates_a_node_matched_by_multiple_keywords():
+    fact_node = {"id": 7, "type": "fact", "props": {"text": "likes robots"}}
+    graph = SearchableFakeGraph(search_index={"robots": [fact_node], "likes": [fact_node]})
+    context = asyncio.run(CognitionAgent(FakeLlm(), graph, FakeMcp())._build_context(DAHAM, "robots and likes robots"))
+    assert context.count("likes robots") == 1  # matched by two keywords, appears once
 
 
 def test_tool_calls_are_executed_and_looped_until_a_final_reply():
