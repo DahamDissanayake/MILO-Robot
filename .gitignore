@@ -32,6 +32,9 @@ Thumbs.db
 # Agent scratch state (subagent-driven-development progress ledger)
 .superpowers/
 
+# Git worktrees for isolated feature work
+.worktrees/
+
 # graphify knowledge graph output (regenerable, not source)
 graphify-out/
 
