@@ -23,6 +23,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import os
 import secrets
 from pathlib import Path
 
@@ -109,3 +110,4 @@ class PairedStore:
     def _save(self) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self.path.write_text(json.dumps(self._peers, indent=2), encoding="utf-8")
+        os.chmod(self.path, 0o600)

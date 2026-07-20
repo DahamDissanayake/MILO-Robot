@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -53,7 +54,11 @@ async def _cmd_sweep(cfg: BridgeConfig) -> None:
 
 def _cmd_mcp_pair(cfg: BridgeConfig, name: str) -> None:
     store = PairedStore(cfg.paired_path)
-    token_hex = mint_mcp_token(store, name)
+    try:
+        token_hex = mint_mcp_token(store, name)
+    except ValueError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        raise SystemExit(1)
     print(f"Paste this into the MCP client config for {name!r}:")
     print(f"  peer: {name}")
     print(f"  token: {token_hex}")
