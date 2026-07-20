@@ -135,3 +135,19 @@ async def test_synth_pcm_timeout_kills_process(monkeypatch):
     result = await speak_mod.synth_pcm("x", timeout_s=0.01)
     assert result is None
     assert fake_proc.killed is True
+
+
+async def test_synth_pcm_uses_female_voice(monkeypatch):
+    import milo_bridge.webapp.api.speak as speak_mod
+
+    fake_proc = _FakeProc(communicate_result=(b"H" * 44 + b"PCMDATA", b""), returncode=0)
+    captured_args = []
+
+    async def fake_create(*args, **kwargs):
+        captured_args.extend(args)
+        return fake_proc
+
+    monkeypatch.setattr("asyncio.create_subprocess_exec", fake_create)
+    await speak_mod.synth_pcm("x")
+    assert "-v" in captured_args
+    assert captured_args[captured_args.index("-v") + 1] == "en+f3"
