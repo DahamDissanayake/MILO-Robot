@@ -289,6 +289,38 @@ def test_sanitize_drops_face_and_move_keeps_reply_and_facts():
     assert not hasattr(result, "move")
 
 
+def test_sanitize_keeps_valid_entities_and_drops_invalid_relation():
+    data = {
+        "reply": "ok", "facts": [],
+        "entities": [
+            {"name": "Jane", "kind": "person", "relation": "supervisor_of", "with": "speaker"},
+            {"name": "Rex", "kind": "animal", "relation": "made_up_relation", "with": "speaker"},
+        ],
+    }
+    result = sanitize(data)
+    assert len(result.entities) == 1
+    assert result.entities[0] == {"name": "Jane", "kind": "person", "relation": "supervisor_of", "with": "speaker"}
+
+
+def test_sanitize_drops_entity_with_unknown_kind():
+    data = {"reply": "ok", "facts": [], "entities": [
+        {"name": "Rex", "kind": "robot", "relation": "owns", "with": "speaker"},
+    ]}
+    assert sanitize(data).entities == []
+
+
+def test_sanitize_caps_story_and_topic_length_and_treats_null_as_none():
+    data = {"reply": "ok", "facts": [], "story": "x" * 600, "topic": None}
+    result = sanitize(data)
+    assert len(result.story) == 500
+    assert result.topic is None
+
+
+def test_sanitize_handles_missing_entities_story_topic_fields():
+    result = sanitize({"reply": "ok", "facts": []})
+    assert result.entities == [] and result.story is None and result.topic is None
+
+
 def test_repair_tool_args_passes_a_clean_call_through():
     assert repair_tool_args({"name": "wave"}, {"name"}) == {"name": "wave"}
 

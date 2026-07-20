@@ -16,6 +16,8 @@ import logging
 import re
 from dataclasses import dataclass, field, replace
 
+from milo_common.graph_types import RELATION_TYPES
+
 from .token_rate import TokenRateTracker
 
 log = logging.getLogger(__name__)
@@ -26,6 +28,8 @@ VALID_FACES = {
 }
 
 MAX_TOOL_ROUNDS = 4
+
+_RELATIONS = ", ".join(sorted(RELATION_TYPES))
 
 SYSTEM_PROMPT = f"""You are Milo, a small four-legged robot with a camera, microphones and an OLED face.
 You are curious, warm and a little playful. Keep replies to 1-3 short spoken sentences.
@@ -59,14 +63,28 @@ follows. Once you're done (with or without using any tools), reply ONLY with
 JSON matching this schema:
 {{
   "reply": "what you say out loud",
-  "facts": ["short new facts about the speaker worth remembering, empty if none"]
-}}"""
+  "facts": ["short new facts about the speaker worth remembering, empty if none"],
+  "entities": [
+    {{"name": "their name", "kind": "person or animal",
+      "relation": "one of: {_RELATIONS}", "with": "speaker or another name mentioned this turn"}}
+  ],
+  "story": "a longer narrative the speaker just recounted, or null",
+  "topic": "a general note if this exchange wasn't really about the speaker, or null"
+}}
+Only include "entities" when the speaker described a relationship (e.g.
+"she is my supervisor", "this is my dog Rex") -- leave it empty otherwise.
+Only set "story" when the speaker recounted something that happened to
+them, not for ordinary chat. Only set "topic" for exchanges that aren't
+really about the speaker personally."""
 
 
 @dataclass(frozen=True)
 class AgentResult:
     reply: str
     facts: list[str] = field(default_factory=list)
+    entities: list[dict] = field(default_factory=list)
+    story: str | None = None
+    topic: str | None = None
     new_person_name: str | None = None
 
 
@@ -168,7 +186,34 @@ def parse_llm_json(raw: str) -> dict:
 
 def sanitize(data: dict) -> AgentResult:
     facts = [str(f)[:300] for f in data.get("facts", []) if str(f).strip()][:5]
-    return AgentResult(reply=str(data.get("reply", ""))[:600], facts=facts)
+
+    entities = []
+    raw_entities = data.get("entities")
+    for e in raw_entities if isinstance(raw_entities, list) else []:
+        if not isinstance(e, dict):
+            continue
+        name = str(e.get("name", "")).strip()[:100]
+        kind = str(e.get("kind", "")).strip().lower()
+        relation = str(e.get("relation", "")).strip().lower()
+        with_name = str(e.get("with", "")).strip()[:100] or None
+        if not name or kind not in {"person", "animal"} or relation not in RELATION_TYPES:
+            continue
+        entities.append({"name": name, "kind": kind, "relation": relation, "with": with_name})
+    entities = entities[:5]
+
+    def _clean_text(value, max_len=500):
+        if not value:
+            return None
+        cleaned = str(value)[:max_len].strip()
+        return cleaned or None
+
+    story = _clean_text(data.get("story"))
+    topic = _clean_text(data.get("topic"))
+
+    return AgentResult(
+        reply=str(data.get("reply", ""))[:600], facts=facts,
+        entities=entities, story=story, topic=topic,
+    )
 
 
 # Keys small models nest the real arguments under instead of passing them flat
