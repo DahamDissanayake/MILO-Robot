@@ -1,4 +1,5 @@
 import json
+import re
 from pathlib import Path
 
 from milo_bridge.config import BridgeConfig
@@ -15,7 +16,6 @@ def test_load_seeds_web_credentials_on_first_run(tmp_path, caplog):
     # The generated password is logged once so the operator can log in.
     warning_text = "\n".join(r.message for r in caplog.records)
     assert "generated" in warning_text.lower()
-    import re
     match = re.search(r"password[^:]*:\s*(\S+)", warning_text)
     assert match, f"no password found in log output: {warning_text!r}"
     generated_password = match.group(1)
@@ -32,9 +32,19 @@ def test_load_seeds_web_credentials_on_first_run(tmp_path, caplog):
     assert not any("generated" in r.message.lower() for r in caplog.records)
 
 
-def test_load_seeds_a_different_password_per_config(tmp_path):
-    cfg_a = BridgeConfig.load(tmp_path / "a" / "config.json")
-    cfg_b = BridgeConfig.load(tmp_path / "b" / "config.json")
+def test_load_seeds_a_different_password_per_config(tmp_path, caplog):
+    def _generated_password(path):
+        with caplog.at_level("WARNING"):
+            cfg = BridgeConfig.load(path)
+        warning_text = "\n".join(r.message for r in caplog.records)
+        match = re.search(r"password[^:]*:\s*(\S+)", warning_text)
+        assert match, f"no password found in log output: {warning_text!r}"
+        caplog.clear()
+        return cfg, match.group(1)
+
+    cfg_a, password_a = _generated_password(tmp_path / "a" / "config.json")
+    cfg_b, password_b = _generated_password(tmp_path / "b" / "config.json")
+    assert password_a != password_b
     assert cfg_a.web_password_hash != cfg_b.web_password_hash
 
 
