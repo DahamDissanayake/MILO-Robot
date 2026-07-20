@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import logging
+import secrets
 import uuid
 from dataclasses import dataclass, field, asdict, fields
 from pathlib import Path
@@ -74,7 +75,13 @@ class BridgeConfig:
             cfg.save(path)
         if not cfg.web_password_hash:
             from .webapp.auth import hash_password
-            cfg.web_password_hash = hash_password("MILO@gate")
+            password = secrets.token_urlsafe(12)
+            cfg.web_password_hash = hash_password(password)
+            log.warning(
+                "no dashboard password was set -- generated one for user %r: %s "
+                "(shown once here; log in and note it down)",
+                cfg.web_username, password,
+            )
             cfg.save(path)
         if stale:
             cfg.save(path)  # persist the cleaned-up schema so the stale key doesn't keep reappearing

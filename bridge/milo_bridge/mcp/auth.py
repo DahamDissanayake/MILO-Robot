@@ -20,6 +20,8 @@ from starlette.responses import JSONResponse
 
 
 def mint_mcp_token(store: PairedStore, peer_id: str) -> str:
+    if store.is_paired(peer_id):
+        raise ValueError(f"{peer_id!r} is already paired; choose a different name")
     token = secrets.token_bytes(TOKEN_BYTES)
     store.add(peer_id, token, name=peer_id)
     return token.hex()

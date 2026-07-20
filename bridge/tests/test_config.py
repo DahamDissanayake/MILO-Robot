@@ -1,20 +1,51 @@
 import json
+import re
 from pathlib import Path
 
 from milo_bridge.config import BridgeConfig
 from milo_bridge.webapp.auth import verify_password
 
 
-def test_load_seeds_web_credentials_on_first_run(tmp_path):
+def test_load_seeds_web_credentials_on_first_run(tmp_path, caplog):
     path = tmp_path / "config.json"
-    cfg = BridgeConfig.load(path)
+    with caplog.at_level("WARNING"):
+        cfg = BridgeConfig.load(path)
     assert cfg.web_username == "dama"
     assert cfg.web_password_hash != ""
-    assert verify_password("MILO@gate", cfg.web_password_hash)
 
-    # Second load reads the saved file back — must NOT re-seed/re-hash.
-    cfg2 = BridgeConfig.load(path)
+    # The generated password is logged once so the operator can log in.
+    warning_text = "\n".join(r.message for r in caplog.records)
+    assert "generated" in warning_text.lower()
+    match = re.search(r"password[^:]*:\s*(\S+)", warning_text)
+    assert match, f"no password found in log output: {warning_text!r}"
+    generated_password = match.group(1)
+    assert verify_password(generated_password, cfg.web_password_hash)
+
+    # It must not be the old hardcoded default.
+    assert not verify_password("MILO@gate", cfg.web_password_hash)
+
+    # Second load reads the saved file back — must NOT re-seed/re-hash/re-log.
+    caplog.clear()
+    with caplog.at_level("WARNING"):
+        cfg2 = BridgeConfig.load(path)
     assert cfg2.web_password_hash == cfg.web_password_hash
+    assert not any("generated" in r.message.lower() for r in caplog.records)
+
+
+def test_load_seeds_a_different_password_per_config(tmp_path, caplog):
+    def _generated_password(path):
+        with caplog.at_level("WARNING"):
+            cfg = BridgeConfig.load(path)
+        warning_text = "\n".join(r.message for r in caplog.records)
+        match = re.search(r"password[^:]*:\s*(\S+)", warning_text)
+        assert match, f"no password found in log output: {warning_text!r}"
+        caplog.clear()
+        return cfg, match.group(1)
+
+    cfg_a, password_a = _generated_password(tmp_path / "a" / "config.json")
+    cfg_b, password_b = _generated_password(tmp_path / "b" / "config.json")
+    assert password_a != password_b
+    assert cfg_a.web_password_hash != cfg_b.web_password_hash
 
 
 def test_servo_pulse_ranges_round_trip_through_json(tmp_path):

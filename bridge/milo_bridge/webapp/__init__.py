@@ -1,4 +1,13 @@
-"""Milo web dashboard: aiohttp app factory."""
+"""Milo web dashboard: aiohttp app factory.
+
+Trust boundary: this serves plain HTTP, no TLS termination. The session
+cookie is ``httponly`` + ``samesite=Strict`` but not ``Secure`` (there's no
+HTTPS to require) -- login credentials and the session cookie itself are
+readable by anything else on the same LAN segment. Same "trusted home
+network" assumption as the robot<->brain link (see
+common/milo_common/protocol.py); add TLS (e.g. a reverse proxy) if that
+assumption stops holding.
+"""
 from __future__ import annotations
 
 import logging

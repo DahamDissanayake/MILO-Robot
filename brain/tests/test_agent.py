@@ -246,8 +246,9 @@ def test_parse_llm_json_plain_and_fenced():
 
 def test_parse_llm_json_garbage_degrades_gracefully():
     result = parse_llm_json("I am not JSON at all")
-    assert result["face"] == "confused"
     assert result["reply"]
+    assert "face" not in result
+    assert "move" not in result
 
 
 def test_sanitize_drops_face_and_move_keeps_reply_and_facts():

@@ -163,7 +163,7 @@ def parse_llm_json(raw: str) -> dict:
                 return json.loads(match.group(0))
             except json.JSONDecodeError:
                 pass
-    return {"reply": text[:200] or "Hmm.", "face": "confused", "move": "none", "facts": []}
+    return {"reply": text[:200] or "Hmm.", "facts": []}
 
 
 def sanitize(data: dict) -> AgentResult:
