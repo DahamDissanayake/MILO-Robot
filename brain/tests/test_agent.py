@@ -9,10 +9,13 @@ from milo_brain.llm.agent import (
     VALID_FACES,
     CognitionAgent,
     OllamaClient,
+    describe_relation,
+    extract_keywords,
     extract_name,
     parse_llm_json,
     repair_tool_args,
     sanitize,
+    summarize_node,
 )
 from milo_brain.llm.token_rate import TokenRateTracker
 
@@ -305,6 +308,43 @@ def test_extract_name_variants():
     assert extract_name("this is fun") is None
     # ...but "my name is"/"call me" are unambiguous even lowercased.
     assert extract_name("my name is daham") == "Daham"
+
+
+def test_extract_keywords_prefers_proper_nouns_and_drops_stopwords():
+    kws = extract_keywords("Have you seen Jane lately about her new project")
+    assert "Jane" in kws
+    assert "have" not in [k.lower() for k in kws]
+    assert kws[0] == "Jane"  # capitalized proper noun ranked first
+
+
+def test_extract_keywords_caps_at_max_keywords():
+    kws = extract_keywords("apple banana cherry dragon elephant flamingo giraffe", max_keywords=3)
+    assert len(kws) == 3
+
+
+def test_extract_keywords_deduplicates_case_insensitively():
+    kws = extract_keywords("Japan japan JAPAN trip")
+    assert len(kws) == 2  # "Japan" and "trip", not three separate "japan" entries
+
+
+def test_describe_relation_is_direction_aware():
+    assert describe_relation("supervisor_of", viewer_is_src=True) == "supervisor of"
+    assert describe_relation("supervisor_of", viewer_is_src=False) == "reports to"
+    assert describe_relation("owns", viewer_is_src=True) == "owns"
+    assert describe_relation("owns", viewer_is_src=False) == "belongs to"
+    assert describe_relation("friend_of", viewer_is_src=True) == "friend of"
+    assert describe_relation("friend_of", viewer_is_src=False) == "friend of"
+
+
+def test_describe_relation_falls_back_to_the_raw_type_for_structural_edges():
+    assert describe_relation("said", viewer_is_src=True) == "said"
+    assert describe_relation("told", viewer_is_src=False) == "told"
+
+
+def test_summarize_node_prefers_text_then_name_then_none():
+    assert summarize_node({"props": {"text": "likes robots", "name": "ignored"}}) == "likes robots"
+    assert summarize_node({"props": {"name": "Jane"}}) == "Jane"
+    assert summarize_node({"props": {}}) is None
 
 
 # --- agent flows -------------------------------------------------------------

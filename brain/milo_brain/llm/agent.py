@@ -235,6 +235,68 @@ def extract_name(transcript: str) -> str | None:
     return None
 
 
+STOPWORDS = frozenset({
+    "the", "a", "an", "is", "are", "was", "were", "and", "or", "but", "to",
+    "of", "in", "on", "at", "for", "with", "this", "that", "have", "has",
+    "had", "you", "your", "i", "me", "my", "we", "our", "they", "them",
+    "he", "she", "it", "its", "about", "just", "really", "very", "so",
+    "not", "do", "does", "did", "will", "would", "can", "could", "should",
+    "from", "as", "be", "been", "was", "were", "there", "here", "what",
+    "when", "where", "who", "how", "why",
+})
+
+
+def extract_keywords(transcript: str, max_keywords: int = 5) -> list[str]:
+    """Cheap keyword pull for graph-wide recall: capitalized proper nouns
+    first, then longer words, stopwords and short words dropped. No LLM
+    call -- this runs before the reply-generating call, so it can't lean
+    on that turn's own extraction (see CognitionAgent._build_context)."""
+    words = re.findall(r"[A-Za-z][\w'-]*", transcript)
+    candidates = [w for w in words if w.lower() not in STOPWORDS and len(w) >= 4]
+    candidates.sort(key=lambda w: (not w[0].isupper(), -len(w)))
+    seen: set[str] = set()
+    out: list[str] = []
+    for w in candidates:
+        key = w.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(w)
+        if len(out) >= max_keywords:
+            break
+    return out
+
+
+# Direction-aware phrasing for RELATION_TYPES edges: (phrase when the node
+# being described is the edge's src, phrase when it's the dst). Structural
+# edge types (said/told/mentions/met) aren't in this table and read fine
+# using the raw edge type as-is.
+RELATION_PHRASING: dict[str, tuple[str, str]] = {
+    "supervisor_of": ("supervisor of", "reports to"),
+    "reports_to": ("reports to", "supervisor of"),
+    "parent_of": ("parent of", "child of"),
+    "child_of": ("child of", "parent of"),
+    "sibling_of": ("sibling of", "sibling of"),
+    "spouse_of": ("spouse of", "spouse of"),
+    "friend_of": ("friend of", "friend of"),
+    "knows": ("knows", "knows"),
+    "owns": ("owns", "belongs to"),
+    "belongs_to": ("belongs to", "owns"),
+}
+
+
+def describe_relation(edge_type: str, viewer_is_src: bool) -> str:
+    phrasing = RELATION_PHRASING.get(edge_type)
+    if phrasing is None:
+        return edge_type
+    return phrasing[0] if viewer_is_src else phrasing[1]
+
+
+def summarize_node(node: dict) -> str | None:
+    props = node.get("props", {})
+    return props.get("text") or props.get("name")
+
+
 class CognitionAgent:
     def __init__(self, llm, graph, mcp=None, use_tools: bool = False):
         """``llm``: object with async chat(system, messages, tools=None) -> dict.
