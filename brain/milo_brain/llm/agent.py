@@ -539,6 +539,11 @@ class CognitionAgent:
             if with_name == "speaker":
                 subject_id = node_id
             elif with_name:
+                # Hardcoded "person": the entities schema gives no kind hint for the
+                # `with` party, so a third-party animal (e.g. "Rex is Bella's puppy")
+                # will mis-resolve/duplicate Bella as a person node. Fixing this needs
+                # a kind hint added to SYSTEM_PROMPT's entities schema (Task 7) plus
+                # matching sanitize() validation -- known limitation, not fixed here.
                 subject = await self._find_or_create_entity(with_name, "person")
                 subject_id = subject["id"] if subject else None
             else:
