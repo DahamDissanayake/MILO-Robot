@@ -1,4 +1,7 @@
+import sys
 from pathlib import Path
+
+import pytest
 
 from milo_common import auth
 
@@ -58,3 +61,11 @@ def test_paired_store_roundtrip(tmp_path: Path):
 def test_name_for_unknown_peer_falls_back_to_the_id():
     store = auth.PairedStore(Path("unused-does-not-exist.json"))
     assert store.name_for("stranger") == "stranger"
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX file permissions only")
+def test_paired_store_file_is_not_world_or_group_readable(tmp_path: Path):
+    store = auth.PairedStore(tmp_path / "paired.json")
+    store.add("brain-1", auth.derive_token("123123", "r", "b"), name="laptop")
+    mode = (tmp_path / "paired.json").stat().st_mode & 0o777
+    assert mode == 0o600

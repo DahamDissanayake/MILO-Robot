@@ -19,6 +19,14 @@ def test_mint_mcp_token_persists_and_returns_hex(store):
     assert store.token_for("laptop-1") == bytes.fromhex(token_hex)
 
 
+def test_mint_mcp_token_refuses_to_overwrite_an_existing_peer(store):
+    original_hex = mint_mcp_token(store, "laptop-1")
+    with pytest.raises(ValueError):
+        mint_mcp_token(store, "laptop-1")
+    # The original token must survive the rejected mint attempt.
+    assert store.token_for("laptop-1") == bytes.fromhex(original_hex)
+
+
 def _app_with_auth(store):
     async def ok(request):
         return PlainTextResponse("ok")
