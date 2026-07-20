@@ -88,6 +88,14 @@ class RobotServer:
         self._brain_socks: dict[str, MiloSocket] = {}
 
     @property
+    def store(self) -> PairedStore:
+        """The single PairedStore instance backing this server's pairing/auth
+        -- shared with the MCP server (see main.py's _start_mcp) so a brain
+        paired over WS is immediately recognized by the MCP bearer-auth gate
+        too, instead of a second store instance reading a stale snapshot."""
+        return self._store
+
+    @property
     def connected_brain(self):
         """Back-compat single-brain accessor for callers that only care
         whether *any* brain is connected (e.g. tests, simple status

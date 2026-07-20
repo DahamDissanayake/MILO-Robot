@@ -365,6 +365,55 @@ def test_handshake_failure_sets_idle_with_last_error(tmp_path):
 
     assert connector.link_state == "idle"
     assert connector.last_error is not None and "handshake failed" in connector.last_error
+    # attempt_id/last_attempt_error let a UI (e.g. ConnectRobotsScreen) that
+    # kicked off this specific attempt distinguish "my attempt just failed"
+    # from a stale error left over from some earlier, unrelated attempt.
+    assert connector.attempt_id == 1
+    assert connector.last_attempt_error == (1, connector.last_error)
+
+
+def test_attempt_id_increments_on_a_connection_drop_too(tmp_path):
+    # Not just HandshakeError -- a plain connect failure (DNS blip, refused
+    # connection, etc, caught by the generic except Exception branch) must
+    # also be attributed to the attempt that triggered it.
+    cfg = BrainConfig(data_dir=str(tmp_path))
+    discovery = FakeDiscoveryWith(
+        [RobotRecord(robot_id="milo-1", name="milo", host="10.0.0.9", port=8765, pairing=True)]
+    )
+    connector = RobotConnectorManager(
+        cfg, request_pin=lambda name: None, session_handler=lambda sock, peer: None,
+        discovery=discovery,
+        connect=lambda url: _RaisingConnectCM(OSError("[Errno 11001] getaddrinfo failed")),
+    )
+    asyncio.run(connector._tick())
+    assert connector.attempt_id == 1
+    assert connector.last_attempt_error == (1, connector.last_error)
+    assert "getaddrinfo failed" in connector.last_attempt_error[1]
+
+
+def test_attempt_id_keeps_incrementing_so_a_later_failure_is_distinguishable(tmp_path):
+    from milo_common import protocol
+
+    cfg = BrainConfig(data_dir=str(tmp_path), reconnect_seconds=0.0)
+    discovery = FakeDiscoveryWith(
+        [RobotRecord(robot_id="milo-1", name="milo", host="10.0.0.9", port=8765, pairing=True)]
+    )
+
+    def make_error_socket():
+        ws = FakeWebSocket()
+        ws.outbox.put_nowait(protocol.encode_header(protocol.T_ERROR, code="bad_pin"))
+        return ws
+
+    sockets = [make_error_socket(), make_error_socket()]
+    connector = RobotConnectorManager(
+        cfg, request_pin=lambda name: None, session_handler=lambda sock, peer: None,
+        discovery=discovery, connect=lambda url: _ConnectCM(sockets.pop(0)),
+    )
+
+    asyncio.run(connector._tick())
+    assert connector.last_attempt_error[0] == 1
+    asyncio.run(connector._tick())
+    assert connector.last_attempt_error[0] == 2
 
 
 def test_request_reconnect_is_a_noop_before_any_connection(tmp_path):

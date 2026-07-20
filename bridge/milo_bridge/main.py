@@ -204,13 +204,12 @@ async def _start_mcp(cfg, gait, runner, imu, broker, servos, display, audio, rob
     startup failure, matching every other optional subsystem in this file."""
     try:
         import uvicorn
-        from milo_common.auth import PairedStore
 
         from .mcp.auth import BearerAuthMiddleware
         from .mcp.deps import McpDeps
         from .mcp.server import build_mcp_server
 
-        store = PairedStore(cfg.paired_path)
+        store = robot_server.store
         deps = McpDeps(
             gait=gait, runner=runner, imu=imu, broker=broker,
             servos=servos, display=display, audio=audio,

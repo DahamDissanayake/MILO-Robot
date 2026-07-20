@@ -93,6 +93,12 @@ class RobotConnectorManager:
         # drives _drop_backoff_seconds(); reset to 0 as soon as a connect
         # succeeds again.
         self.consecutive_drops = 0
+        # Bumped at the start of every _connect_and_run() call; lets a UI
+        # that just kicked off a manual connect (e.g. ConnectRobotsScreen)
+        # correlate a later failure with *this* attempt instead of a stale
+        # error left over from some earlier, unrelated one.
+        self.attempt_id: int = 0
+        self.last_attempt_error: tuple[int, str] | None = None  # (attempt_id, message)
         # Manual-disconnect latch: request_disconnect() sets this False and
         # closes the live socket; the tick loop then idles instead of
         # auto-reconnecting until an explicit connect action re-enables it.
@@ -198,6 +204,8 @@ class RobotConnectorManager:
         self._wake.clear()
 
     async def _connect_and_run(self, url: str, *, offer_pairing: bool) -> None:
+        self.attempt_id += 1
+        this_attempt = self.attempt_id
         self.link_state = "connecting"
         self.link_target = _parse_host_port(url)
         self.last_error = None
@@ -232,6 +240,7 @@ class RobotConnectorManager:
         except HandshakeError as exc:
             self.link_state = "idle"
             self.last_error = f"handshake failed: {exc}"
+            self.last_attempt_error = (this_attempt, self.last_error)
             log.warning("handshake with %s failed: %s", url, exc)
             await self._wait_before_retry(self._cfg.reconnect_seconds)
         except Exception as exc:  # connection drop -> fail over on next tick
@@ -251,6 +260,7 @@ class RobotConnectorManager:
             self.link_state = "retrying"
             self.retry_at = time.monotonic() + backoff
             self.last_error = f"{type(exc).__name__}: {exc}"
+            self.last_attempt_error = (this_attempt, self.last_error)
             log.info(
                 "robot link lost (%s: %s), rescanning in %.0fs",
                 type(exc).__name__, exc, backoff,

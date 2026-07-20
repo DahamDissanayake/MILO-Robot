@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 
 from textual.app import App
+from textual.widgets import ListView
 
 from milo_brain.net.discovery import RobotRecord
 from milo_brain.tui.connect_robots import ConnectRobotsScreen
@@ -25,6 +26,12 @@ class FakeConnector:
         self._paired = set(paired)
         self.manual_connect_requests: list[str] = []
         self.manual_ip_requests: list[tuple[str, int]] = []
+        # attempt_id/last_attempt_error: same fields RobotConnectorManager
+        # exposes (see net/connector.py) -- let a test simulate an attempt
+        # resolving by bumping attempt_id and setting last_attempt_error, or
+        # by setting connected_robot directly.
+        self.attempt_id = 0
+        self.last_attempt_error: tuple[int, str] | None = None
 
     def is_paired(self, robot_id):
         return robot_id in self._paired
@@ -35,10 +42,17 @@ class FakeConnector:
     def request_manual_ip_connect(self, host, port=8765):
         self.manual_ip_requests.append((host, port))
 
+    def fail_attempt(self, reason: str) -> None:
+        """Simulate the connector's next attempt resolving to a HandshakeError
+        or connection failure, e.g. connector.fail_attempt("robot refused: unpaired")."""
+        self.attempt_id += 1
+        self.last_attempt_error = (self.attempt_id, f"handshake failed: {reason}")
+
 
 class _Peer:
-    def __init__(self, id):
+    def __init__(self, id, name=""):
         self.id = id
+        self.name = name or id
 
 
 def rec(robot_id, name=None, pairing=False):
@@ -87,6 +101,116 @@ def test_selecting_an_item_requests_a_manual_connect():
 
     asyncio.run(scenario())
     assert connector.manual_connect_requests == ["milo-1"]
+
+
+def test_selecting_locks_the_list_until_the_attempt_resolves():
+    connector = FakeConnector(records=[rec("milo-1", "milo", pairing=True)])
+
+    async def scenario():
+        app = _HostApp(connector)
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            await pilot.press("down")
+            await pilot.press("enter")
+            await pilot.pause()
+            list_view = app.screen.query_one("#device-list", ListView)
+            return list_view.disabled
+
+    assert asyncio.run(scenario()) is True
+
+
+def test_a_second_selection_while_pending_is_ignored():
+    connector = FakeConnector(records=[rec("milo-1", "milo", pairing=True)])
+
+    async def scenario():
+        app = _HostApp(connector)
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            await pilot.press("down")
+            await pilot.press("enter")
+            await pilot.pause()
+            await pilot.press("enter")  # list is disabled -- must be a no-op
+            await pilot.pause()
+
+    asyncio.run(scenario())
+    assert connector.manual_connect_requests == ["milo-1"]
+
+
+def test_a_failed_attempt_is_never_silent_and_re_enables_the_list():
+    # Regression: a manual connect to a robot that isn't currently in
+    # pairing mode used to just log a warning -- the operator saw nothing,
+    # the row looked exactly as clickable as before, and there was no PIN
+    # prompt either. Every attempt must now end in a visible result.
+    connector = FakeConnector(records=[rec("milo-1", "milo", pairing=False)])
+
+    def request_and_fail(robot_id):
+        connector.manual_connect_requests.append(robot_id)
+        connector.fail_attempt("robot refused: unpaired")
+
+    connector.request_manual_connect = request_and_fail
+
+    async def scenario():
+        app = _HostApp(connector)
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            await pilot.press("down")
+            await pilot.press("enter")
+            await asyncio.sleep(0.4)  # let the poll timer notice the failure
+            await pilot.pause()
+            list_view = app.screen.query_one("#device-list", ListView)
+            return list_view.disabled, [n.message for n in app._notifications]
+
+    disabled, messages = asyncio.run(scenario())
+    assert disabled is False
+    assert any("pairing mode" in m for m in messages)
+
+
+def test_a_successful_connect_is_surfaced_and_re_enables_the_list():
+    connector = FakeConnector(records=[rec("milo-1", "milo", pairing=True)])
+
+    def request_and_connect(robot_id):
+        connector.manual_connect_requests.append(robot_id)
+        connector.connected_robot = _Peer(robot_id, "milo")
+
+    connector.request_manual_connect = request_and_connect
+
+    async def scenario():
+        app = _HostApp(connector)
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            await pilot.press("down")
+            await pilot.press("enter")
+            await asyncio.sleep(0.4)
+            await pilot.pause()
+            list_view = app.screen.query_one("#device-list", ListView)
+            return list_view.disabled, [n.message for n in app._notifications]
+
+    disabled, messages = asyncio.run(scenario())
+    assert disabled is False
+    assert any("Connected" in m for m in messages)
+
+
+def test_wrong_pin_failure_names_the_pin_as_the_problem():
+    connector = FakeConnector(records=[rec("milo-1", "milo", pairing=True)])
+
+    def request_and_fail(robot_id):
+        connector.manual_connect_requests.append(robot_id)
+        connector.fail_attempt("peer error: bad_pin")
+
+    connector.request_manual_connect = request_and_fail
+
+    async def scenario():
+        app = _HostApp(connector)
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            await pilot.press("down")
+            await pilot.press("enter")
+            await asyncio.sleep(0.4)
+            await pilot.pause()
+            return [n.message for n in app._notifications]
+
+    messages = asyncio.run(scenario())
+    assert any("PIN" in m for m in messages)
 
 
 def test_empty_discovery_shows_a_message_instead_of_crashing():
