@@ -2,8 +2,14 @@
 
 Every logical message is a JSON text frame. Messages that carry bulk data
 (video/audio/tts) set ``"bin": true`` in the header; the binary payload is sent
-as the immediately following bytes frame. Headers carry ``seq`` so either side
-can detect a lost pairing between header and payload and re-sync.
+as the immediately following bytes frame. ``MiloSocket``'s per-connection send
+lock makes each header+payload pair atomic on the wire, so a receiver never
+sees one message's header followed by another's payload -- see
+``test_concurrent_sends_on_the_same_socket_never_interleave`` in
+common/tests/test_protocol.py. Headers also carry a monotonically increasing
+``seq`` (not currently read on receive) for log correlation across the two
+sides -- the transport is a single ordered stream, so there's nothing for a
+receive-side seq check to catch that TCP hasn't already ruled out.
 
 Message types (``"t"`` field):
     robot -> brain:  video, audio, graph_result, pair_begin, challenge, auth_ok
