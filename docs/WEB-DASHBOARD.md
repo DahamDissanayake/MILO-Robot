@@ -79,11 +79,12 @@ LAN IP, e.g. `http://192.168.1.42:8080`.
 
 ### Logging in
 
-`http://milo.local` lands on a login page. On first run, a random password
-is generated per-robot and logged at WARNING level by `BridgeConfig.load()`
-in `~/.milo/config.json`. To retrieve the generated password, check the logs
-where the bridge was started (e.g. `journalctl -u milo-bridge` if running
-as a systemd service, or the console output if running manually):
+`http://milo.local` lands on a login page. On first run, `BridgeConfig.load()`
+generates a random per-robot password (only its salted hash is saved to
+`~/.milo/config.json`) and logs the plaintext once at WARNING level. To
+retrieve it, check the logs where the bridge was started (e.g.
+`journalctl -u milo-bridge` if running as a systemd service, or the console
+output if running manually):
 
 - **Username:** `dama` (fixed)
 - **Password:** Randomly generated and logged once on first run. Check your log output.
