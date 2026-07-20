@@ -75,7 +75,7 @@ it). Nothing here needs a robot/Pi redeploy.
 | `llm_model` | `llama3.2:3b` | Any Ollama model you've `ollama pull`ed. Must fit in RAM/VRAM. |
 | `llm_use_tools` | `false` (code default) | Let the LLM autonomously call movement/face tools over MCP. A tightened prompt + `repair_tool_args` make this work on `llama3.2:3b` (~8/8 on simple commands); `qwen2.5:7b-instruct` is even more reliable. |
 | `whisper_model` | `small` (`medium` recommended on a GPU) | `tiny`/`base`/`small`/`medium` (or `.en` variants). Bigger = more accurate, slower. `medium` is great on GPU (~0.4 s/clip), slow on CPU. |
-| `piper_voice` | `en_US-lessac-medium` | Auto-downloaded on first use. |
+| `piper_voice` | `en_US-amy-medium` | Auto-downloaded on first use. |
 | `ollama_url` | `http://127.0.0.1:11434` | Where Ollama runs. |
 
 After editing, restart the brain.
