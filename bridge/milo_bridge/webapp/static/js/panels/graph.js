@@ -15,10 +15,12 @@ export default {
         <button class="btn" id="gsearch">Search</button>
         <button class="btn ghost" id="gclear">Clear</button>
       </div>
+      <div id="graph-stats" class="muted graph-stats"></div>
       <canvas id="graph-canvas"></canvas>
       <div id="graph-detail" class="muted"></div>`;
     const cv = el.querySelector("#graph-canvas"), g = cv.getContext("2d");
     const detail = el.querySelector("#graph-detail");
+    const statsEl = el.querySelector("#graph-stats");
     let nodes = [], edges = [], selected = null, highlighted = null, raf = null;
     let offsetX = 0, offsetY = 0, dragNode = null, panning = false, lastPX = 0, lastPY = 0, downX = 0, downY = 0, moved = false;
 
@@ -42,6 +44,48 @@ export default {
       const existing = new Set(edges.map(edgeKey));
       for (const e of data.edges) if (!existing.has(edgeKey(e))) { edges.push(e); changed = true; }
       if (changed && !raf) tick();
+    }
+
+    const RELATION_PHRASING = {
+      supervisor_of: ["supervisor of", "reports to"],
+      reports_to: ["reports to", "supervisor of"],
+      parent_of: ["parent of", "child of"],
+      child_of: ["child of", "parent of"],
+      sibling_of: ["sibling of", "sibling of"],
+      spouse_of: ["spouse of", "spouse of"],
+      friend_of: ["friend of", "friend of"],
+      knows: ["knows", "knows"],
+      owns: ["owns", "belongs to"],
+      belongs_to: ["belongs to", "owns"],
+    };
+
+    function describeRelation(edgeType, viewerIsSrc) {
+      const phrasing = RELATION_PHRASING[edgeType];
+      if (!phrasing) return edgeType;
+      return viewerIsSrc ? phrasing[0] : phrasing[1];
+    }
+
+    async function describeNode(node) {
+      const label = node.props?.name || node.props?.text || `${node.type}#${node.id}`;
+      const body = await fetch("/api/graph", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ op: "neighbors", node_id: node.id, limit: 20 }),
+      }).then((r) => r.json()).catch(() => ({ neighbors: [] }));
+      const rels = (body.neighbors || []).map((item) => {
+        const other = item.node?.props?.name || item.node?.props?.text || `#${item.node?.id}`;
+        const viewerIsSrc = item.edge?.src === node.id;
+        return `${describeRelation(item.edge?.type, viewerIsSrc)}: ${other}`;
+      });
+      return `${label} — ${node.type}${rels.length ? ". " + rels.join(", ") : ""}`;
+    }
+
+    async function loadStats() {
+      const s = await fetch("/api/graph/stats").then((r) => r.json()).catch(() => null);
+      if (!s) return;
+      const parts = Object.entries(s.by_type)
+        .filter(([, n]) => n > 0)
+        .map(([type, n]) => `${n} ${type}${n === 1 ? "" : "s"}`);
+      statsEl.textContent = parts.length ? parts.join(" · ") : "memory is empty";
     }
 
     async function loadAll() {
@@ -155,9 +199,12 @@ export default {
     cv.onpointerup = (ev) => {
       if (!moved) {
         selected = hitTest(ev);
-        detail.textContent = selected
-          ? `#${selected.id} [${selected.type}] ${JSON.stringify(selected.props)}`
-          : "";
+        if (selected) {
+          detail.textContent = "…";
+          describeNode(selected).then((text) => { if (selected) detail.textContent = text; });
+        } else {
+          detail.textContent = "";
+        }
       }
       dragNode = null; panning = false;
       draw();
@@ -180,7 +227,8 @@ export default {
     };
 
     loadAll();
-    const pollId = setInterval(loadAll, POLL_MS);
+    loadStats();
+    const pollId = setInterval(() => { loadAll(); loadStats(); }, POLL_MS);
     return () => { clearInterval(pollId); if (raf) cancelAnimationFrame(raf); window.removeEventListener("resize", resize); };
   },
 };
