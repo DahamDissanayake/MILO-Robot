@@ -200,8 +200,9 @@ export default {
       if (!moved) {
         selected = hitTest(ev);
         if (selected) {
+          const clicked = selected;
           detail.textContent = "…";
-          describeNode(selected).then((text) => { if (selected) detail.textContent = text; });
+          describeNode(clicked).then((text) => { if (selected === clicked) detail.textContent = text; });
         } else {
           detail.textContent = "";
         }
